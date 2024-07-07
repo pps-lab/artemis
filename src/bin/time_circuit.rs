@@ -24,7 +24,7 @@ fn main() {
     let k = circuit.k;
     let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
     use plotters::prelude::*;
-    let root = SVGBackend::new(&fname, (1000, 3000)).into_drawing_area();
+    let root = BitMapBackend::new(&fname, (1000, 3000)).into_drawing_area();
     root.fill(&WHITE).unwrap();
     let root = root
         .titled("Example Circuit Layout", ("sans-serif", 60))
