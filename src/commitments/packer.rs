@@ -61,7 +61,7 @@ impl<F: PrimeField> PackerChip<F> {
       columns.len() / (num_elem_per_packed * (num_bits_per_elem + 1)),
     );
     println!("num_packed_per_row: {}", num_packed_per_row);
-
+    println!("Columns len: {}", columns.len());
     let exponents = Self::get_exponents(num_bits_per_elem, num_elem_per_packed);
 
     let config = PackerConfig {
@@ -298,16 +298,19 @@ impl<F: PrimeField> PackerChip<F> {
   ) -> Result<(BTreeMap<i64, AssignedTensor<F>>, Vec<CellRc<F>>), Error> {
     let mut values = vec![];
     for (_, tensor) in tensors {
+      println!("Tensor len: {}", tensor.len());
       for value in tensor.iter() {
         values.push(value);
       }
     }
+    println!("values len: {}", values.len());
 
     let mut packed = vec![];
     let mut assigned = vec![];
     let zero = constants.get(&0).unwrap().clone();
 
     let num_elems_per_row = self.config.num_packed_per_row * self.config.num_elem_per_packed;
+    println!("num elems per row: {}", num_elems_per_row);
     for i in 0..(values.len().div_ceil(num_elems_per_row)) {
       let row =
         values[i * num_elems_per_row..min((i + 1) * num_elems_per_row, values.len())].to_vec();

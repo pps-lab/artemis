@@ -13,6 +13,7 @@ use halo2_proofs::{
 use lazy_static::lazy_static;
 use ndarray::{Array, IxDyn};
 use num_bigint::BigUint;
+use rmp_serde::config;
 
 use crate::{
   commitments::{
@@ -109,33 +110,59 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
   pub fn assign_tensors_map(
     &self,
     mut layouter: impl Layouter<F>,
+    witness_column: bool,
+    columns_witness: &Vec<Column<Advice>>,
     columns: &Vec<Column<Advice>>,
     tensors: &BTreeMap<i64, Array<F, IxDyn>>,
   ) -> Result<BTreeMap<i64, AssignedTensor<F>>, Error> {
     let tensors = layouter.assign_region(
       || "asssignment",
       |mut region| {
-        let mut cell_idx = 0;
         let mut assigned_tensors = BTreeMap::new();
-
-        for (tensor_idx, tensor) in tensors.iter() {
-          let mut flat = vec![];
-          for val in tensor.iter() {
-            let row_idx = cell_idx / columns.len();
-            let col_idx = cell_idx % columns.len();
-            let cell = region
-              .assign_advice(
-                || "assignment",
-                columns[col_idx],
-                row_idx,
-                || Value::known(*val),
-              )
-              .unwrap();
-            flat.push(Rc::new(cell));
-            cell_idx += 1;
+        //println!("witness columns len: {:?}", columns.len());
+        if witness_column {
+          let mut cell_idx = 0;
+          for (tensor_idx, tensor) in tensors.iter() {
+            let mut flat = vec![];
+            for val in tensor.iter() {
+              let row_idx = cell_idx;
+              let cell = region
+                .assign_advice(
+                  || "assignment",
+                  columns_witness[0],
+                  row_idx,
+                  || Value::known(*val),
+                )
+                .unwrap();
+              flat.push(Rc::new(cell));
+              cell_idx += 1;
+            }
+            let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+            assigned_tensors.insert(*tensor_idx, tensor);
+            // let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+            // assigned_tensors.insert(*tensor_idx, tensor);
           }
-          let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
-          assigned_tensors.insert(*tensor_idx, tensor);
+        } else {
+          let mut cell_idx = 0;
+          for (tensor_idx, tensor) in tensors.iter() {
+            let mut flat = vec![];
+            for val in tensor.iter() {
+              let row_idx = cell_idx / columns.len();
+              let col_idx = cell_idx % columns.len();
+              let cell = region
+                .assign_advice(
+                  || "assignment",
+                  columns[col_idx],
+                  row_idx,
+                  || Value::known(*val),
+                )
+                .unwrap();
+              flat.push(Rc::new(cell));
+              cell_idx += 1;
+            }
+            let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+            assigned_tensors.insert(*tensor_idx, tensor);
+          }
         }
 
         Ok(assigned_tensors)
@@ -172,12 +199,16 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
   pub fn assign_tensors_vec(
     &self,
     mut layouter: impl Layouter<F>,
+    witness_column: bool,
+    columns_witness: &Vec<Column<Advice>>,
     columns: &Vec<Column<Advice>>,
     tensors: &BTreeMap<i64, Array<F, IxDyn>>,
   ) -> Result<Vec<AssignedTensor<F>>, Error> {
     let tensor_map = self
       .assign_tensors_map(
         layouter.namespace(|| "assign_tensors_map"),
+        witness_column,
+        columns_witness,
         columns,
         tensors,
       )
@@ -295,12 +326,18 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     Ok(constants)
   }
 
-  pub fn generate_from_file(config_file: &str, inp_file: &str) -> ModelCircuit<F> {
-    let config = load_model_msgpack(config_file, inp_file);
-    Self::generate_from_msgpack(config, true)
+  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, num_cols: i64) -> ModelCircuit<F> {
+    let mut config = load_model_msgpack(config_file, inp_file, witness_column);
+    // if num_cols > 0 {
+    //   config.num_cols = num_cols;
+    // }
+    // if (num_cols > 16) {
+    //   config.k -=1 ;
+    // }
+    Self::generate_from_msgpack(config, true, witness_column)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool) -> ModelCircuit<F> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool) -> ModelCircuit<F> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -463,13 +500,15 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     let used_gadgets = Arc::new(used_gadgets);
     let gadget = &GADGET_CONFIG;
     let cloned_gadget = gadget.lock().unwrap().clone();
+
     *gadget.lock().unwrap() = GadgetConfig {
+      witness_column,
       scale_factor: config.global_sf as u64,
       shift_min_val: -(config.global_sf * config.global_sf * (1 << 17)),
       div_outp_min_val: -(1 << (config.k - 1)),
       min_val: -(1 << (config.k - 1)),
       max_val: (1 << (config.k - 1)) - 10,
-      k: config.k as usize,
+      k: config.k as usize, // additional k for encoding the witness in 1 row
       num_rows: (1 << config.k) - 10 + 1,
       num_cols: config.num_cols as usize,
       used_gadgets: used_gadgets.clone(),
@@ -516,7 +555,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
 
     let zero = constants.get(&0).unwrap().clone();
     let commit_chip = config.hasher.clone().unwrap();
-
+    //// TODO: ADD A new commitment type here !:))
     let commitments = commit_chip
       .commit(
         layouter.namespace(|| "commit"),
@@ -581,12 +620,23 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
   fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
+    if gadget_config.witness_column {
+      gadget_config.columns_witness = (0..1)
+        .map(|_| meta.advice_column())
+        .collect::<Vec<_>>();
+    }
+    for col in gadget_config.columns_witness.iter() {
+      meta.enable_equality(*col);
+    }
+
+    println!("num columns: {}", gadget_config.num_cols);
     let columns = (0..gadget_config.num_cols)
       .map(|_| meta.advice_column())
       .collect::<Vec<_>>();
     for col in columns.iter() {
       meta.enable_equality(*col);
     }
+  
     gadget_config.columns = columns;
 
     let public_col = meta.instance_column();
@@ -764,9 +814,11 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut commitments = vec![];
     let tensors = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
+      println!("commit to the tensors :)))");
       let mut tensor_map = BTreeMap::new();
       let mut ignore_idxes: Vec<i64> = vec![];
       for commit_idxes in self.commit_before.iter() {
+        println!("Indexes:{:?})))", commit_idxes);
         let to_commit = BTreeMap::from_iter(
           commit_idxes
             .iter()
@@ -794,6 +846,8 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       let mut remainder_tensor_map = self
         .assign_tensors_map(
           layouter.namespace(|| "assignment"),
+          config.gadget_config.witness_column,
+          &config.gadget_config.columns_witness,
           &config.gadget_config.columns,
           &assign_map,
         )
@@ -808,11 +862,34 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       self
         .assign_tensors_vec(
           layouter.namespace(|| "assignment"),
+          config.gadget_config.witness_column,
+          &config.gadget_config.columns_witness,
           &config.gadget_config.columns,
           &self.tensors,
         )
         .unwrap()
     };
+    // let cell_idx = 0;
+    // for tensor in tensors {
+    //   let mut flat = vec![];
+    //   for val in tensor.iter() {
+    //     let row_idx = cell_idx;
+    //     let cell = region
+    //       .assign_advice(
+    //         || "assignment",
+    //         columns_witness[0],
+    //         row_idx,
+    //         || Value::known(*val),
+    //       )
+    //       .unwrap();
+    //     flat.push(Rc::new(cell));
+    //     cell_idx += 1;
+    //   }
+    //   let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+    //   assigned_tensors.insert(*tensor_idx, tensor);
+    //   // let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+    //   // assigned_tensors.insert(*tensor_idx, tensor);
+    // }
 
     // Perform the dag
     let dag_chip = DAGLayerChip::<F>::construct(self.dag_config.clone());

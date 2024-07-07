@@ -32,6 +32,7 @@ def main(args):
 
     for line in outputs:
         ### estimated_time=20.484 | row=5973 | k=13 | c=100 | i=0
+        print(line)
         if '###' in line:
             est_time = float(line.split("|")[0].split("=")[1])
             k = int(line.split("|")[2].split("=")[1])

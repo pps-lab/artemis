@@ -240,7 +240,6 @@ where
         config,
         cs.constants.clone(),
     )?;
-
     let mut fixed = batch_invert_assigned(assembly.fixed);
     let (cs, selector_polys) = cs.compress_selectors(assembly.selectors.clone());
     fixed.extend(
@@ -248,16 +247,14 @@ where
             .into_iter()
             .map(|poly| domain.lagrange_from_vec(poly)),
     );
-
     let permutation_vk = assembly
         .permutation
         .build_vk(params, &domain, &cs.permutation);
 
     let fixed_commitments = fixed
         .iter()
-        .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
+        .map(| poly| params.commit_lagrange(poly, Blind::default()).to_affine())
         .collect();
-
     Ok(VerifyingKey::from_parts(
         domain,
         fixed_commitments,

@@ -21,7 +21,7 @@ fn main() {
   };
   let data: Vec<i64> = data.iter().map(|x| *x as i64).collect();
 
-  let base_config = load_config_msgpack(&config_fname);
+  let base_config = load_config_msgpack(&config_fname, false);
 
   let config = ModelMsgpack {
     tensors: vec![TensorMsgpack {
@@ -38,7 +38,7 @@ fn main() {
   };
   println!("Config: {:?}", config);
   let k = config.k;
-  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false);
+  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, false);
 
   let _prover = MockProver::run(k.try_into().unwrap(), &circuit, vec![vec![]]).unwrap();
   let public_vals: Vec<Fr> = get_public_values();

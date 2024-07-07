@@ -37,8 +37,8 @@ pub struct ModelMsgpack {
   pub num_random: Option<i64>,
 }
 
-pub fn load_config_msgpack(config_path: &str) -> ModelMsgpack {
-  let model: ModelMsgpack = {
+pub fn load_config_msgpack(config_path: &str, witness_column: bool) -> ModelMsgpack {
+  let mut model: ModelMsgpack = {
     let file = File::open(config_path).unwrap();
     let mut reader = BufReader::new(file);
     rmp_serde::from_read(&mut reader).unwrap()
@@ -46,8 +46,8 @@ pub fn load_config_msgpack(config_path: &str) -> ModelMsgpack {
   model
 }
 
-pub fn load_model_msgpack(config_path: &str, inp_path: &str) -> ModelMsgpack {
-  let mut model = load_config_msgpack(config_path);
+pub fn load_model_msgpack(config_path: &str, inp_path: &str, witness_column: bool) -> ModelMsgpack {
+  let mut model = load_config_msgpack(config_path, witness_column);
   let inp: Vec<TensorMsgpack> = {
     let file = File::open(inp_path).unwrap();
     let mut reader = BufReader::new(file);

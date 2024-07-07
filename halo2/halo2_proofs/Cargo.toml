@@ -53,7 +53,7 @@ backtrace = { version = "0.3", optional = true }
 rayon = "1.5.1"
 ff = "0.13"
 group = "0.13"
-halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.3.2" }
+halo2curves = { path = "../halo2curves"}
 rand_core = { version = "0.6", default-features = false }
 tracing = "0.1"
 blake2b_simd = "1"
@@ -86,6 +86,6 @@ circuit-params = []
 [lib]
 bench = false
 
-[[example]]
-name = "circuit-layout"
-required-features = ["dev-graph"]
+#[[example]]
+#name = "circuit-layout"
+#required-features = ["dev-graph"]

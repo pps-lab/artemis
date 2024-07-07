@@ -170,6 +170,7 @@ impl<F: PrimeField> Gadget<F> for DotProductChip<F> {
 
     let mut inputs = vec_inputs[0].clone();
     let mut weights = vec_inputs[1].clone();
+    
     while inputs.len() % self.num_inputs_per_row() != 0 {
       inputs.push(&zero);
       weights.push(&zero);

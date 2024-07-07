@@ -102,7 +102,7 @@ impl<'params, C: CurveAffine> Params<'params, C> for ParamsIPA<C> {
 
         tmp_bases.extend(self.g_lagrange.iter());
         tmp_bases.push(self.w);
-
+        println!("{:?}\n{:?}", tmp_scalars[0], tmp_bases[0]);
         best_multiexp::<C>(&tmp_scalars, &tmp_bases)
     }
 
@@ -194,7 +194,7 @@ impl<'params, C: CurveAffine> ParamsProver<'params, C> for ParamsIPA<C> {
 
         // Let's evaluate all of the Lagrange basis polynomials
         // using an inverse FFT.
-        let g_lagrange = g_to_lagrange(g_projective, k);
+        let g_lagrange = g_to_lagrange(g_projective.clone(), k);
 
         let hasher = C::CurveExt::hash_to_curve("Halo2-Parameters");
         let w = hasher(&[1]).to_affine();
