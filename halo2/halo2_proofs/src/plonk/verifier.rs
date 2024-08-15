@@ -2,7 +2,7 @@ use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
 use group::Curve;
 use rand_core::RngCore;
 use std::iter;
-
+use std::time::Instant;
 use super::{
     vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error,
     VerifyingKey,
@@ -42,6 +42,7 @@ where
     Scheme::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
 {
     // Check that instances matches the expected number of instance columns
+    let timer = Instant::now();
     for instances in instances.iter() {
         if instances.len() != vk.cs.num_instance_columns {
             return Err(Error::InvalidInstances);
@@ -72,7 +73,8 @@ where
     };
 
     let num_proofs = instance_commitments.len();
-
+    println!("First step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     // Hash verification key into transcript
     vk.hash_into(transcript)?;
 
@@ -92,6 +94,8 @@ where
             }
         }
     }
+    println!("Second step: {:?}", timer.elapsed());
+    let timer = Instant::now();
 
     // Hash the prover's advice commitments into the transcript and squeeze challenges
     let (advice_commitments, challenges) = {
@@ -121,7 +125,8 @@ where
 
         (advice_commitments, challenges)
     };
-
+    println!("Third step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
 
@@ -160,13 +165,16 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    println!("Thirdd step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     let vanishing = vanishing::Argument::read_commitments_before_y(transcript)?;
 
     // Sample y challenge, which keeps the gates linearly independent.
     let y: ChallengeY<_> = transcript.squeeze_challenge_scalar();
 
     let vanishing = vanishing.read_commitments_after_y(vk, transcript)?;
-
+    println!("Thirddd step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     // Sample x challenge, which is used to ensure the circuit is
     // satisfied with high probability.
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
@@ -177,6 +185,8 @@ where
             })
             .collect::<Result<Vec<_>, _>>()?
     } else {
+        println!("Fourthh step: {:?}", timer.elapsed());
+        let timer = Instant::now();
         let xn = x.pow(&[params.n() as u64, 0, 0, 0]);
         let (min_rotation, max_rotation) =
             vk.cs
@@ -196,11 +206,15 @@ where
             .flat_map(|instance| instance.iter().map(|instance| instance.len()))
             .max_by(Ord::cmp)
             .unwrap_or_default();
+        println!("Fourthhh step: {:?}", timer.elapsed());
+        let timer = Instant::now();
         let l_i_s = &vk.domain.l_i_range(
             *x,
             xn,
             -max_rotation..max_instance_len as i32 + min_rotation.abs(),
         );
+        println!("Fourthhhh step: {:?}", timer.elapsed());
+        let timer = Instant::now();
         instances
             .iter()
             .map(|instances| {
@@ -217,6 +231,8 @@ where
             .collect::<Vec<_>>()
     };
 
+    println!("Fourth step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     let advice_evals = (0..num_proofs)
         .map(|_| -> Result<Vec<_>, _> { read_n_scalars(transcript, vk.cs.advice_queries.len()) })
         .collect::<Result<Vec<_>, _>>()?;
@@ -242,6 +258,8 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    println!("Fifth step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     // This check ensures the circuit is satisfied so long as the polynomial
     // commitments open to the correct values.
     let vanishing = {
@@ -326,6 +344,8 @@ where
         vanishing.verify(params, expressions, y, xn)
     };
 
+    println!("Sixth step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     let queries = instance_commitments
         .iter()
         .zip(instance_evals.iter())
@@ -389,14 +409,17 @@ where
         )
         .chain(permutations_common.queries(&vk.permutation, x))
         .chain(vanishing.queries(x));
-
+    println!("Seventh step: {:?}", timer.elapsed());
+    let timer = Instant::now();
     // We are now convinced the circuit is satisfied so long as the
     // polynomial commitments open to the correct values.
 
     let verifier = V::new(params);
-    strategy.process(|msm| {
+    let res = strategy.process(|msm| {
         verifier
             .verify_proof(transcript, queries, msm)
             .map_err(|_| Error::Opening)
-    })
+    });
+    println!("Eighth step: {:?}", timer.elapsed());
+    res
 }

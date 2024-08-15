@@ -19,3 +19,4 @@ pub mod var_div_big3;
 
 // Generics
 pub mod nonlinear;
+pub mod poly;

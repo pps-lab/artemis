@@ -6,9 +6,9 @@ use std::{
 };
 
 use halo2_proofs::{
-  circuit::{Layouter, SimpleFloorPlanner, Value},
+  circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
   halo2curves::ff::{FromUniformBytes, PrimeField},
-  plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
+  plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance}, poly,
 };
 use lazy_static::lazy_static;
 use ndarray::{Array, IxDyn};
@@ -22,28 +22,7 @@ use crate::{
     poseidon_commit::{PoseidonCommitChip, L, RATE, WIDTH},
   },
   gadgets::{
-    add_pairs::AddPairsChip,
-    adder::AdderChip,
-    bias_div_round_relu6::BiasDivRoundRelu6Chip,
-    dot_prod::DotProductChip,
-    dot_prod_bias::DotProductBiasChip,
-    gadget::{Gadget, GadgetConfig, GadgetType},
-    input_lookup::InputLookupChip,
-    max::MaxChip,
-    mul_pairs::MulPairsChip,
-    nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, pow::PowGadgetChip, relu::ReluChip, tanh::TanhGadgetChip, sin::SinGadgetChip},
-    nonlinear::{
-      logistic::LogisticGadgetChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip,
-      sqrt::SqrtGadgetChip,
-    },
-    sqrt_big::SqrtBigChip,
-    square::SquareGadgetChip,
-    squared_diff::SquaredDiffGadgetChip,
-    sub_pairs::SubPairsChip,
-    update::UpdateGadgetChip,
-    var_div::VarDivRoundChip,
-    var_div_big::VarDivRoundBigChip,
-    var_div_big3::VarDivRoundBig3Chip,
+    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
   },
   layers::{
     arithmetic::{add::AddChip, div_var::DivVarChip, mul::MulChip, sub::SubChip},
@@ -334,6 +313,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     // if (num_cols > 16) {
     //   config.k -=1 ;
     // }
+    //config.k += 1;
     Self::generate_from_msgpack(config, true, witness_column)
   }
 
@@ -624,8 +604,15 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       gadget_config.columns_witness = (0..1)
         .map(|_| meta.advice_column())
         .collect::<Vec<_>>();
+    } else {
+      gadget_config.columns_poly = (0..2)
+      .map(|_| meta.advice_column())
+      .collect::<Vec<_>>();
     }
     for col in gadget_config.columns_witness.iter() {
+      meta.enable_equality(*col);
+    }
+    for col in gadget_config.columns_poly.iter() {
       meta.enable_equality(*col);
     }
 
@@ -641,6 +628,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
     let public_col = meta.instance_column();
     meta.enable_equality(public_col);
+    gadget_config.columns_public = vec![public_col];
 
     gadget_config.fixed_columns = vec![meta.fixed_column()];
     meta.enable_equality(gadget_config.fixed_columns[0]);
@@ -679,6 +667,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         GadgetType::InputLookup => gadget_config, // This is always loaded
         GadgetType::Update => UpdateGadgetChip::<F>::configure(meta, gadget_config),
         GadgetType::Packer => panic!(),
+        GadgetType::Poly => PolyChip::configure(meta, gadget_config),
       };
     }
 
@@ -869,6 +858,47 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         )
         .unwrap()
     };
+    let mut rho = vec![];
+    let mut poly_vals = vec![];
+    if !config.gadget_config.witness_column && true {
+      poly_vals = layouter.assign_region(
+        || "poly_coeffs",
+        |mut region| {
+        //println!("witness columns len: {:?}", columns.len());
+          let beta = F::ONE;
+          let mut cell_idx = 0;
+          let columns = &config.gadget_config.columns;
+          let mut poly = vec![];
+          let mut coeffs = vec![];
+          for tensor in tensors.iter() {
+            for val in tensor.iter() {
+              let row_idx = cell_idx / columns.len();
+              let col_idx = cell_idx % columns.len();
+              // let cell = region
+              //   .assign_advice(
+              //     || "assignment",
+              //     columns[col_idx],
+              //     row_idx,
+              //     || Value::known(beta),
+              //   )
+              //   .unwrap();
+              poly.push(val.clone());
+              coeffs.push(val.clone());
+              cell_idx += 1;
+            } 
+          }
+        Ok(vec![poly, coeffs])
+        }
+      )?;
+
+
+      let new_vars = poly_vals[0].iter().map(|x| x.as_ref()).collect();
+      let new_coeffs = poly_vals[1].iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+      let poly_com_chip = PolyChip::<F>::construct(gadget_rc.clone());
+      let zero = constants.get(&0).unwrap();
+      println!("coeffs len: {}", new_coeffs.len());
+      rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_vars, new_coeffs].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+    }
     // let cell_idx = 0;
     // for tensor in tensors {
     //   let mut flat = vec![];
@@ -930,6 +960,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       new_public_vals.push(val);
       total_idx += 1;
     }
+
     for tensor in result {
       for cell in tensor.iter() {
         pub_layouter
@@ -940,6 +971,27 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         total_idx += 1;
       }
     }
+
+    if !config.gadget_config.witness_column && true {
+      for poly_res in rho {
+        pub_layouter
+        .constrain_instance(poly_res.cell(), config.public_col, total_idx)
+        .unwrap();
+        let val = convert_to_bigint(poly_res.value().map(|x| x.to_owned()));
+        new_public_vals.push(val);
+        total_idx += 1;
+      }
+      println!("Poly vals len: {}", poly_vals[0].len());
+      for idx in 0..poly_vals[0].len(){
+        pub_layouter
+        .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
+        .unwrap();
+        let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
+        new_public_vals.push(val);
+        total_idx += 1;
+      } 
+    }
+
     *PUBLIC_VALS.lock().unwrap() = new_public_vals;
 
     Ok(())

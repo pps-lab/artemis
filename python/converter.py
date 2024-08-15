@@ -298,6 +298,12 @@ class Converter:
       elif op_code == tflite.BuiltinOperator.LOGISTIC:
         layer_type = 'Logistic'
         params = []
+      elif op_code == tflite.BuiltinOperator.COS:
+        layer_type = 'Sin'
+        params = []
+      elif op_code == tflite.BuiltinOperator.SIN:
+        layer_type = 'Sin'
+        params = []
       elif op_code == tflite.BuiltinOperator.TANH:
         layer_type = 'Tanh'
         params = []
@@ -450,6 +456,8 @@ class Converter:
         tensor_data = tensor_data.astype(np.int64)
       elif tensor.Type() == tflite.TensorType.INT64:
         continue
+      elif tensor.Type() == tflite.TensorType.INT8:
+        tensor_data = tensor_data.astype(np.int64)
       else:
         raise NotImplementedError('Unsupported tensor type: {}'.format(tensor.Type()))
 

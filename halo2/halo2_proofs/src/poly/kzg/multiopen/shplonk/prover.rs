@@ -23,7 +23,7 @@ use std::io::{self, Write};
 use std::marker::PhantomData;
 use std::ops::MulAssign;
 
-fn div_by_vanishing<F: Field>(poly: Polynomial<F, Coeff>, roots: &[F]) -> Vec<F> {
+pub fn div_by_vanishing<F: Field>(poly: Polynomial<F, Coeff>, roots: &[F]) -> Vec<F> {
     let poly = roots
         .iter()
         .fold(poly.values, |poly, point| kate_division(&poly, *point));

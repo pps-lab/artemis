@@ -31,28 +31,6 @@ fn main() {
         .unwrap();
 
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
-        // // You can optionally render only a section of the circuit.
-        // .view_width(0..2)
-        // .view_height(0..16)
-        // // You can hide labels, which can be useful with smaller areas.
-        // .show_labels(false)
-        // // Render the circuit onto your area!
-        // // The first argument is the size parameter for the circuit.
-
-    // let graph = graphviz_rust::parse(&dot_string).unwrap();
-    // let dot_str = graphviz_rust::print(graph).unwrap();
-    // Now you can either handle it in Rust, or just
-    // print it out to use with command-line tools.
-    //println!("{}", dot_string);
-    //fs::write("graph.dot", dot_string).expect("Cant write file :(");
-    //let graph = graphviz_rust::parse(&dot_string).unwrap();
-  //   let graph_svg = graphviz_rust::exec(
-  //     g,
-  //     &mut graphviz_rust::printer::PrinterContext::default(),
-  //     vec![graphviz_rust::cmd::Format::Svg.into()],
-  // )
-  //.unwrap();
-
     time_circuit_kzg(circuit);
   } else {
     let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, false, 7);

@@ -165,10 +165,14 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     /// coefficients of size `n`; panics if the provided vector is the wrong
     /// length.
     pub fn lagrange_from_vec(&self, values: Vec<F>) -> Polynomial<F, LagrangeCoeff> {
-        assert_eq!(values.len(), self.n as usize);
+        let mut extended_vals = values.clone();
+        if extended_vals.len() < self.n as usize {
+            extended_vals.extend(vec![F::ZERO; self.n as usize - values.len()].iter());
+        }
+        assert_eq!(extended_vals.len(), self.n as usize);
 
         Polynomial {
-            values,
+            values: extended_vals,
             _marker: PhantomData,
         }
     }
@@ -177,7 +181,11 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     /// coefficients of size `n`; panics if the provided vector is the wrong
     /// length.
     pub fn coeff_from_vec(&self, values: Vec<F>) -> Polynomial<F, Coeff> {
-        assert_eq!(values.len(), self.n as usize);
+        // let mut extended_vals = values.clone();
+        // if extended_vals.len() < self.n as usize {
+        //     extended_vals.extend(vec![F::ZERO; self.n as usize - values.len()].iter());
+        // }
+        // assert_eq!(extended_vals.len(), self.n as usize);
 
         Polynomial {
             values,
@@ -243,7 +251,6 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             _marker: PhantomData,
         }
     }
-
     /// Returns an empty (zero) polynomial in the extended Lagrange coefficient
     /// basis
     pub fn empty_extended(&self) -> Polynomial<F, ExtendedLagrangeCoeff> {
@@ -262,6 +269,21 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         }
     }
 
+    pub fn coeff_to_lagrange(&self, mut a: Polynomial<F, Coeff>) -> Polynomial<F, LagrangeCoeff> {
+        let mut a_extended = a.clone();
+        let diff = self.n as usize - a.values.len();
+        //println!("K: {}, diff: {}", 1 << self.k, diff);
+        a_extended.values.extend(vec![F::ZERO; diff].iter());
+        assert_eq!(a_extended.values.len(), self.n as usize);
+
+        // Perform inverse FFT to obtain the polynomial in coefficient form
+        best_fft(&mut a_extended.values, self.omega, self.k, &self.fft_data, false);
+
+        Polynomial {
+            values: a_extended.values,
+            _marker: PhantomData,
+        }
+    }
     /// This takes us from an n-length vector into the coefficient form.
     ///
     /// This function will panic if the provided vector is not the correct

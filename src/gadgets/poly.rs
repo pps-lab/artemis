@@ -2,12 +2,13 @@ use std::{marker::PhantomData, rc::Rc};
 
 use halo2_proofs::{
   circuit::{AssignedCell, Layouter, Region},
-  halo2curves::ff::PrimeField,
+  halo2curves::{ff::PrimeField, impl_add_binop_specify_output},
   plonk::{Advice, Column, ConstraintSystem, Error, Expression},
   poly::Rotation,
 };
+use rmp_serde::config;
 
-use crate::gadgets::adder::AdderChip;
+use crate::gadgets::{adder::AdderChip, dot_prod::DotProductChip};
 
 use super::gadget::{Gadget, GadgetConfig, GadgetType};
 
@@ -26,43 +27,29 @@ impl<F: PrimeField> PolyChip<F> {
     }
   }
 
-  pub fn get_input_columns(config: &GadgetConfig) -> Vec<Column<Advice>> {
-    let num_inputs = (config.columns.len() - 1) / 2;
-    config.columns[0..num_inputs].to_vec()
+  pub fn get_a_columns(config: &GadgetConfig) -> Column<Advice> {
+    config.columns_poly[0]
   }
 
-  pub fn get_weight_columns(config: &GadgetConfig) -> Vec<Column<Advice>> {
-    let num_inputs = (config.columns.len() - 1) / 2;
-    config.columns[num_inputs..config.columns.len() - 1].to_vec()
+  pub fn get_b_columns(config: &GadgetConfig) -> Column<Advice> {
+    config.columns_poly[1]
   }
 
   pub fn configure(meta: &mut ConstraintSystem<F>, gadget_config: GadgetConfig) -> GadgetConfig {
     let selector = meta.selector();
     let columns = &gadget_config.columns;
 
-    meta.create_gate("dot product gate", |meta| {
+    meta.create_gate("poly gate", |meta| {
       let s = meta.query_selector(selector);
-      let gate_inp = DotProductChip::<F>::get_input_columns(&gadget_config)
-        .iter()
-        .map(|col| meta.query_advice(*col, Rotation::cur()))
-        .collect::<Vec<_>>();
-      let gate_weights = DotProductChip::<F>::get_weight_columns(&gadget_config)
-        .iter()
-        .map(|col| meta.query_advice(*col, Rotation::cur()))
-        .collect::<Vec<_>>();
-      let gate_output = meta.query_advice(columns[columns.len() - 1], Rotation::cur());
-
-      let res = gate_inp
-        .iter()
-        .zip(gate_weights)
-        .map(|(a, b)| a.clone() * b.clone())
-        .fold(Expression::Constant(F::ZERO), |a, b| a + b);
-
-      vec![s * (res - gate_output)]
+      let gate_a = meta.query_advice(gadget_config.columns_poly[0], Rotation::cur());
+      let gate_b = meta.query_advice(gadget_config.columns_poly[1], Rotation::cur());
+      let gate_b_prev = meta.query_advice(gadget_config.columns_poly[1], Rotation::prev());
+      let beta = meta.query_instance(gadget_config.columns_public[0], Rotation(0));
+      vec![s * (gate_b - (gate_a + gate_b_prev * beta))]
     });
 
     let mut selectors = gadget_config.selectors;
-    selectors.insert(GadgetType::DotProduct, vec![selector]);
+    selectors.insert(GadgetType::Poly, vec![selector]);
 
     GadgetConfig {
       columns: gadget_config.columns,
@@ -72,7 +59,7 @@ impl<F: PrimeField> PolyChip<F> {
   }
 }
 
-impl<F: PrimeField> Gadget<F> for DotProductChip<F> {
+impl<F: PrimeField> Gadget<F> for PolyChip<F> {
   fn name(&self) -> String {
     "dot product".to_string()
   }
@@ -88,7 +75,7 @@ impl<F: PrimeField> Gadget<F> for DotProductChip<F> {
   fn num_outputs_per_row(&self) -> usize {
     1
   }
-
+  // f1(X)i0(X) - f2(X) = 0
   // The caller is expected to pad the inputs
   fn op_row_region(
     &self,
@@ -100,6 +87,7 @@ impl<F: PrimeField> Gadget<F> for DotProductChip<F> {
     assert_eq!(vec_inputs.len(), 2);
 
     let inp = &vec_inputs[0];
+    println!("Weights len: {}", inp.len());
     let weights = &vec_inputs[1];
     assert_eq!(inp.len(), weights.len());
     assert_eq!(inp.len(), self.num_inputs_per_row());
@@ -168,44 +156,29 @@ impl<F: PrimeField> Gadget<F> for DotProductChip<F> {
     assert_eq!(single_inputs.len(), 1);
     let zero = &single_inputs[0];
 
-    let mut inputs = vec_inputs[0].clone();
-    let mut weights = vec_inputs[1].clone();
-    
-    while inputs.len() % self.num_inputs_per_row() != 0 {
-      inputs.push(&zero);
-      weights.push(&zero);
-    }
+    let mut a_i = vec_inputs[0].clone();
+    let mut b_i = vec_inputs[1].clone();
+    let res = layouter
+    .assign_region(
+      || "dot prod rows",
+      |mut region| {
+        let a_cols = a_i
+        .iter()
+        .enumerate()
+        .map(|(i, cell)| cell.copy_advice(|| "", &mut region, PolyChip::<F>::get_a_columns(&self.config), i))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
 
-    let outputs = layouter
-      .assign_region(
-        || "dot prod rows",
-        |mut region| {
-          let mut outputs = vec![];
-          for i in 0..inputs.len() / self.num_inputs_per_row() {
-            let inp =
-              inputs[i * self.num_inputs_per_row()..(i + 1) * self.num_inputs_per_row()].to_vec();
-            let weights =
-              weights[i * self.num_inputs_per_row()..(i + 1) * self.num_inputs_per_row()].to_vec();
-            let res = self
-              .op_row_region(&mut region, i, &vec![inp, weights], &vec![zero.clone()])
-              .unwrap();
-            outputs.push(res[0].clone());
-          }
-          Ok(outputs)
-        },
-      )
-      .unwrap();
+        let b_cols = b_i
+        .iter()
+        .enumerate()
+        .map(|(i, cell)| cell.copy_advice(|| "", &mut region, PolyChip::<F>::get_b_columns(&self.config), i))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
 
-    let adder_chip = AdderChip::<F>::construct(self.config.clone());
-    let tmp = outputs.iter().map(|x| x).collect::<Vec<_>>();
-    Ok(
-      adder_chip
-        .forward(
-          layouter.namespace(|| "dot prod adder"),
-          &vec![tmp],
-          single_inputs,
-        )
-        .unwrap(),
-    )
+        Ok(vec![b_cols[0].clone()])
+      }
+    );
+    Ok(res.unwrap())
   }
 }

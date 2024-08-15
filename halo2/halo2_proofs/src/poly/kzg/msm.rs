@@ -15,10 +15,38 @@ pub struct MSMKZG<E: Engine> {
     pub(crate) bases: Vec<E::G1>,
 }
 
+#[derive(Clone, Default, Debug)]
+pub struct MSMKZG2<E: Engine> {
+    pub(crate) scalars: Vec<E::Scalar>,
+    pub(crate) bases: Vec<E::G2>,
+}
+
 impl<E: Engine> MSMKZG<E> {
     /// Create an empty MSM instance
     pub fn new() -> Self {
         MSMKZG {
+            scalars: vec![],
+            bases: vec![],
+        }
+    }
+
+    /// Prepares all scalars in the MSM to linear combination
+    pub fn combine_with_base(&mut self, base: E::Scalar) {
+        use ff::Field;
+        let mut acc = E::Scalar::ONE;
+        if !self.scalars.is_empty() {
+            for scalar in self.scalars.iter_mut().rev() {
+                *scalar *= &acc;
+                acc *= base;
+            }
+        }
+    }
+}
+
+impl<E: Engine> MSMKZG2<E> {
+    /// Create an empty MSM instance
+    pub fn new() -> Self {
+        MSMKZG2 {
             scalars: vec![],
             bases: vec![],
         }
@@ -78,6 +106,47 @@ impl<E: Engine + Debug> MSM<E::G1Affine> for MSMKZG<E> {
     }
 }
 
+
+impl<E: Engine + Debug> MSM<E::G2Affine> for MSMKZG2<E> {
+    fn append_term(&mut self, scalar: E::Scalar, point: E::G2) {
+        self.scalars.push(scalar);
+        self.bases.push(point);
+    }
+
+    fn add_msm(&mut self, other: &Self) {
+        self.scalars.extend(other.scalars().iter());
+        self.bases.extend(other.bases().iter());
+    }
+
+    fn scale(&mut self, factor: E::Scalar) {
+        if !self.scalars.is_empty() {
+            parallelize(&mut self.scalars, |scalars, _| {
+                for other_scalar in scalars {
+                    *other_scalar *= &factor;
+                }
+            })
+        }
+    }
+
+    fn check(&self) -> bool {
+        bool::from(self.eval().is_identity())
+    }
+
+    fn eval(&self) -> E::G2 {
+        use group::prime::PrimeCurveAffine;
+        let mut bases = vec![E::G2Affine::identity(); self.scalars.len()];
+        E::G2::batch_normalize(&self.bases, &mut bases);
+        best_multiexp(&self.scalars, &bases)
+    }
+
+    fn bases(&self) -> Vec<E::G2> {
+        self.bases.clone()
+    }
+
+    fn scalars(&self) -> Vec<E::Scalar> {
+        self.scalars.clone()
+    }
+}
 /// A projective point collector
 #[derive(Debug, Clone)]
 pub(crate) struct PreMSM<E: Engine> {
