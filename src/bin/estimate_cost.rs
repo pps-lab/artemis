@@ -303,7 +303,7 @@ fn main() -> Result<(), Error> {
     panic!("Must specify kzg or ipa");
   }
 
-  let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, false, 7);
+  let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, false, 0, 17);
   //let config = load_config_msgpack(&config_fname);
   //let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false);
 

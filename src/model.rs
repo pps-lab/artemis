@@ -22,7 +22,7 @@ use crate::{
     poseidon_commit::{PoseidonCommitChip, L, RATE, WIDTH},
   },
   gadgets::{
-    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
+    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
   },
   layers::{
     arithmetic::{add::AddChip, div_var::DivVarChip, mul::MulChip, sub::SubChip},
@@ -99,49 +99,46 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       |mut region| {
         let mut assigned_tensors = BTreeMap::new();
         //println!("witness columns len: {:?}", columns.len());
-        if witness_column {
-          let mut cell_idx = 0;
-          for (tensor_idx, tensor) in tensors.iter() {
-            let mut flat = vec![];
-            for val in tensor.iter() {
-              let row_idx = cell_idx;
-              let cell = region
-                .assign_advice(
-                  || "assignment",
-                  columns_witness[0],
-                  row_idx,
-                  || Value::known(*val),
-                )
-                .unwrap();
-              flat.push(Rc::new(cell));
-              cell_idx += 1;
-            }
-            let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
-            assigned_tensors.insert(*tensor_idx, tensor);
-            // let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
-            // assigned_tensors.insert(*tensor_idx, tensor);
+          // let mut cell_idx = 0;
+          // for (tensor_idx, tensor) in tensors.iter() {
+          //   let mut flat = vec![];
+          //   for val in tensor.iter() {
+          //     let row_idx = cell_idx;
+          //     let cell = region
+          //       .assign_advice(
+          //         || "assignment",
+          //         columns_witness[0],
+          //         row_idx,
+          //         || Value::known(*val),
+          //       )
+          //       .unwrap();
+          //     flat.push(Rc::new(cell));
+          //     cell_idx += 1;
+          //   }
+          //   let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+          //   assigned_tensors.insert(*tensor_idx, tensor);
+          //   // let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+          //   // assigned_tensors.insert(*tensor_idx, tensor);
+          // }
+        let mut cell_idx = 0;
+        for (tensor_idx, tensor) in tensors.iter() {
+          let mut flat = vec![];
+          for val in tensor.iter() {
+            let row_idx = cell_idx / columns.len();
+            let col_idx = cell_idx % columns.len();
+            let cell = region
+              .assign_advice(
+                || "assignment",
+                columns[col_idx],
+                row_idx,
+                || Value::known(*val),
+              )
+              .unwrap();
+            flat.push(Rc::new(cell));
+            cell_idx += 1;
           }
-        } else {
-          let mut cell_idx = 0;
-          for (tensor_idx, tensor) in tensors.iter() {
-            let mut flat = vec![];
-            for val in tensor.iter() {
-              let row_idx = cell_idx / columns.len();
-              let col_idx = cell_idx % columns.len();
-              let cell = region
-                .assign_advice(
-                  || "assignment",
-                  columns[col_idx],
-                  row_idx,
-                  || Value::known(*val),
-                )
-                .unwrap();
-              flat.push(Rc::new(cell));
-              cell_idx += 1;
-            }
-            let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
-            assigned_tensors.insert(*tensor_idx, tensor);
-          }
+          let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
+          assigned_tensors.insert(*tensor_idx, tensor);
         }
 
         Ok(assigned_tensors)
@@ -226,6 +223,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
         // TOOD: this needs to be a random oracle
         let r_base = F::from(0x123456789abcdef);
         let mut r = r_base.clone();
+        println!("Num randoms: {}", self.num_random);
         for i in 0..self.num_random {
           let rand = region.assign_fixed(
             || format!("rand_{}", i),
@@ -305,7 +303,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     Ok(constants)
   }
 
-  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, num_cols: i64) -> ModelCircuit<F> {
+  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, ell: usize, k_ipt: usize) -> ModelCircuit<F> {
     let mut config = load_model_msgpack(config_file, inp_file, witness_column);
     // if num_cols > 0 {
     //   config.num_cols = num_cols;
@@ -313,11 +311,13 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     // if (num_cols > 16) {
     //   config.k -=1 ;
     // }
-    //config.k += 1;
-    Self::generate_from_msgpack(config, true, witness_column)
+    // let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
+    // gadget_config.poly_ell = ell;
+    // gadget_config.k = k_ipt;
+    Self::generate_from_msgpack(config, true, witness_column, ell, k_ipt)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool) -> ModelCircuit<F> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool, ell: usize, k_ipt: usize) -> ModelCircuit<F> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -448,7 +448,6 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
           for gadget in layer_gadgets {
             used_gadgets.insert(gadget);
           }
-
           layer_config
         })
         .collect::<Vec<_>>();
@@ -488,7 +487,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       div_outp_min_val: -(1 << (config.k - 1)),
       min_val: -(1 << (config.k - 1)),
       max_val: (1 << (config.k - 1)) - 10,
-      k: config.k as usize, // additional k for encoding the witness in 1 row
+      k: k_ipt as usize, // additional k for encoding the witness in 1 row
       num_rows: (1 << config.k) - 10 + 1,
       num_cols: config.num_cols as usize,
       used_gadgets: used_gadgets.clone(),
@@ -496,6 +495,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       commit_after: config.commit_after.clone().unwrap_or(vec![]),
       use_selectors: config.use_selectors.unwrap_or(true),
       num_bits_per_elem: config.bits_per_elem.unwrap_or(config.k),
+      poly_ell: ell,
       ..cloned_gadget
     };
 
@@ -601,13 +601,15 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
   fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
     if gadget_config.witness_column {
-      gadget_config.columns_witness = (0..1)
-        .map(|_| meta.advice_column())
-        .collect::<Vec<_>>();
+      // gadget_config.columns_witness = (0..1)
+      //   .map(|_| meta.advice_column())
+      //   .collect::<Vec<_>>();
     } else {
-      gadget_config.columns_poly = (0..2)
+      //println!("Poly ell: {:?}", (gadget_config.poly_ell * 2 + 2));
+      gadget_config.columns_poly = (0..(gadget_config.poly_ell * 2 + 2))
       .map(|_| meta.advice_column())
       .collect::<Vec<_>>();
+      gadget_config = Poly2Chip::configure(meta, gadget_config);
     }
     for col in gadget_config.columns_witness.iter() {
       meta.enable_equality(*col);
@@ -616,7 +618,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       meta.enable_equality(*col);
     }
 
-    println!("num columns: {}", gadget_config.num_cols);
+    //println!("num columns: {}", gadget_config.num_cols);
     let columns = (0..gadget_config.num_cols)
       .map(|_| meta.advice_column())
       .collect::<Vec<_>>();
@@ -668,6 +670,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         GadgetType::Update => UpdateGadgetChip::<F>::configure(meta, gadget_config),
         GadgetType::Packer => panic!(),
         GadgetType::Poly => PolyChip::configure(meta, gadget_config),
+        //GadgetType::Poly2 => Poly2Chip::configure(meta, gadget_config),
       };
     }
 
@@ -860,14 +863,14 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     };
     let mut rho = vec![];
     let mut poly_vals = vec![];
-    if !config.gadget_config.witness_column && true {
+    if !config.gadget_config.witness_column {
       poly_vals = layouter.assign_region(
         || "poly_coeffs",
         |mut region| {
         //println!("witness columns len: {:?}", columns.len());
           let beta = F::ONE;
           let mut cell_idx = 0;
-          let columns = &config.gadget_config.columns;
+          let columns = &config.gadget_config.columns_poly;
           let mut poly = vec![];
           let mut coeffs = vec![];
           for tensor in tensors.iter() {
@@ -894,7 +897,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
       let new_vars = poly_vals[0].iter().map(|x| x.as_ref()).collect();
       let new_coeffs = poly_vals[1].iter().map(|x| x.as_ref()).collect::<Vec<_>>();
-      let poly_com_chip = PolyChip::<F>::construct(gadget_rc.clone());
+      let poly_com_chip = Poly2Chip::<F>::construct(gadget_rc.clone());
       let zero = constants.get(&0).unwrap();
       println!("coeffs len: {}", new_coeffs.len());
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_vars, new_coeffs].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
@@ -972,7 +975,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       }
     }
 
-    if !config.gadget_config.witness_column && true {
+    if !config.gadget_config.witness_column {
       for poly_res in rho {
         pub_layouter
         .constrain_instance(poly_res.cell(), config.public_col, total_idx)

@@ -27,12 +27,13 @@ impl<F: PrimeField> PolyChip<F> {
     }
   }
 
-  pub fn get_a_columns(config: &GadgetConfig) -> Column<Advice> {
-    config.columns_poly[0]
+  pub fn get_a_columns(config: &GadgetConfig) -> Vec<Column<Advice>> {
+    //println!("Poly len: {:?}", config.columns_poly.len());
+    config.columns_poly[..(config.columns_poly.len() - 1)/2].into()
   }
 
-  pub fn get_b_columns(config: &GadgetConfig) -> Column<Advice> {
-    config.columns_poly[1]
+  pub fn get_b_columns(config: &GadgetConfig) -> Vec<Column<Advice>> {
+    config.columns_poly[(config.columns_poly.len() - 1)/2..].into()
   }
 
   pub fn configure(meta: &mut ConstraintSystem<F>, gadget_config: GadgetConfig) -> GadgetConfig {
@@ -137,7 +138,7 @@ impl<F: PrimeField> Gadget<F> for PolyChip<F> {
     let res = region
       .assign_advice(
         || "",
-        self.config.columns[self.config.columns.len() - 1],
+        self.config.columns_poly[self.config.columns_poly.len() - 1],
         row_offset,
         || e,
       )
@@ -165,17 +166,17 @@ impl<F: PrimeField> Gadget<F> for PolyChip<F> {
         let a_cols = a_i
         .iter()
         .enumerate()
-        .map(|(i, cell)| cell.copy_advice(|| "", &mut region, PolyChip::<F>::get_a_columns(&self.config), i))
+        .map(|(i, cell)| cell.copy_advice(|| "", &mut region, PolyChip::<F>::get_a_columns(&self.config)[0], i))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-
+        let a_cols = PolyChip::<F>::get_a_columns(&self.config);
         let b_cols = b_i
         .iter()
         .enumerate()
-        .map(|(i, cell)| cell.copy_advice(|| "", &mut region, PolyChip::<F>::get_b_columns(&self.config), i))
+        .map(|(i, cell)| cell.copy_advice(|| "", &mut region, PolyChip::<F>::get_b_columns(&self.config)[0], i))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-
+        //let b_cols = PolyChip::<F>::get_a_columns(&self.config);
         Ok(vec![b_cols[0].clone()])
       }
     );

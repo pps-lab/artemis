@@ -11,7 +11,7 @@ fn main() {
   let kzg_or_ipa = std::env::args().nth(3).expect("kzg or ipa");
   let witness_column_str = std::env::args().nth(4).expect("witness col");
   let fname = std::env::args().nth(6).expect("graphic file name");
-  let num_cols = std::env::args().nth(5).expect("num of cols").parse().unwrap();
+  //let num_cols = std::env::args().nth(5).expect("num of cols").parse().unwrap();
   println!("{}", witness_column_str);
   let witness_column = witness_column_str.parse().unwrap();
 
@@ -20,7 +20,7 @@ fn main() {
   }
 
   if kzg_or_ipa == "kzg" {
-    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, witness_column, num_cols);
+    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, witness_column, 0, 17);
     let k = circuit.k;
     let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
     use plotters::prelude::*;
@@ -32,7 +32,7 @@ fn main() {
 
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
   } else {
-    let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, false, 7);
+    let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, false, 0, 17);
     time_circuit_ipa(circuit);
   }
 }

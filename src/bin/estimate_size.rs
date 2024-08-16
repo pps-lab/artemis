@@ -41,7 +41,7 @@ fn main() {
   let config_fname = std::env::args().nth(1).expect("config file path");
 
   let config = load_config_msgpack(&config_fname, false);
-  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, false);
+  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, false, 0, 17);
   let num_cols = GADGET_CONFIG.lock().unwrap().num_cols as i64;
 
   let mut num_rows = circuit.num_random;

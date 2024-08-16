@@ -17,3 +17,7 @@ cargo test --package zkml --bin cp_link --release -- test_cplink --exact --nocap
 wait
 cargo test --package zkml --bin cp_link --release -- test_cplink --exact --nocapture  17 100000 10 &> 100000_10.log &
 wait
+cargo test --package zkml --bin cp_link --release -- test_cplink --exact --nocapture  17 100000 1 &> 100000_1.log &
+wait
+cargo test --package zkml --bin cp_link --release -- test_cplink --exact --nocapture  17 100000 10 &> 100000_10.log &
+wait

@@ -10,18 +10,18 @@ use halo2_proofs::{
   halo2curves::bn256::{Bn256, Fr, G1Affine},
   plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, VerifyingKey},
   poly::{
-    commitment::Params,
-    kzg::{
+    commitment::{Blind, Params, ParamsProver}, kzg::{
       commitment::{KZGCommitmentScheme, ParamsKZG},
       multiopen::{ProverSHPLONK, VerifierSHPLONK},
       strategy::SingleStrategy,
-    },
+    }, Coeff, Polynomial
   },
   transcript::{
     Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
   },
   SerdeFormat,
 };
+use halo2curves::pairing::Engine;
 
 use crate::{model::ModelCircuit, utils::helpers::get_public_values};
 
@@ -112,6 +112,12 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
   let proof_circuit = circuit.clone();
   let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]]).unwrap();
   let public_vals = get_public_values();
+  let poly_coeff = vec![Fr::one(); public_vals.len()];
+  let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff);
+  let beta = public_vals[1];
+  let rho = poly.evaluate(beta);
+  let poly_com = params.commit(&poly, Blind::default());
+  let pi = ProverSHPLONK::new(&params);
   println!(
     "Time elapsed in filling circuit: {:?}",
     fill_duration - pk_duration
@@ -156,7 +162,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
   let strategy = SingleStrategy::new(&params);
   let transcript_read = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
-  println!("public vals: {:?}", public_vals);
+  println!("public vals len: {:?}", public_vals.len());
   verify_kzg(
     &params,
     &pk.get_vk(),

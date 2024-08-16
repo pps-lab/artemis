@@ -20,7 +20,7 @@ fn main() {
 
   if kzg_or_ipa == "kzg" {
     let config = load_config_msgpack(&config_fname, witness_column_str);
-    let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, witness_column_str);
+    let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, witness_column_str, 0, 17);
     let k = circuit.k;
     let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
     use plotters::prelude::*;
