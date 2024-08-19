@@ -25,7 +25,7 @@ cargo run --package zkml --bin cp_link --release 24 10000000 1  > 10000000_1.log
 wait
 cargo run --package zkml --bin cp_link --release 24 10000000 10  > 10000000_10.log &
 wait
-cargo run --package zkml --bin cp_link --release 27 100000000 1  > 100000000_1.log &
+cargo run --package zkml --bin cp_link --release 26 50000000 1  > 100000000_1.log &
 wait
-cargo run --package zkml --bin cp_link --release 27 100000000 10  > 100000000_10.log &
+cargo run --package zkml --bin cp_link --release 26 50000000 10  > 100000000_10.log &
 wait
