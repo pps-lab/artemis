@@ -27,6 +27,7 @@ pub struct ParamsKZG<E: Engine> {
     pub(crate) g_lagrange: Vec<E::G1Affine>,
     pub(crate) g2: E::G2Affine,
     pub(crate) s_g2: E::G2Affine,
+    pub(crate) g2_pows: Vec<E::G2Affine>,
 }
 
 /// Umbrella commitment scheme construction for all KZG variants
@@ -121,6 +122,22 @@ where
 
         let g2 = <E::G2Affine as PrimeCurveAffine>::generator();
         let s_g2 = (g2 * s).into();
+        let mut g2_projective = vec![E::G2::identity(); n as usize];
+        parallelize(&mut g2_projective, |g, start| {
+            let mut current_g: E::G2 = g2.into();
+            current_g *= s.pow_vartime(&[start as u64]);
+            for g in g.iter_mut() {
+                *g = current_g;
+                current_g *= s;
+            }
+        });
+        let g2_pows = {
+            let mut g2 = vec![E::G2Affine::identity(); n as usize];
+            parallelize(&mut g2, |g, starts| {
+                E::G2::batch_normalize(&g2_projective[starts..(starts + g.len())], g);
+            });
+            g2
+        };
 
         Self {
             k,
@@ -129,9 +146,26 @@ where
             g_lagrange,
             g2,
             s_g2,
+            g2_pows,
         }
     }
 
+    pub fn commit_g2(&self, poly: &Polynomial<E::Scalar, Coeff>) -> E::G2 {
+        let mut scalars = Vec::with_capacity(poly.len());
+        scalars.extend(poly.iter());
+        let bases = &self.g2_pows;
+        let size = scalars.len();
+        assert!(bases.len() >= size);
+        best_multiexp(&scalars, &bases[0..size])
+    }
+    pub fn commit_g1(&self, poly: &Polynomial<E::Scalar, Coeff>) -> E::G1 {
+        let mut scalars = Vec::with_capacity(poly.len());
+        scalars.extend(poly.iter());
+        let bases = &self.g;
+        let size = scalars.len();
+        assert!(bases.len() >= size);
+        best_multiexp(&scalars, &bases[0..size])
+    }
     /// Initializes parameters for the curve through existing parameters
     /// k, g, g_lagrange (optional), g2, s_g2
     pub fn from_parts(
@@ -153,6 +187,7 @@ where
             g,
             g2,
             s_g2,
+            g2_pows: vec![g2]
         }
     }
 
@@ -268,6 +303,7 @@ where
             g_lagrange,
             g2,
             s_g2,
+            g2_pows: vec![g2],
         })
     }
 }

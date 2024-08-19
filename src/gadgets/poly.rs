@@ -88,7 +88,7 @@ impl<F: PrimeField> Gadget<F> for PolyChip<F> {
     assert_eq!(vec_inputs.len(), 2);
 
     let inp = &vec_inputs[0];
-    println!("Weights len: {}", inp.len());
+    //println!("Weights len: {}", inp.len());
     let weights = &vec_inputs[1];
     assert_eq!(inp.len(), weights.len());
     assert_eq!(inp.len(), self.num_inputs_per_row());

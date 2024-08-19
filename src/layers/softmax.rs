@@ -125,7 +125,7 @@ impl<F: PrimeField> Layer<F> for SoftmaxChip {
     layer_config: &LayerConfig,
   ) -> Result<Vec<AssignedTensor<F>>, Error> {
     let inp = &tensors[0];
-    println!("INP_DIM: {}", inp.ndim());
+    //println!("INP_DIM: {}", inp.ndim());
     assert!(inp.ndim() == 2 || inp.ndim() == 3 || inp.ndim() == 4);
     if inp.ndim() == 4 {
       assert_eq!(inp.shape()[0], 1);
@@ -240,7 +240,7 @@ impl<F: PrimeField> Layer<F> for SoftmaxChip {
       0
       //panic!("Not implemented");
     };
-    println!("#######Softmax num_rows: {}", num_rows);
+    //println!("#######Softmax num_rows: {}", num_rows);
     num_rows
   }
 }

@@ -21,11 +21,11 @@ pub trait Query<F>: Sized + Clone + Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ProverQuery<'com, C: CurveAffine> {
     /// point at which polynomial is queried
-    pub(crate) point: C::Scalar,
+    pub point: C::Scalar,
     /// coefficients of polynomial
-    pub(crate) poly: &'com Polynomial<C::Scalar, Coeff>,
+    pub poly: &'com Polynomial<C::Scalar, Coeff>,
     /// blinding factor of polynomial
-    pub(crate) blind: Blind<C::Scalar>,
+    pub blind: Blind<C::Scalar>,
 }
 
 #[doc(hidden)]

@@ -134,7 +134,7 @@ impl<F: PrimeField> Layer<F> for MeanChip {
     let num_sums = layer_config.inp_shapes[0][keep_axis];
 
     let rows = Averager::<F>::get_num_rows(self, num_sums as i64, num_inps_per_sum as i64, num_cols);
-    println!("mean rows: {}", rows);
+    //println!("mean rows: {}", rows);
     rows
   }
 }

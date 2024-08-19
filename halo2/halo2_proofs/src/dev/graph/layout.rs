@@ -116,6 +116,7 @@ impl CircuitLayout {
         // TODO: For now, just render them in the order they were configured.
         let total_columns = cs.num_instance_columns + cs.num_advice_columns + cs.num_fixed_columns;
         println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
+        println!("Num of rows: {}", n);
         let column_index = |cs: &ConstraintSystem<F>, column: RegionColumn| {
             let column: Column<Any> = match column {
                 RegionColumn::Column(col) => col,

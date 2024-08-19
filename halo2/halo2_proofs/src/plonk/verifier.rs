@@ -206,7 +206,7 @@ where
             .flat_map(|instance| instance.iter().map(|instance| instance.len()))
             .max_by(Ord::cmp)
             .unwrap_or_default();
-        println!("Fourthhh step: {:?}", timer.elapsed());
+        //println!("Fourthhh step: {:?}", timer.elapsed());
         let timer = Instant::now();
         let l_i_s = &vk.domain.l_i_range(
             *x,

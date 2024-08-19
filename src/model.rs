@@ -223,7 +223,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
         // TOOD: this needs to be a random oracle
         let r_base = F::from(0x123456789abcdef);
         let mut r = r_base.clone();
-        println!("Num randoms: {}", self.num_random);
+        //println!("Num randoms: {}", self.num_random);
         for i in 0..self.num_random {
           let rand = region.assign_fixed(
             || format!("rand_{}", i),
@@ -303,7 +303,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     Ok(constants)
   }
 
-  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, ell: usize, k_ipt: usize) -> ModelCircuit<F> {
+  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, ell: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
     let mut config = load_model_msgpack(config_file, inp_file, witness_column);
     // if num_cols > 0 {
     //   config.num_cols = num_cols;
@@ -314,10 +314,10 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     // let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
     // gadget_config.poly_ell = ell;
     // gadget_config.k = k_ipt;
-    Self::generate_from_msgpack(config, true, witness_column, ell, k_ipt)
+    Self::generate_from_msgpack(config, true, witness_column, ell, k_ipt, c_ipt)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool, ell: usize, k_ipt: usize) -> ModelCircuit<F> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool, ell: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -484,12 +484,12 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       witness_column,
       scale_factor: config.global_sf as u64,
       shift_min_val: -(config.global_sf * config.global_sf * (1 << 17)),
-      div_outp_min_val: -(1 << (config.k - 1)),
-      min_val: -(1 << (config.k - 1)),
-      max_val: (1 << (config.k - 1)) - 10,
+      div_outp_min_val: -(1 << (k_ipt as usize - 1)),
+      min_val: -(1 << (k_ipt as usize - 1)),
+      max_val: (1 << (k_ipt as usize - 1)) - 10,
       k: k_ipt as usize, // additional k for encoding the witness in 1 row
-      num_rows: (1 << config.k) - 10 + 1,
-      num_cols: config.num_cols as usize,
+      num_rows: (1 << k_ipt as usize) - 10 + 1,
+      num_cols:  c_ipt as usize,
       used_gadgets: used_gadgets.clone(),
       commit_before: config.commit_before.clone().unwrap_or(vec![]),
       commit_after: config.commit_after.clone().unwrap_or(vec![]),
@@ -503,8 +503,8 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       tensors,
       dag_config,
       used_gadgets,
-      k: config.k as usize,
-      bits_per_elem: config.bits_per_elem.unwrap_or(config.k) as usize,
+      k: k_ipt as usize,
+      bits_per_elem: config.bits_per_elem.unwrap_or(k_ipt as i64) as usize,
       inp_idxes: config.inp_idxes.clone(),
       commit_after: config.commit_after.unwrap_or(vec![]),
       commit_before: config.commit_before.unwrap_or(vec![]),
@@ -806,11 +806,11 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut commitments = vec![];
     let tensors = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
-      println!("commit to the tensors :)))");
+      //println!("commit to the tensors :)))");
       let mut tensor_map = BTreeMap::new();
       let mut ignore_idxes: Vec<i64> = vec![];
       for commit_idxes in self.commit_before.iter() {
-        println!("Indexes:{:?})))", commit_idxes);
+        //println!("Indexes:{:?})))", commit_idxes);
         let to_commit = BTreeMap::from_iter(
           commit_idxes
             .iter()
@@ -899,7 +899,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       let new_coeffs = poly_vals[1].iter().map(|x| x.as_ref()).collect::<Vec<_>>();
       let poly_com_chip = Poly2Chip::<F>::construct(gadget_rc.clone());
       let zero = constants.get(&0).unwrap();
-      println!("coeffs len: {}", new_coeffs.len());
+      //println!("coeffs len: {}", new_coeffs.len());
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_vars, new_coeffs].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
     }
     // let cell_idx = 0;
@@ -984,7 +984,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         new_public_vals.push(val);
         total_idx += 1;
       }
-      println!("Poly vals len: {}", poly_vals[0].len());
+      //println!("Poly vals len: {}", poly_vals[0].len());
       for idx in 0..poly_vals[0].len(){
         pub_layouter
         .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)

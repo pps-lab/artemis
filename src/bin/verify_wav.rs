@@ -38,7 +38,7 @@ fn main() {
   };
   println!("Config: {:?}", config);
   let k = config.k;
-  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, false, 0, 17);
+  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, false, 0, 17, 10);
 
   let _prover = MockProver::run(k.try_into().unwrap(), &circuit, vec![vec![]]).unwrap();
   let public_vals: Vec<Fr> = get_public_values();

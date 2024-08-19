@@ -1,20 +1,39 @@
 #![allow(non_camel_case_types)]
+use commitment::CommitmentScheme;
+use commitment::Params;
+use commitment::ParamsProver;
+use commitment::Verifier;
 use commitment::MSM;
+use ff::FromUniformBytes;
 use ff::WithSmallOrderMulGroup;
+use halo2_proofs::arithmetic::eval_polynomial;
 use halo2_proofs::arithmetic::kate_division;
-use halo2_proofs::arithmetic::lagrange_interpolate;
+use halo2_proofs::helpers::SerdeCurveAffine;
+use halo2_proofs::transcript::Blake2bWrite;
+use halo2_proofs::transcript::{Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer, TranscriptRead, TranscriptWrite, Transcript, EncodedChallenge};
+use halo2_proofs::poly::commitment::{Prover, Blind};
+use halo2_proofs::transcript::Blake2bRead;
 use halo2curves::bn256::Bn256;
 use halo2curves::bn256::Fr;
 use group::{Curve, Group};
 use halo2_proofs::poly::*;
+use halo2_proofs::plonk::Error;
 use halo2_proofs::plonk::*;
 use halo2curves::bn256::Gt;
 use halo2curves::bn256::G1;
+use group::prime::PrimeCurveAffine;
 use halo2curves::pairing::{Engine, MultiMillerLoop};
 use group::ff::Field;
 use halo2curves::pasta::pallas::Scalar;
+use kzg::commitment::KZGCommitmentScheme;
+use kzg::commitment::ParamsKZG;
+use kzg::msm::DualMSM;
 use kzg::msm::MSMKZG;
 use kzg::msm::MSMKZG2;
+use kzg::multiopen::ProverSHPLONK;
+use kzg::multiopen::VerifierSHPLONK;
+use kzg::strategy::{AccumulatorStrategy};
+use halo2_proofs::poly::VerificationStrategy;
 use num_traits::Pow;
 use rand::Rng;
 use rand::RngCore;
@@ -28,88 +47,7 @@ use std::fs;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use core::fmt::Debug;
-
-
-/// Multiplies a polynomial by a scalar.
-fn poly_scalar_mul<F: Field>(a: F, p: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
-    p.clone() * a
-}
-
-/// Adds two polynomials.
-fn poly_add<F: Field>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
-    u.clone() + v
-}
-
-/// Subtracts polynomial v from polynomial u.
-fn poly_sub<F: Field>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
-    u.clone() - v
-}
-
-/// Multiplies two polynomials using FFT.
-fn poly_mul<F: Field + WithSmallOrderMulGroup<3>>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
-    u.clone() * v
-}
-
-fn poly_deg<F: Field>(p: &Polynomial<F, Coeff>) -> usize {
-    let norm = p.normalize();
-    norm.values.len() - 1
-}
-
-/// Scales a polynomial by multiplying/dividing by x^n.
-fn poly_scale<F: Field>(p: &Polynomial<F, Coeff>, n: isize) -> Polynomial<F, Coeff> {
-    if n >= 0 {
-        let mut coeffs = vec![F::ZERO; n as usize];
-        coeffs.extend(p.values.clone());
-        Polynomial::from_coefficients_vec(coeffs)
-    } else {
-        let n_abs = n.abs() as usize;
-        Polynomial::from_coefficients_vec(p.values.iter().skip(n_abs).cloned().collect())
-    }
-}
-
-fn poly_recip<F: Field + WithSmallOrderMulGroup<3>>(p: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
-    let k = poly_deg(p) + 1;
-    assert!(k > 0 && !(*p.values.last().unwrap() == F::ZERO) && (k & (k - 1)) == 0, "k must be a power of 2: {}", k);
-
-    if k == 1 {
-        return Polynomial::from_coefficients_vec(vec![p.values[0].invert().unwrap()]);
-    }
-
-    let q = poly_recip(&Polynomial::from_coefficients_vec(p.values[k/2..].to_vec()));
-    let r = poly_sub(
-        &poly_scale(&poly_scalar_mul(F::ONE + F::ONE, &q), 3 * k as isize / 2 - 2),
-        &poly_mul(&poly_mul(&q, &q), p),
-    );
-
-    poly_scale(&r, -(k as isize) + 2)
-}
-/// Fast polynomial division u(x) / v(x).
-fn poly_divmod<F: Field + WithSmallOrderMulGroup<3>>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> (Polynomial<F, Coeff>, Polynomial<F, Coeff>) {
-    let m = poly_deg(u);
-    let n = poly_deg(v);
-
-    // Ensure deg(v) is one less than some power of 2
-    let nd = (n + 1).next_power_of_two() - 1 - n;
-    let ue = poly_scale(u, nd as isize);
-    let ve = poly_scale(v, nd as isize);
-
-    let s = poly_recip(&ve);
-    let q = poly_scale(&poly_mul(&ue, &s), -2 * poly_deg(&ve) as isize);
-
-    // Handle case when m > 2n
-    let q = if m > 2 * n {
-        let t = poly_sub(&poly_scale(&Polynomial::from_coefficients_vec(vec![F::ONE]), 2 * poly_deg(&ve) as isize), &poly_mul(&s, &ve));
-        let (q2, _) = poly_divmod(&poly_scale(&poly_mul(&ue, &t), -2 * poly_deg(&ve) as isize), &ve);
-        poly_add(&q, &q2)
-    } else {
-        q
-    };
-
-    // Remainder, r = u - v * q
-    let r = poly_sub(u, &poly_mul(v, &q));
-
-    (q, r)
-}
+use zkml::utils::helpers::poly_divmod;
 
 #[derive(Clone, Debug)]
 pub struct CS2_PP<P: Engine> {
@@ -175,20 +113,24 @@ pub fn vanishing_on_set<F: Field + WithSmallOrderMulGroup<3>>(set: &[F]) -> Poly
     let mut vanishing = Polynomial::<F, Coeff>{
         values: vec![F::ONE],
         _marker: PhantomData,
-    };//from_coefficients_slice(&[F::ONE]);
+    };
 
     let mut iter = 0;
+    let mut polys = vec![];
     for point in set {
-        let timer = Instant::now();
         vanishing = vanishing.naive_mul(&Polynomial::<F, Coeff>{
             values: vec![-*point, F::ONE],
             _marker: PhantomData,
         });
-        if iter % 500 == 0 {
-            //println!("One mult time : {:?}", timer.elapsed());
+        if iter % 1000 == 0 {
+            polys.push(vanishing);
+            vanishing = Polynomial::<F, Coeff>::from_coefficients_vec(vec![F::ONE]);
         }
         iter += 1;
     }
+    polys.push(vanishing);
+    vanishing = polys.iter().fold(Polynomial::<F, Coeff>::from_coefficients_vec(vec![F::ONE]), |a, b| a * b);
+    
     vanishing
 }
 
@@ -231,12 +173,14 @@ fn keygen2<E: Engine<Scalar: WithSmallOrderMulGroup<3>>>(t: u32) -> CS2_PP<E> {
     keygen1(t)
 }
 
-fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
+fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug>
+(
     col_size: u32,
     witness_size: usize,
     l: usize
 ) -> (
-    CS2_PP<E>,
+    //CS2_PP<E>,
+    ParamsKZG<E>,
     EvaluationDomain<E::Scalar>,
     Vec<E::Scalar>,
     Vec<Polynomial<E::Scalar, Coeff>>,
@@ -247,17 +191,19 @@ fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
     Vec<E::G2>
 ) {
     let setuptimer = Instant::now();
+    let params = ParamsKZG::<E>::new(col_size);
     let HH = EvaluationDomain::<E::Scalar>::new(1, col_size);
     //let HH = Radix2EvaluationDomain::new(col_size).unwrap();
     let n = 2u32.pow(col_size);
     let rng = OsRng;
     let size = witness_size / l;
-    println!("Size: {}, n: {}, col_size {}", size, n, col_size);
-    let ck = keygen2::<E>(n * 2);
+    println!("Witness size: {}, Columns size {}, Columns {}", size, col_size, l);
+    //let ck = keygen2::<E>(n * 2);
     let HH_vals = powers(HH.get_omega()).take(n as usize).collect::<Vec<_>>();
     let thetas = (0..l).map(|x| HH_vals[x * size]).collect::<Vec<_>>();
+    let params_time = setuptimer.elapsed();
+    println!("SETUP: Parameters time: {:?}", params_time);
 
-    println!("Generating stuff: {:?}", setuptimer.elapsed());
     let mut vanishing = vec![E::Scalar::ZERO; HH.get_n() as usize + 1];
     vanishing[0] = -E::Scalar::ONE;
     vanishing[HH.get_n() as usize] = E::Scalar::ONE;
@@ -266,17 +212,13 @@ fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
     let zs = (0..l).map(|x| vanishing_on_set(&HH_vals[x * size..(x + 1) * size].to_vec())).collect::<Vec<_>>();
     let z_v = zs[0].clone();
     let z_last = vanishing_on_set(&HH_vals[l * size..].to_vec());
-    for val in HH_vals[l * size..].iter() {
-        //println!("Eval: {:?}", z_last.evaluate(*val));
-    }
-    for val in HH_vals {
-        //println!("Eval vanishing: {:?}", vanishing_poly.evaluate(val));
-    }
+
     //println!("Vanishing poly: {:?}", vanishing_poly);
     //let (z_whole, r_whole) = vanishing_poly.divide_with_q_and_r(&Polynomial::from(z_last.clone())).unwrap();
     let (z_whole, r_whole) = poly_divmod(&vanishing_poly, &z_last);  
     //let z_whole = z_last.clone();
     assert!(r_whole.is_zero(), "value: {:?}", r_whole);
+
     let mut zhats = (0..l).map(|i| {
         let mut vals = vec![E::Scalar::ZERO; i * size];
         let ones = vec![E::Scalar::ONE; size];
@@ -285,21 +227,27 @@ fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
         //println!("Poly: {:?}", poly);
         poly
     }).collect::<Vec<_>>();
-    println!("Polys time: {:?}", setuptimer.elapsed());
-    let z_coms = zs.iter().map(|z| eval_on_pnt_in_grp2::<E::G2, E>(&z, &ck.pws_g2)).collect::<Vec<_>>();
-    zhats.push(z_whole);
-    let zhat_coms = zhats.iter().map(|z| eval_on_pnt_in_grp2::<E::G2, E>(&z, &ck.pws_g2)).collect::<Vec<_>>();
 
-    println!("Setup time: {:?}", setuptimer.elapsed());
-    (ck, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms)
+    let polynomial_time = setuptimer.elapsed();
+    println!("SETUP: Polynomials time: {:?}", polynomial_time - params_time);
+    //let z_coms = zs.iter().map(|z| eval_on_pnt_in_grp2::<E::G2, E>(&z, &ck.pws_g2)).collect::<Vec<_>>();
+    let z_coms = zs.iter().map(|z| params.commit_g2(&z)).collect::<Vec<_>>();
+    zhats.push(z_whole);
+    //let zhat_coms = zhats.iter().map(|z| eval_on_pnt_in_grp2::<E::G2, E>(&z, &ck.pws_g2)).collect::<Vec<_>>();
+    let zhat_coms = zhats.iter().map(|z| params.commit_g2(z)).collect::<Vec<_>>();
+    let commitments_time = setuptimer.elapsed();
+    println!("SETUP: Commitments time: {:?}", commitments_time - polynomial_time);
+    println!("SETUP: Total time: {:?}", setuptimer.elapsed());
+    (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms)
 }
 
-fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
+fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug>(
     uprimes: Vec<Polynomial<E::Scalar, Coeff>>,
     zs: Vec<Polynomial<E::Scalar, Coeff>>,
     zhats: Vec<Polynomial<E::Scalar, Coeff>>,
     poly: Polynomial<E::Scalar, Coeff>,
-    ck: CS2_PP<E>,
+    params: ParamsKZG<E>,
+    //ck: CS2_PP<E>,
     z_last: Polynomial<E::Scalar, Coeff>,
     HH: EvaluationDomain<E::Scalar>,
 ) -> (
@@ -356,28 +304,35 @@ fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
     let oprimes = (0..l).map(|i| zs[i].clone() * &Polynomial::from_coefficients_vec(vec![gammas[i]]) + &Polynomial::from_coefficients_vec(vec![os[i]])).collect::<Vec<_>>();
 
     let commit_timer = Instant::now();
-    let bigc = eval_on_pnt_in_grp::<E::G1, E>(&poly, &ck.pws_g1);
+    let bigc = params.commit_g1(&poly);
+    //let bigc = eval_on_pnt_in_grp::<E::G1, E>(&poly, &ck.pws_g1);
 
     let chats = (0..l).map(|i| {
-        let ucom = eval_on_pnt_in_grp::<E::G1, E>(&uprimes[i], &ck.pws_g1);
+        //let ucom = eval_on_pnt_in_grp::<E::G1, E>(&uprimes[i], &ck.pws_g1);
+        let ucom = params.commit_g1(&uprimes[i]);
         ucom
     }).collect::<Vec<_>>();
 
     let cprimes = (0..l).map(|i| {
-        let uhatcom = eval_on_pnt_in_grp::<E::G1, E>(&uhats[i], &ck.pws_g1);
-        let oprimecom = eval_on_pnt_in_grp::<E::G1, E>(&oprimes[i], &ck.pws_rando);
+        //let uhatcom = eval_on_pnt_in_grp::<E::G1, E>(&uhats[i], &ck.pws_g1);
+        let uhatcom = params.commit_g1(&uhats[i]);
+        //let oprimecom = eval_on_pnt_in_grp::<E::G1, E>(&oprimes[i], &ck.pws_rando);
+        let oprimecom = params.commit_g1(&oprimes[i]);
         uhatcom + oprimecom
     }).collect::<Vec<_>>();
 
     let ds = (0..l).map(|i| {
-        let qcom = eval_on_pnt_in_grp::<E::G1, E>(&qs[i], &ck.pws_g1);
-        let gammacom = eval_on_pnt_in_grp::<E::G1, E>(&Polynomial::from_coefficients_vec(vec![gammas[i]]), &ck.pws_rando);
+        //let qcom = eval_on_pnt_in_grp::<E::G1, E>(&qs[i], &ck.pws_g1);
+        let qcom = params.commit_g1(&qs[i]);
+        //let gammacom = eval_on_pnt_in_grp::<E::G1, E>(&Polynomial::from_coefficients_vec(vec![gammas[i]]), &ck.pws_rando);
+        let gammacom = params.commit_g1(&Polynomial::from_coefficients_vec(vec![gammas[i]]));
         qcom - gammacom
     }).collect::<Vec<_>>();
 
     let beta = Polynomial::<E::Scalar, Coeff>::zero();
-    let d = eval_on_pnt_in_grp::<E::G1, E>(&q, &ck.pws_g1) + eval_on_pnt_in_grp::<E::G1, E>(&beta, &ck.pws_rando);
-    println!("Commitment time: {:?}", commit_timer.elapsed());
+    //let d = eval_on_pnt_in_grp::<E::G1, E>(&q, &ck.pws_g1) + eval_on_pnt_in_grp::<E::G1, E>(&beta, &ck.pws_rando);
+    let d = params.commit_g1(&q) + params.commit_g1(&beta);
+    //println!("Commitment time: {:?}", commit_timer.elapsed());
 
     let x = E::Scalar::random(&mut OsRng);
     let mut osum = Polynomial::<E::Scalar, Coeff>::zero();
@@ -385,21 +340,23 @@ fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
         osum = osum + &(Polynomial::from_coefficients_vec(vec![os[i]]) * &zhats[i]);
     }
     let otilde = Polynomial::zero() - &(beta * &zhats[l] + &osum);
-    let z = otilde.evaluate(x);
-    let (w, rem) = (otilde - &Polynomial::from_coefficients_vec(vec![z])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-x, E::Scalar::ONE])).unwrap();
-    let wcom = eval_on_pnt_in_grp::<E::G1, E>(&w, &ck.pws_rando);
-    println!("CPLink1 time: {:?}", cplink1_timer.elapsed());
-    (chats, ds, cprimes, wcom, bigc, d, x, z)
+    let zz = otilde.evaluate(x);
+    let (w, rem) = (otilde - &Polynomial::from_coefficients_vec(vec![zz])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-x, E::Scalar::ONE])).unwrap();
+    //let wcom = eval_on_pnt_in_grp::<E::G1, E>(&w, &ck.pws_rando);
+    let wcom = params.commit_g1(&w);
+    println!("CPLINK1: Prover time: {:?}", cplink1_timer.elapsed());
+    (chats, ds, cprimes, wcom, bigc, d, x, zz)
 }
 
-fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
+fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBytes<64>, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug + MultiMillerLoop>(
     thetas: Vec<E::Scalar>, 
     HH: EvaluationDomain<E::Scalar>, 
     us: Vec<Polynomial<E::Scalar, Coeff>>, 
     z_v: Polynomial<E::Scalar, Coeff>,
     z_v_com: E::G1,
     u_coms: Vec<E::G1>,
-    ck: CS2_PP<E>,
+    //ck: CS2_PP<E>,
+    params: ParamsKZG<E>,
 ) -> Vec<Polynomial<<E as Engine>::Scalar, Coeff>> {
     let cplink2_timer = Instant::now();
     let rng = &mut OsRng;
@@ -434,8 +391,10 @@ fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
         h
     }).collect::<Vec<_>>();
 
-    let h_coms = hs.iter().map(|h| eval_on_pnt_in_grp::<E::G1, E>(h, &ck.pws_g1)).collect::<Vec<_>>();
-
+    let h_coms = hs.iter().map(|h| params.commit_g1(&h)).collect::<Vec<_>>();
+    let zv_com = params.commit_g1(&z_v);
+    let u_coms = us.iter().map(|u| params.commit_g1(&u)).collect::<Vec<_>>();
+    let uprime_coms = uprimes.iter().map(|uprime| params.commit_g1(&uprime).to_affine()).collect::<Vec<_>>();
     // eval hjs on rho 
     // eval zv on rho
     // eval ujs on rho
@@ -444,23 +403,65 @@ fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3>> + Debug>(
     let h_evals = hs.iter().map(|h| h.evaluate(rho)).collect::<Vec<_>>();
     let zv_eval = z_v.evaluate(rho);
     let u_evals = us.iter().map(|u| u.evaluate(rho)).collect::<Vec<_>>();
-    let rho_evals = [h_evals, vec![zv_eval], u_evals].concat();
-    let polys = [hs, vec![z_v], us.clone()].concat();
-    let poly_coms = [h_coms, vec![z_v_com], u_coms].concat();
+    let rho_thetas = thetas.iter().map(|theta| rho * theta).collect::<Vec<_>>();
+    let uprime_evals = uprimes.iter().zip(rho_thetas.clone()).map(|(uprime, rho_theta)| uprime.evaluate(rho_theta)).collect::<Vec<_>>();
+    let rho_evals = [h_evals.clone(), vec![zv_eval], u_evals.clone()].concat();
+    let polys = [hs.clone(), vec![z_v], us].concat();
+    let poly_coms = [h_coms, vec![zv_com], u_coms].concat();
+    let mut poly_coms_affine =  vec![E::G1Affine::identity(); poly_coms.len()];
+    E::G1::batch_normalize(poly_coms.as_slice(), &mut poly_coms_affine);
+
     let randos = polys.iter().map(|_| E::Scalar::random(rng.clone())).collect::<Vec<_>>();
-    // let (proof, b_star, c_star) = <CS2 as CPEvals<P, CS2>>::multiple_evals_on_same_point(
-    //     &ck,
-    //     (rho, rho_evals),
-    // polys,
-    //     poly_coms,
-    //     randos,
-    //     //rng
-    // )
-    // .unwrap();
+
+    //Proofs at rho
+    let (proof_1, evals_1) = create_proof::<
+        KZGCommitmentScheme<E>, 
+        ProverSHPLONK<E>, _, 
+        Blake2bWrite<_, _, 
+        Challenge255<_>>
+    >(&params, polys.clone(), poly_coms_affine.clone(), vec![rho; polys.len()]);
+
+    //Proofs at rho * theta
+    let (proof_2, evals) = create_proof::<
+        KZGCommitmentScheme<E>, 
+        ProverSHPLONK<E>, _, 
+        Blake2bWrite<_, _, 
+        Challenge255<_>>
+    >(&params, uprimes.clone(), uprime_coms.clone(), rho_thetas.clone());
+    
+    let prover_time = cplink2_timer.elapsed();
+    println!("CPLINK2: Prover time: {:?}", prover_time);
+
+    let verifier_params = params.verifier_params();
+
+    verify::<
+        KZGCommitmentScheme<E>,
+        VerifierSHPLONK<_>,
+        _,
+        Blake2bRead<_, _, Challenge255<_>>,
+        AccumulatorStrategy<_>,
+    >(verifier_params, &proof_1[..], poly_coms_affine, vec![rho; polys.len()], rho_evals);
+
+
+    verify::<
+        KZGCommitmentScheme<E>,
+        VerifierSHPLONK<_>,
+        _,
+        Blake2bRead<_, _, Challenge255<_>>,
+        AccumulatorStrategy<_>,
+    >(verifier_params, &proof_2[..], uprime_coms, rho_thetas, uprime_evals);
 
     let uprime_evals = uprimes.iter().zip(thetas).map(|(uprime, theta)| uprime.evaluate(rho*theta)).collect::<Vec<_>>();
+    for i in 0..hs.len() {
+        let lhs = h_evals[i] * zv_eval;
+        let rhs: E::Scalar = u_evals[i] - uprime_evals[i];
+        assert_eq!(lhs, rhs);
+    }
 
-    println!("CPlink 2 time: {:?}", cplink2_timer.elapsed());
+    let verifier_time = cplink2_timer.elapsed() - prover_time;
+    println!("CPLINK2: Verifier time: {:?}", verifier_time);
+
+    //println!("CPLINK2: Total time: {:?}", cplink2_timer.elapsed());
     uprimes
 }
 
@@ -477,7 +478,8 @@ fn verify1<P: Engine + Debug> (
     cprimes: Vec<P::G1>,
     chats: Vec<P::G1>,
     ds: Vec<P::G1>,
-    ck: CS2_PP<P>,
+    //ck: CS2_PP<P>,
+    params: ParamsKZG<P>,
     z_coms: Vec<P::G2>,
     zhat_coms: Vec<P::G2>,
     wcom: P::G1,
@@ -490,15 +492,15 @@ fn verify1<P: Engine + Debug> (
     let l = cprimes.len();
     // First CPlink1 check:
     for i in 0..l {
-        let term1 = P::pairing(&chats[i].to_affine(), &ck.g2.to_affine());
+        let term1 = P::pairing(&chats[i].to_affine(), &params.g2());
         let term2 = P::pairing(&ds[i].to_affine(), &z_coms[i].to_affine());
-        let term3 = P::pairing(&cprimes[i].to_affine(), &ck.g2.to_affine());
+        let term3 = P::pairing(&cprimes[i].to_affine(), &params.g2());
         assert_eq!(term1, term2 + term3);
     }
 
     // Second CPLink1 check:
-    let term1 = P::pairing(&wcom.to_affine(), &eval_on_pnt_in_grp2::<P::G2, P>(&Polynomial::from_coefficients_vec(vec![-x, P::Scalar::ONE]), &ck.pws_g2).to_affine());
-    let term2 = P::pairing(&bigc.to_affine(), &ck.g2.to_affine());
+    let term1 = P::pairing(&wcom.to_affine(), &params.commit_g2(&Polynomial::from_coefficients_vec(vec![-x, P::Scalar::ONE])).to_affine());
+    let term2 = P::pairing(&bigc.to_affine(), &params.g2());
     let term3 = P::pairing(&d.to_affine(), &zhat_coms[l].to_affine());
     let term4 = {
         let mut sum = <P>::Gt::identity();
@@ -507,12 +509,12 @@ fn verify1<P: Engine + Debug> (
         }
         sum
     };
-    let term5 = P::pairing(&eval_on_pnt_in_grp::<P::G1, P>(&Polynomial::from_coefficients_vec(vec![z]), &ck.pws_g1).to_affine(), &ck.alpha_g2.to_affine());
+    let term5 = P::pairing(&params.commit_g1(&Polynomial::from_coefficients_vec(vec![z])).to_affine(), &params.s_g2());
 
     let lhs = term1 + term3 + term4 + term5;
     let rhs = term2;
     assert_eq!(lhs, rhs);
-    println!("Verifier time: {:?}", verifier_timer.elapsed());
+    println!("CPLINK1: Verifier time: {:?}", verifier_timer.elapsed());
 }
 
 fn cplink (witness_size: usize, col_size: usize, l: usize) {
@@ -520,7 +522,7 @@ fn cplink (witness_size: usize, col_size: usize, l: usize) {
     type P = Bn256;
     let rng = &mut OsRng;
     let size = witness_size / l;
-    let (ck, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup::<P>(col_size as u32, witness_size, l);
+    let (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup::<P>(col_size as u32, witness_size, l);
     // Prover
     // input polys 
     let prover_timer = Instant::now();
@@ -530,15 +532,143 @@ fn cplink (witness_size: usize, col_size: usize, l: usize) {
     let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
     let poly_vals = vals.into_iter().flatten().collect::<Vec<_>>();
     let poly = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_vals));
-    println!("Construct polys: {:?}", poly_timer.elapsed());
+    // println!("Construct polys: {:?}", poly_timer.elapsed());
     // CPLINK2 
-    let uprimes = cplink2::<P>(thetas, HH.clone(), us, z_v, <Bn256 as Engine>::G1::identity(), vec![<Bn256 as Engine>::G1::identity(); 1], ck.clone());
+    let uprimes = cplink2::<P>(thetas, HH.clone(), us, z_v, <Bn256 as Engine>::G1::identity(), vec![<Bn256 as Engine>::G1::identity(); 1], params.clone());
     // At this point we have uprimes which match poly 
     // CPLINK1 (uhats are uprimes in paper)
-    let (chats, ds, cprimes, wcom, bigc, d, x, z) = cplink1(uprimes, zs, zhats, poly, ck.clone(), z_last, HH);
-    println!("Prover time: {:?}", prover_timer.elapsed());
+    let (chats, ds, cprimes, wcom, bigc, d, x, zz) = cplink1(uprimes, zs, zhats, poly, params.clone(), z_last, HH);
+    //println!("TOTAL: Prover time: {:?}", prover_timer.elapsed());
     // Verify CPlink1
-    verify1(cprimes, chats, ds, ck, z_coms, zhat_coms, wcom, bigc, d, x, z);
+    verify1(cprimes, chats, ds, params, z_coms, zhat_coms, wcom, bigc, d, x, zz);
+
+}
+fn verify<
+        'a,
+        'params,
+        Scheme: CommitmentScheme,
+        V: Verifier<'params, Scheme>,
+        E: EncodedChallenge<Scheme::Curve>,
+        T: TranscriptReadBuffer<&'a [u8], Scheme::Curve, E>,
+        Strategy: VerificationStrategy<'params, Scheme, V, Output = Strategy>,
+    >(
+        params: &'params Scheme::ParamsVerifier,
+        proof: &'a [u8],
+        poly_coms: Vec<Scheme::Curve>,
+        points: Vec<Scheme::Scalar>,
+        evals: Vec<Scheme::Scalar>,
+    ) {
+        let verifier = V::new(params);
+
+        let mut transcript = T::init(proof);
+
+        let queries = poly_coms.iter().zip(evals).zip(points).map(|((poly_com, eval), point)| VerifierQuery::new_commitment(poly_com, point, eval)).collect::<Vec<_>>();
+
+
+        let queries = queries.clone();
+
+        {
+            let strategy = Strategy::new(params);
+            let strategy = strategy
+                .process(|msm_accumulator: <V as Verifier<'params, Scheme>>::MSMAccumulator | {
+                    verifier
+                        .verify_proof(&mut transcript, queries.clone(), msm_accumulator)
+                        .map_err(|_| Error::Opening)
+                })
+                .unwrap();
+            //println!("Strat: {:?}", strategy.finalize());
+            assert!(strategy.finalize());
+        }
+    }
+
+fn create_proof<
+    'params,
+    Scheme: CommitmentScheme,
+    P: Prover<'params, Scheme>,
+    E: EncodedChallenge<Scheme::Curve>,
+    T: TranscriptWriterBuffer<Vec<u8>, Scheme::Curve, E>,
+>(
+    params: &'params Scheme::ParamsProver,
+    polys: Vec<Polynomial<Scheme::Scalar, Coeff>>,
+    poly_coms: Vec<Scheme::Curve>,
+    points: Vec<Scheme::Scalar>,
+) -> (Vec<u8>, Vec<Scheme::Scalar>)
+where
+    Scheme::Scalar: WithSmallOrderMulGroup<3>,
+{
+
+    let mut transcript = T::init(vec![]);
+    let evals = polys.iter().zip(points.clone()).map(|(poly, point)| eval_polynomial(poly, point)).collect::<Vec<_>>();
+    let queries = polys.iter().zip(points).map(|(poly, point)| 
+        ProverQuery{
+        point, 
+        poly, 
+        blind: Blind::default()
+    }).collect::<Vec<_>>();
+    
+    let prover = P::new(params);
+    prover
+        .create_proof(&mut OsRng, &mut transcript, queries)
+        .unwrap();
+
+    (transcript.finalize(), evals)
+}
+
+#[test]
+fn test_stuff() {
+    type F = <Bn256 as Engine>::Scalar;
+    // let HH = EvaluationDomain::<F>::new(1, 10);
+    // let omega = HH.get_omega();
+    // let omega_pows = powers(omega).take(32).collect::<Vec<_>>();
+
+    // let vals = (0..4).map(|x| F::from(x)).collect::<Vec<_>>();
+    // let poly = HH.lagrange_from_vec(vals);
+    // let poly_coeff = HH.lagrange_to_coeff(poly.clone());
+    // let squared = poly_coeff.clone() * &poly_coeff;
+    // for i in omega_pows[0..6].iter() {
+    //     println!("Eval: {:?}", squared.evaluate(*i));
+    // }
+    // let vanishing1 = HH.coeff_from_vec(vec![-omega_pows[0], F::ONE]);
+    // let vanishing2 = HH.coeff_from_vec(vec![-omega_pows[1], F::ONE]);
+    // let vanishing_both = vanishing1.clone() * &vanishing2;
+
+    // Prove commitment evals
+    const K: u32 = 10;
+
+    let params = ParamsKZG::<Bn256>::new(K);
+    let mut rng = &mut OsRng;
+    let polynomials = (0..4).map(|i| Polynomial::from_coefficients_vec((0..10).map(|j| F::from(10 * i + j)).collect())).collect::<Vec<_>>();
+   //let polynomials = vec![Polynomial::ranvec![F::random(&mut rng); 10]); 4];
+    for polynomial in polynomials.clone() {
+        println!("Polynomial: {:?}", polynomial);
+    }
+    let poly_coms = polynomials.iter().map(|polynomial| params.commit_g1(polynomial).to_affine()).collect::<Vec<_>>();
+    let point = F::random(&mut OsRng);
+
+    let (proof, evals) = create_proof::<
+        KZGCommitmentScheme<Bn256>,
+        ProverSHPLONK<_>,
+        _,
+        Blake2bWrite<_, _, Challenge255<_>>,
+    >(&params, polynomials.clone(), poly_coms.clone(), vec![point; polynomials.len()]);
+
+    let verifier_params = params.verifier_params();
+
+    verify::<
+        KZGCommitmentScheme<Bn256>,
+        VerifierSHPLONK<_>,
+        _,
+        Blake2bRead<_, _, Challenge255<_>>,
+        AccumulatorStrategy<_>,
+    >(verifier_params, &proof[..], poly_coms, vec![point; polynomials.len()], evals);
+}
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let pow: usize = args[1].parse().unwrap(); 
+    let witness_size: usize = args[2].parse().unwrap(); 
+    assert!(witness_size < 2usize.pow(pow as u32));
+    let l: usize = args[3].parse().unwrap(); 
+    cplink(witness_size, pow, l);
 }
 #[test]
 fn test_cplink() {
@@ -551,33 +681,4 @@ fn test_cplink() {
     //let col_size = witness_size.next_power_of_two();
     //let l = 10;
     cplink(witness_size, pow, l);
-}
-#[test]
-fn test_stuff() {
-    type F = <Bn256 as Engine>::Scalar;
-    let HH = EvaluationDomain::<F>::new(1, 4);
-    let omega = HH.get_omega();
-    let omega_pows = powers(omega).take(32).collect::<Vec<_>>();
-
-    let vals = (0..4).map(|x| F::from(x)).collect::<Vec<_>>();
-    let poly = HH.lagrange_from_vec(vals);
-    let poly_coeff = HH.lagrange_to_coeff(poly.clone());
-    let squared = poly_coeff.clone() * &poly_coeff;
-    for i in omega_pows[0..6].iter() {
-        println!("Eval: {:?}", squared.evaluate(*i));
-    }
-    let vanishing1 = HH.coeff_from_vec(vec![-omega_pows[0], F::ONE]);
-    let vanishing2 = HH.coeff_from_vec(vec![-omega_pows[1], F::ONE]);
-    let vanishing_both = vanishing1.clone() * &vanishing2;
-}
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let pow: usize = args[4].parse().unwrap(); 
-    let witness_size: usize = args[5].parse().unwrap(); 
-    assert!(witness_size < 2usize.pow(pow as u32));
-    let l: usize = args[6].parse().unwrap(); 
-    //let witness_size = 10usize.pow(3);
-    //let col_size = witness_size.next_power_of_two();
-    //let l = 10;
-    cplink(witness_size, witness_size, l);
 }

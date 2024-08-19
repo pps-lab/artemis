@@ -1,6 +1,7 @@
+use ff::{Field, WithSmallOrderMulGroup};
 use halo2_proofs::{
   circuit::{AssignedCell, Value},
-  halo2curves::ff::PrimeField,
+  halo2curves::ff::PrimeField, poly::{Coeff, Polynomial},
 };
 use ndarray::{Array, IxDyn};
 use num_bigint::BigUint;
@@ -35,7 +36,7 @@ pub fn convert_pos_int<F: PrimeField>(x: Value<F>) -> i128 {
 pub fn print_pos_int<F: PrimeField>(prefix: &str, x: Value<F>, scale_factor: u64) {
   let tmp = convert_pos_int(x);
   let tmp_float = tmp as f64 / scale_factor as f64;
-  println!("{} x: {} ({})", prefix, tmp, tmp_float);
+  //println!("{} x: {} ({})", prefix, tmp, tmp_float);
 }
 
 pub fn print_assigned_arr<F: PrimeField>(
@@ -137,4 +138,85 @@ pub fn broadcast<G: Clone>(
   } else {
     return (tmp2, tmp1);
   }
+}
+
+/// Multiplies a polynomial by a scalar.
+fn poly_scalar_mul<F: Field>(a: F, p: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+  p.clone() * a
+}
+
+/// Adds two polynomials.
+fn poly_add<F: Field>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+  u.clone() + v
+}
+
+/// Subtracts polynomial v from polynomial u.
+fn poly_sub<F: Field>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+  u.clone() - v
+}
+
+/// Multiplies two polynomials using FFT.
+fn poly_mul<F: Field + WithSmallOrderMulGroup<3>>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+  u.clone() * v
+}
+
+fn poly_deg<F: Field>(p: &Polynomial<F, Coeff>) -> usize {
+  let norm = p.normalize();
+  norm.values.len() - 1
+}
+
+/// Scales a polynomial by multiplying/dividing by x^n.
+fn poly_scale<F: Field>(p: &Polynomial<F, Coeff>, n: isize) -> Polynomial<F, Coeff> {
+  if n >= 0 {
+      let mut coeffs = vec![F::ZERO; n as usize];
+      coeffs.extend(p.values.clone());
+      Polynomial::from_coefficients_vec(coeffs)
+  } else {
+      let n_abs = n.abs() as usize;
+      Polynomial::from_coefficients_vec(p.values.iter().skip(n_abs).cloned().collect())
+  }
+}
+
+fn poly_recip<F: Field + WithSmallOrderMulGroup<3>>(p: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+  let k = poly_deg(p) + 1;
+  assert!(k > 0 && !(*p.values.last().unwrap() == F::ZERO) && (k & (k - 1)) == 0, "k must be a power of 2: {}", k);
+
+  if k == 1 {
+      return Polynomial::from_coefficients_vec(vec![p.values[0].invert().unwrap()]);
+  }
+
+  let q = poly_recip(&Polynomial::from_coefficients_vec(p.values[k/2..].to_vec()));
+  let r = poly_sub(
+      &poly_scale(&poly_scalar_mul(F::ONE + F::ONE, &q), 3 * k as isize / 2 - 2),
+      &poly_mul(&poly_mul(&q, &q), p),
+  );
+
+  poly_scale(&r, -(k as isize) + 2)
+}
+/// Fast polynomial division u(x) / v(x).
+pub fn poly_divmod<F: Field + WithSmallOrderMulGroup<3>>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> (Polynomial<F, Coeff>, Polynomial<F, Coeff>) {
+  let m = poly_deg(u);
+  let n = poly_deg(v);
+
+  // Ensure deg(v) is one less than some power of 2
+  let nd = (n + 1).next_power_of_two() - 1 - n;
+  let ue = poly_scale(u, nd as isize);
+  let ve = poly_scale(v, nd as isize);
+
+  let s = poly_recip(&ve);
+  let q = poly_scale(&poly_mul(&ue, &s), -2 * poly_deg(&ve) as isize);
+
+  // Handle case when m > 2n
+  let q = if m > 2 * n {
+      let t = poly_sub(&poly_scale(&Polynomial::from_coefficients_vec(vec![F::ONE]), 2 * poly_deg(&ve) as isize), &poly_mul(&s, &ve));
+      let (q2, _) = poly_divmod(&poly_scale(&poly_mul(&ue, &t), -2 * poly_deg(&ve) as isize), &ve);
+      poly_add(&q, &q2)
+  } else {
+      q
+  };
+
+  // Remainder, r = u - v * q
+  let r = poly_sub(u, &poly_mul(v, &q));
+
+  (q, r)
 }

@@ -106,7 +106,7 @@ impl<F: PrimeField> Layer<F> for AddChip {
       ActivationType::None => (),
       _ => panic!("Unsupported activation type for add"),
     }
-    println!("#####Add num_rows: {}", num_rows);
+    //println!("#####Add num_rows: {}", num_rows);
     num_rows
   }
 }

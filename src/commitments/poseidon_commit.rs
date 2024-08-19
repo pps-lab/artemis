@@ -87,7 +87,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> PoseidonCommitChip<F, WIDTH, RA
     let rc_b = (0..WIDTH).map(|_| meta.fixed_column()).collect::<Vec<_>>();
 
     meta.enable_constant(rc_b[0]);
-    println!("Poseidon chip");
+    //println!("Poseidon chip");
 
     PoseidonCommitChip {
       poseidon_config: Pow5Chip::configure::<P128Pow5T3Gen<F, 0>>(

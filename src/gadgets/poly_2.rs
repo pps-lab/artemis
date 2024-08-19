@@ -63,7 +63,7 @@ impl<F: PrimeField> Poly2Chip<F> {
 
     let mut selectors = gadget_config.selectors;
     selectors.insert(GadgetType::DotProductBias, vec![selector]);
-    println!("Selectors: {:?}", selectors);
+    //println!("Selectors: {:?}", selectors);
 
     GadgetConfig {
       columns: gadget_config.columns,

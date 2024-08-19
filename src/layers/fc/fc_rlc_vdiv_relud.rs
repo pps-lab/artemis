@@ -276,7 +276,7 @@ impl<F: PrimeField> Layer<F> for FCRLCVarDivReludChip<F> {
         num_rows += out_size;
       }
     }
-    println!("#####FC num_rows: {}", num_rows);
+    //println!("#####FC num_rows: {}", num_rows);
     num_rows
   }
 }

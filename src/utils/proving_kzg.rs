@@ -5,25 +5,16 @@ use std::{
   time::Instant,
 };
 
+use ff::Field;
 use halo2_proofs::{
-  dev::MockProver,
-  halo2curves::bn256::{Bn256, Fr, G1Affine},
-  plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, VerifyingKey},
-  poly::{
-    commitment::{Blind, Params, ParamsProver}, kzg::{
-      commitment::{KZGCommitmentScheme, ParamsKZG},
-      multiopen::{ProverSHPLONK, VerifierSHPLONK},
-      strategy::SingleStrategy,
-    }, Coeff, Polynomial
-  },
-  transcript::{
-    Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-  },
-  SerdeFormat,
+  arithmetic::{eval_polynomial, kate_division}, dev::MockProver, halo2curves::bn256::{Bn256, Fr, G1Affine}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
+    self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
+  }, SerdeFormat
 };
-use halo2curves::pairing::Engine;
+use halo2curves::{bn256::pairing, pairing::Engine, group::Curve};
+use rand_core::OsRng;
 
-use crate::{model::ModelCircuit, utils::helpers::get_public_values};
+use crate::{model::ModelCircuit, utils::helpers::{get_public_values, poly_divmod}};
 
 pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
   let rng = rand::thread_rng();
@@ -112,12 +103,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
   let proof_circuit = circuit.clone();
   let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]]).unwrap();
   let public_vals = get_public_values();
-  let poly_coeff = vec![Fr::one(); public_vals.len()];
-  let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff);
-  let beta = public_vals[1];
-  let rho = poly.evaluate(beta);
-  let poly_com = params.commit(&poly, Blind::default());
-  let pi = ProverSHPLONK::new(&params);
+
   println!(
     "Time elapsed in filling circuit: {:?}",
     fill_duration - pk_duration
@@ -172,6 +158,61 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
   );
   let verify_duration = start.elapsed();
   println!("Verifying time: {:?}", verify_duration - proof_duration);
+  
+  // KZG Commit proof
+  let kzg_proof_timer = Instant::now();
+  let poly_coeff = vec![Fr::one(); public_vals.len()];
+  let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff);
+
+  let mut transcript_kzg_proof = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+  let beta = transcript_kzg_proof.squeeze_challenge();
+  let rho = poly.evaluate(beta.get_scalar());
+  let blind = Blind::default();
+  let poly_com: G1Affine = params.commit(&poly, blind).to_affine();
+  transcript_kzg_proof.write_point(poly_com).unwrap();
+  transcript_kzg_proof.write_scalar(rho).unwrap();
+
+  let queries = [
+    ProverQuery {
+        point: beta.get_scalar(),
+        poly: &poly,
+        blind,
+    }
+  ].to_vec();
+  //let (q, r) = poly_divmod::<Fr>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, Fr::one()]));
+  //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, Fr::ONE])).unwrap();
+  //assert!(r.is_zero());
+  let prover = ProverSHPLONK::new(&params);
+  prover
+      .create_proof(&mut OsRng, &mut transcript_kzg_proof, queries)
+      .unwrap();
+
+  let proof_kzg = transcript_kzg_proof.finalize();
+
+  //let pi = params.commit(&q, blind);
+  println!("KZG proof time: {:?}", kzg_proof_timer.elapsed());
+  //KZG Commit vfy
+  let kzg_vfy_timer = Instant::now();
+  // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
+  // let rhs = pairing(&pi.into(), &(&params.s_g2() - &params.g2() * beta).into());
+  // assert_eq!(lhs, rhs);
+  let verifier_params = params.verifier_params();
+  let verifier = VerifierSHPLONK::new(&params);
+  let mut transcript_kzg_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_kzg.as_slice());
+  let a = transcript_kzg_verify.read_point().unwrap();
+
+  let beta = transcript_kzg_verify.squeeze_challenge();
+
+  let rho = transcript_kzg_verify.read_scalar().unwrap();
+
+
+  let queries = std::iter::empty()
+      .chain(Some(VerifierQuery::new_commitment(&a, beta.get_scalar(), rho)));
+
+  let msm = DualMSM::new(&params);
+  assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());
+  
+  println!("KZG vfy time: {:?}", kzg_vfy_timer.elapsed());
 }
 
 // Standalone verification

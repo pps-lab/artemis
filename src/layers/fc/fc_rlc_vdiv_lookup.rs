@@ -278,7 +278,7 @@ impl<F: PrimeField> Layer<F> for FCRLCVarDivLookupChip<F> {
         num_rows += num_rows_for_relu;
       }
     }
-    println!("#####FC num_rows: {}", num_rows);
+    //println!("#####FC num_rows: {}", num_rows);
     num_rows
   }
 }
