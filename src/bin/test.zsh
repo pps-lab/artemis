@@ -17,11 +17,11 @@ wait
 wait
 ./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack kzg true 0 24 10 halo2pngs/vgg_kzg.png > halo2logs/vgg_kzg.txt &
 wait
-./target/release/time_circuit examples/twitter/config.msgpack examples/twitter/inp1.msgpack kzg true 0 23 10 halo2pngs/twitter_kzg.png > halo2logs/twitter_kzg.txt &
+# ./target/release/time_circuit examples/twitter/config.msgpack examples/twitter/input.msgpack kzg true 0 23 10 halo2pngs/twitter_kzg.png > halo2logs/twitter_kzg.txt &
+# wait
+./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg true 0 25 13 halo2pngs/diffusion_kzg.png > halo2logs/diffusion_kzg.txt &
 wait
-./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg true 0 24 10 halo2pngs/diffusion_kzg.png > halo2logs/diffusion_kzg.txt &
-wait
-./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg true 0 26 40 halo2pngs/gpt2_kzg.png > halo2logs/gpt2_kzg.txt &
+./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg true 0 25 13 halo2pngs/gpt2_kzg.png > halo2logs/gpt2_kzg.txt &
 wait
 
 #~/../../dev/null
