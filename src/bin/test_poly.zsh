@@ -19,10 +19,10 @@ wait
 wait
 # ./target/release/time_circuit examples/twitter/config.msgpack examples/twitter/inp1.msgpack kzg false 2 23 10 halo2pngs/twitter_kzg.png > halo2logs/twitter_kzg.txt &
 # wait
-./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg false 2 25 13 halo2pngs/diffusion_kzg.png > halo2logs/diffusion_kzg.txt &
-wait
-./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg false 2 25 13 halo2pngs/gpt2_kzg.png > halo2logs/gpt2_kzg.txt &
-wait
+# ./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg false 2 25 13 halo2pngs/diffusion_kzg.png > halo2logs/diffusion_kzg.txt &
+# wait
+# ./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg false 2 25 13 halo2pngs/gpt2_kzg.png > halo2logs/gpt2_kzg.txt &
+# wait
 
 #~/../../dev/null
 # wait $pid0 $pid1 $pid2 $pid3
