@@ -39,6 +39,7 @@ use rand::Rng;
 use rand::RngCore;
 use rand_core::OsRng;
 use zkml::gadgets::square;
+use zkml::utils::proving_kzg::get_kzg_params;
 use std::ops::MulAssign;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::time::Instant;
@@ -177,7 +178,8 @@ fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAffine
 (
     col_size: u32,
     witness_size: usize,
-    l: usize
+    l: usize,
+    params: ParamsKZG<E>
 ) -> (
     //CS2_PP<E>,
     ParamsKZG<E>,
@@ -191,7 +193,7 @@ fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAffine
     Vec<E::G2>
 ) {
     let setuptimer = Instant::now();
-    let params = ParamsKZG::<E>::new(col_size);
+
     let HH = EvaluationDomain::<E::Scalar>::new(1, col_size);
     //let HH = Radix2EvaluationDomain::new(col_size).unwrap();
     let n = 2u32.pow(col_size);
@@ -517,12 +519,12 @@ fn verify1<P: Engine + Debug> (
     println!("CPLINK1: Verifier time: {:?}", verifier_timer.elapsed());
 }
 
-fn cplink (witness_size: usize, col_size: usize, l: usize) {
+fn cplink (witness_size: usize, col_size: usize, l: usize, params: ParamsKZG<Bn256>) {
     type F = <Bn256 as Engine>::Scalar;
     type P = Bn256;
     let rng = &mut OsRng;
     let size = witness_size / l;
-    let (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup::<P>(col_size as u32, witness_size, l);
+    let (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup::<P>(col_size as u32, witness_size, l, params);
     // Prover
     // input polys 
     let prover_timer = Instant::now();
@@ -563,7 +565,6 @@ fn verify<
         let mut transcript = T::init(proof);
 
         let queries = poly_coms.iter().zip(evals).zip(points).map(|((poly_com, eval), point)| VerifierQuery::new_commitment(poly_com, point, eval)).collect::<Vec<_>>();
-
 
         let queries = queries.clone();
 
@@ -668,7 +669,8 @@ fn main() {
     let witness_size: usize = args[2].parse().unwrap(); 
     assert!(witness_size < 2usize.pow(pow as u32));
     let l: usize = args[3].parse().unwrap(); 
-    cplink(witness_size, pow, l);
+    let params = get_kzg_params("./params_kzg", pow as u32);
+    cplink(witness_size, pow, l, params);
 }
 #[test]
 fn test_cplink() {
@@ -680,5 +682,6 @@ fn test_cplink() {
     //let witness_size = 10usize.pow(3);
     //let col_size = witness_size.next_power_of_two();
     //let l = 10;
-    cplink(witness_size, pow, l);
+    let params =  get_kzg_params("./params_kzg", pow as u32);
+    cplink(witness_size, pow, l, params);
 }

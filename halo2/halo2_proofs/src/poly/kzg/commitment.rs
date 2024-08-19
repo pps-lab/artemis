@@ -216,6 +216,10 @@ where
         }
         self.g2.write(writer, format)?;
         self.s_g2.write(writer, format)?;
+        
+        for el in self.g2_pows.iter() {
+            el.write(writer, format)?;
+        }
         Ok(())
     }
 
@@ -295,6 +299,9 @@ where
 
         let g2 = E::G2Affine::read(reader, format)?;
         let s_g2 = E::G2Affine::read(reader, format)?;
+        let g2_pows = (0..n)
+            .map(|_| <E::G2Affine as SerdeCurveAffine>::read(reader, format))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             k,
@@ -303,7 +310,7 @@ where
             g_lagrange,
             g2,
             s_g2,
-            g2_pows: vec![g2],
+            g2_pows,
         })
     }
 }
