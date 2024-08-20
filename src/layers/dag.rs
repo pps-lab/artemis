@@ -458,6 +458,7 @@ impl<F: PrimeField + Ord> DAGLayerChip<F> {
     }
 
     let mut final_out = vec![];
+    println!("final_out_idxes: {:?}", self.dag_config.final_out_idxes);
     for idx in self.dag_config.final_out_idxes.iter() {
       final_out.push(tensor_map.get(idx).unwrap().clone());
     }

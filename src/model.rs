@@ -6,7 +6,7 @@ use std::{
 };
 
 use halo2_proofs::{
-  circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
+  circuit::{self, AssignedCell, Layouter, SimpleFloorPlanner, Value},
   halo2curves::ff::{FromUniformBytes, PrimeField},
   plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance}, poly,
 };
@@ -72,6 +72,7 @@ pub struct ModelCircuit<F: PrimeField> {
   pub commit_before: Vec<Vec<i64>>,
   pub commit_after: Vec<Vec<i64>>,
   pub k: usize,
+  pub beta_pows: Vec<F>, 
   pub bits_per_elem: usize,
   pub inp_idxes: Vec<i64>,
   pub num_random: i64,
@@ -93,8 +94,8 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     columns_witness: &Vec<Column<Advice>>,
     columns: &Vec<Column<Advice>>,
     tensors: &BTreeMap<i64, Array<F, IxDyn>>,
-  ) -> Result<BTreeMap<i64, AssignedTensor<F>>, Error> {
-    let tensors = layouter.assign_region(
+  ) -> Result<(BTreeMap<i64, AssignedTensor<F>>, Vec<Rc<AssignedCell<F, F>>>), Error> {
+    let (tensors, flat) = layouter.assign_region(
       || "asssignment",
       |mut region| {
         let mut assigned_tensors = BTreeMap::new();
@@ -121,6 +122,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
           //   // assigned_tensors.insert(*tensor_idx, tensor);
           // }
         let mut cell_idx = 0;
+        let mut big_flat = vec![];
         for (tensor_idx, tensor) in tensors.iter() {
           let mut flat = vec![];
           for val in tensor.iter() {
@@ -134,24 +136,25 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
                 || Value::known(*val),
               )
               .unwrap();
-            flat.push(Rc::new(cell));
+            flat.push(Rc::new(cell.clone()));
+            big_flat.push(Rc::new(cell));
             cell_idx += 1;
           }
           let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
           assigned_tensors.insert(*tensor_idx, tensor);
         }
 
-        Ok(assigned_tensors)
+        Ok((assigned_tensors, big_flat))
       },
     )?;
 
-    Ok(tensors)
+    Ok((tensors, flat))
   }
 
   pub fn tensor_map_to_vec(
     &self,
     tensor_map: &BTreeMap<i64, Array<CellRc<F>, IxDyn>>,
-  ) -> Result<Vec<AssignedTensor<F>>, Error> {
+  ) -> Vec<AssignedTensor<F>> {
     let smallest_tensor = tensor_map
       .iter()
       .min_by_key(|(_, tensor)| tensor.len())
@@ -169,7 +172,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       tensors.push(tensor.clone());
     }
 
-    Ok(tensors)
+    tensors
   }
 
   pub fn assign_tensors_vec(
@@ -179,8 +182,8 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     columns_witness: &Vec<Column<Advice>>,
     columns: &Vec<Column<Advice>>,
     tensors: &BTreeMap<i64, Array<F, IxDyn>>,
-  ) -> Result<Vec<AssignedTensor<F>>, Error> {
-    let tensor_map = self
+  ) -> Result<(Vec<AssignedTensor<F>>, Vec<Rc<AssignedCell<F, F>>>), Error>  {
+    let (tensor_map, flat) = self
       .assign_tensors_map(
         layouter.namespace(|| "assign_tensors_map"),
         witness_column,
@@ -189,7 +192,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
         tensors,
       )
       .unwrap();
-    self.tensor_map_to_vec(&tensor_map)
+    Ok((self.tensor_map_to_vec(&tensor_map), flat))
   }
 
   pub fn assign_constants(
@@ -503,6 +506,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       tensors,
       dag_config,
       used_gadgets,
+      beta_pows: vec![],
       k: k_ipt as usize,
       bits_per_elem: config.bits_per_elem.unwrap_or(k_ipt as i64) as usize,
       inp_idxes: config.inp_idxes.clone(),
@@ -804,7 +808,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       .unwrap();
 
     let mut commitments = vec![];
-    let tensors = if self.commit_before.len() > 0 {
+    let (tensors, flat) = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
       //println!("commit to the tensors :)))");
       let mut tensor_map = BTreeMap::new();
@@ -835,7 +839,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         }
         assign_map.insert(*idx, tensor.clone());
       }
-      let mut remainder_tensor_map = self
+      let (mut remainder_tensor_map, flat) = self
         .assign_tensors_map(
           layouter.namespace(|| "assignment"),
           config.gadget_config.witness_column,
@@ -849,7 +853,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       tensor_map.append(&mut remainder_tensor_map);
 
       // Return the tensors
-      self.tensor_map_to_vec(&tensor_map).unwrap()
+      (self.tensor_map_to_vec(&tensor_map), vec![])
     } else {
       self
         .assign_tensors_vec(
@@ -861,46 +865,50 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         )
         .unwrap()
     };
+
     let mut rho = vec![];
+    let mut poly_coeffs = vec![];
     let mut poly_vals = vec![];
     if !config.gadget_config.witness_column {
-      poly_vals = layouter.assign_region(
-        || "poly_coeffs",
+      for val in flat {
+        poly_coeffs.push(val.clone());
+      }
+      let poly_betas = layouter.assign_region(
+        || "beta_pows",
         |mut region| {
         //println!("witness columns len: {:?}", columns.len());
-          let beta = F::ONE;
           let mut cell_idx = 0;
-          let columns = &config.gadget_config.columns_poly;
-          let mut poly = vec![];
-          let mut coeffs = vec![];
-          for tensor in tensors.iter() {
-            for val in tensor.iter() {
-              let row_idx = cell_idx / columns.len();
-              let col_idx = cell_idx % columns.len();
-              // let cell = region
-              //   .assign_advice(
-              //     || "assignment",
-              //     columns[col_idx],
-              //     row_idx,
-              //     || Value::known(beta),
-              //   )
-              //   .unwrap();
-              poly.push(val.clone());
-              coeffs.push(val.clone());
-              cell_idx += 1;
-            } 
-          }
-        Ok(vec![poly, coeffs])
+          let columns = &config.gadget_config.columns;
+          let pub_columns = &config.gadget_config.columns_public;
+          let mut betas = vec![];
+          for beta in self.beta_pows.clone() {
+            let row_idx_inst = cell_idx / pub_columns.len();
+            let col_idx_inst = cell_idx % pub_columns.len();
+            let row_idx = cell_idx / columns.len();
+            let col_idx = cell_idx % columns.len();
+            let cell = region.assign_advice(
+              || "assignment",
+              columns[col_idx],
+              row_idx,
+              || Value::known(beta),
+              )
+              .unwrap();
+            betas.push(Rc::new(cell));
+            cell_idx += 1;
+          } 
+          Ok(betas)
         }
       )?;
 
-
-      let new_vars = poly_vals[0].iter().map(|x| x.as_ref()).collect();
+      poly_vals = vec![poly_betas, poly_coeffs];
+      let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
       let new_coeffs = poly_vals[1].iter().map(|x| x.as_ref()).collect::<Vec<_>>();
       let poly_com_chip = Poly2Chip::<F>::construct(gadget_rc.clone());
       let zero = constants.get(&0).unwrap();
       //println!("coeffs len: {}", new_coeffs.len());
-      rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_vars, new_coeffs].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+      rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_betas, new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+      println!("Poly coeffs len: {}", new_coeffs.len());
+      println!("Rho: {:?}", rho);
     }
     // let cell_idx = 0;
     // for tensor in tensors {
@@ -955,27 +963,16 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut pub_layouter = layouter.namespace(|| "public");
     let mut total_idx = 0;
     let mut new_public_vals = vec![];
-    for cell in commitments.iter() {
-      pub_layouter
-        .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
-        .unwrap();
-      let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
-      new_public_vals.push(val);
-      total_idx += 1;
-    }
-
-    for tensor in result {
-      for cell in tensor.iter() {
-        pub_layouter
-          .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
-          .unwrap();
-        let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
-        new_public_vals.push(val);
-        total_idx += 1;
-      }
-    }
 
     if !config.gadget_config.witness_column {
+      for idx in 0..poly_vals[0].len() {
+        pub_layouter
+        .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
+        .unwrap();
+        let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
+        new_public_vals.push(val);
+        total_idx += 1;
+      } 
       for poly_res in rho {
         pub_layouter
         .constrain_instance(poly_res.cell(), config.public_col, total_idx)
@@ -984,17 +981,29 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         new_public_vals.push(val);
         total_idx += 1;
       }
-      //println!("Poly vals len: {}", poly_vals[0].len());
-      // for idx in 0..poly_vals[0].len() / 2 {
-      //   pub_layouter
-      //   .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
-      //   .unwrap();
-      //   let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
-      //   new_public_vals.push(val);
-      //   total_idx += 1;
-      // } 
+      println!("Poly vals len: {}", poly_vals[0].len());
     }
 
+    for cell in commitments.iter() {
+      pub_layouter
+        .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
+        .unwrap();
+      let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
+      new_public_vals.push(val);
+      total_idx += 1;
+    }
+    let curr_idx = total_idx;
+    // for tensor in result {
+    //   for cell in tensor.iter() {
+    //     pub_layouter
+    //       .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
+    //       .unwrap();
+    //     let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
+    //     new_public_vals.push(val);
+    //     total_idx += 1;
+    //   }
+    // }
+    println!("Res size: {}", total_idx - curr_idx);
     *PUBLIC_VALS.lock().unwrap() = new_public_vals;
 
     Ok(())
