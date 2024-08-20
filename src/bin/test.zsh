@@ -64,6 +64,6 @@ wait
 # cargo run --package zkml --bin cp_link --release 26 50000000 10  > 100000000_10.log &
 # wait
 
-sudo shutdown now -h
+#sudo shutdown now -h
 #~/../../dev/null
 # wait $pid0 $pid1 $pid2 $pid3
