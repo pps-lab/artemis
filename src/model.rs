@@ -985,14 +985,14 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         total_idx += 1;
       }
       //println!("Poly vals len: {}", poly_vals[0].len());
-      for idx in 0..poly_vals[0].len() / 2 {
-        pub_layouter
-        .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
-        .unwrap();
-        let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
-        new_public_vals.push(val);
-        total_idx += 1;
-      } 
+      // for idx in 0..poly_vals[0].len() / 2 {
+      //   pub_layouter
+      //   .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
+      //   .unwrap();
+      //   let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
+      //   new_public_vals.push(val);
+      //   total_idx += 1;
+      // } 
     }
 
     *PUBLIC_VALS.lock().unwrap() = new_public_vals;
