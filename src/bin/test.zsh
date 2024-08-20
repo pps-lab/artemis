@@ -18,11 +18,11 @@ wait
 ./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack kzg true 0 23 10 halo2pngs/vgg_kzg.png > halo2logs/vgg_kzg.txt &
 wait
 
-./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack kzg false 2 17 5 halo2pngs/snet_poly_kzg.png > halo2logs/snet_poly_kzg.txt &
+./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack kzg false 1 17 5 halo2pngs/snet_poly_kzg.png > halo2logs/snet_poly_kzg.txt &
 wait
-./target/release/time_circuit examples/mnist/model.msgpack examples/mnist/inp.msgpack kzg false 2 15 10 halo2pngs/mnist_poly_kzg.png > halo2logs/mnist_poly_kzg.txt &
+./target/release/time_circuit examples/mnist/model.msgpack examples/mnist/inp.msgpack kzg false 1 15 10 halo2pngs/mnist_poly_kzg.png > halo2logs/mnist_poly_kzg.txt &
 wait
-./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack kzg false 2 20 6 halo2pngs/dlrm_poly_kzg.png > halo2logs/dlrm_poly_kzg.txt &
+./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack kzg false 1 20 6 halo2pngs/dlrm_poly_kzg.png > halo2logs/dlrm_poly_kzg.txt &
 wait
 ./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack kzg false 2 23 10 halo2pngs/vgg_poly_kzg.png > halo2logs/vgg_poly_kzg.txt &
 wait

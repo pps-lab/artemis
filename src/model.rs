@@ -985,7 +985,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         total_idx += 1;
       }
       //println!("Poly vals len: {}", poly_vals[0].len());
-      for idx in 0..poly_vals[0].len(){
+      for idx in 0..poly_vals[0].len() / 2 {
         pub_layouter
         .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
         .unwrap();
