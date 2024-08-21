@@ -7,31 +7,23 @@ cargo build --release
 #mkdir params_kzg
 #mkdir params_ipa
 
-./target/release/time_circuit examples/cifar/shallownet_p.msgpack examples/mnist/inp.msgpack kzg true 0 17 10 halo2pngs/snet_pos_kzg_17_10.png > halo2logs/snet_pos_kzg_17_10.txt &
+./target/release/time_circuit examples/cifar/shallownet_p.msgpack examples/mnist/inp.msgpack kzg true 0 18 10 halo2pngs/snet_pos_kzg_18_10.png > halo2logs/snet_pos_kzg_18_10.txt &
 wait
-./target/release/time_circuit examples/cifar/mnist_p.msgpack examples/mnist/inp.msgpack kzg true 0 16 10 halo2pngs/mnist_pos_kzg_15_10.png > halo2logs/mnist_pos_kzg_16_10.txt &
+./target/release/time_circuit examples/cifar/mnist_p.msgpack examples/mnist/inp.msgpack kzg true 0 17 10 halo2pngs/mnist_pos_kzg_17_10.png > halo2logs/mnist_pos_kzg_17_10.txt &
 wait
-./target/release/time_circuit examples/cifar/dlrm_p.msgpack examples/cifar/dlrm_input.msgpack kzg true 0 20 10 halo2pngs/dlrm_pos_kzg_20_10.png > halo2logs/dlrm_pos_kzg_20_10.txt &
+./target/release/time_circuit examples/cifar/dlrm_p.msgpack examples/cifar/dlrm_input.msgpack kzg true 0 21 10 halo2pngs/dlrm_pos_kzg_21_10.png > halo2logs/dlrm_pos_kzg_21_10.txt &
 wait
-./target/release/time_circuit examples/cifar/vgg_p.msgpack examples/cifar/vgg_input.msgpack kzg true 0 24 10 halo2pngs/vgg_pos_kzg_24_10.png > halo2logs/vgg_pos_kzg_24_10.txt &
-wait
-
-./target/release/time_circuit examples/mnist/shallownet_p.msgpack examples/mnist/inp.msgpack kzg true 0 17 15 halo2pngs/snet_pos_kzg_17_15.png > halo2logs/snet_pos_kzg_17_15.txt &
-wait
-./target/release/time_circuit examples/cifar/mnist_p.msgpack examples/mnist/inp.msgpack kzg true 0 16 15 halo2pngs/mnist_pos_kzg_16_15.png > halo2logs/mnist_pos_kzg_16_15.txt &
-wait
-./target/release/time_circuit examples/cifar/dlrm_p.msgpack examples/cifar/dlrm_input.msgpack kzg true 0 20 15 halo2pngs/dlrm_pos_kzg_20_15.png > halo2logs/dlrm_pos_kzg_20_15.txt &
-wait
-./target/release/time_circuit examples/cifar/vgg_p.msgpack examples/cifar/vgg_input.msgpack kzg true 0 24 15 halo2pngs/vgg_pos_kzg_24_15.png > halo2logs/vgg_pos_kzg_24_15.txt &
+./target/release/time_circuit examples/cifar/vgg_p.msgpack examples/cifar/vgg_input.msgpack kzg true 0 25 10 halo2pngs/vgg_pos_kzg_25_10.png > halo2logs/vgg_pos_kzg_25_10.txt &
 wait
 
-./target/release/time_circuit examples/mnist/shallownet_p.msgpack examples/mnist/inp.msgpack kzg true 0 17 20 halo2pngs/snet_pos_kzg_17_20.png > halo2logs/snet_pos_kzg_16_20.txt &
+
+./target/release/time_circuit examples/mnist/shallownet_p.msgpack examples/mnist/inp.msgpack kzg true 0 18 20 halo2pngs/snet_pos_kzg_18_20.png > halo2logs/snet_pos_kzg_18_20.txt &
 wait
-./target/release/time_circuit examples/cifar/mnist_p.msgpack examples/mnist/inp.msgpack kzg true 0 16 20 halo2pngs/mnist_pos_kzg_16_20.png > halo2logs/mnist_pos_kzg_16_20.txt &
+./target/release/time_circuit examples/cifar/mnist_p.msgpack examples/mnist/inp.msgpack kzg true 0 17 20 halo2pngs/mnist_pos_kzg_17_20.png > halo2logs/mnist_pos_kzg_17_20.txt &
 wait
-./target/release/time_circuit examples/cifar/dlrm_p.msgpack examples/cifar/dlrm_input.msgpack kzg true 0 20 20 halo2pngs/dlrm_pos_kzg_20_20.png > halo2logs/dlrm_pos_kzg_20_20.txt &
+./target/release/time_circuit examples/cifar/dlrm_p.msgpack examples/cifar/dlrm_input.msgpack kzg true 0 21 20 halo2pngs/dlrm_pos_kzg_21_20.png > halo2logs/dlrm_pos_kzg_21_20.txt &
 wait
-./target/release/time_circuit examples/cifar/vgg_p.msgpack examples/cifar/vgg_input.msgpack kzg true 0 24 20 halo2pngs/vgg_pos_kzg_24_20.png > halo2logs/vgg_pos_kzg_24_20.txt &
+./target/release/time_circuit examples/cifar/vgg_p.msgpack examples/cifar/vgg_input.msgpack kzg true 0 25 20 halo2pngs/vgg_pos_kzg_25_20.png > halo2logs/vgg_pos_kzg_25_20.txt &
 wait
 # # ./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg false 2 25 13 halo2pngs/diffusion_kzg.png > halo2logs/diffusion_kzg.txt &
 # # wait
