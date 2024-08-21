@@ -14,7 +14,7 @@ use halo2_proofs::{
 use halo2curves::{bn256::pairing, pairing::Engine, group::Curve};
 use rand_core::OsRng;
 
-use crate::{model::ModelCircuit, utils::helpers::{get_public_values, poly_divmod}};
+use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_values, poly_divmod}};
 
 pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
   let rng = rand::thread_rng();
@@ -62,7 +62,7 @@ pub fn verify_kzg(
   );
 }
 
-pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
+pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool) {
   let rng = rand::thread_rng();
   let start = Instant::now();
 
@@ -125,15 +125,16 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
     "Time elapsed in filling circuit: {:?}",
     fill_duration - pk_duration
   );
-
   let mut public_vals = get_public_values();
-  let mut pub_val_idx = 0;
-  for beta in beta_pows {
-    public_vals[pub_val_idx] = beta;
-    pub_val_idx += 1;
+  
+  if !commit_poly {
+    let mut pub_val_idx = 0;
+    for beta in beta_pows {
+      public_vals[pub_val_idx] = beta;
+      pub_val_idx += 1;
+    }
+    public_vals[pub_val_idx] = rho;
   }
-  public_vals[pub_val_idx] = rho;
-
 
   // Convert public vals to serializable format
   let public_vals_u8: Vec<u8> = public_vals
