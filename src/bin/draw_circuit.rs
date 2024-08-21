@@ -9,18 +9,18 @@ fn main() {
   let config_fname = std::env::args().nth(1).expect("config file path");
   let inp_fname = std::env::args().nth(2).expect("input file path");
   let kzg_or_ipa = std::env::args().nth(3).expect("kzg or ipa");
-  let witness_column_str = std::env::args().nth(4).expect("witness col");
-  let fname = std::env::args().nth(6).expect("graphic file name");
-  //let num_cols = std::env::args().nth(5).expect("num of cols").parse().unwrap();
-  //println!("{}", witness_column_str);
-  let witness_column = witness_column_str.parse().unwrap();
+  let commit = std::env::args().nth(4).expect("witness col").parse().unwrap();
+  let ell: usize = std::env::args().nth(5).expect("ell for poly circuit").parse().unwrap();
+  let k_ipt: usize = std::env::args().nth(6).expect("num of rows").parse().unwrap();
+  let c_ipt: usize = std::env::args().nth(7).expect("num of columns").parse().unwrap();
+  let fname = std::env::args().nth(8).expect("graphic file name");
 
   if kzg_or_ipa != "kzg" && kzg_or_ipa != "ipa" {
     panic!("Must specify kzg or ipa");
   }
 
   if kzg_or_ipa == "kzg" {
-    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, witness_column, 0, 17, 10);
+    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, commit, ell, k_ipt, c_ipt);
     let k = circuit.k;
     let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
     use plotters::prelude::*;
