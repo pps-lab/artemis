@@ -132,7 +132,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>) {
     public_vals[pub_val_idx] = beta;
     pub_val_idx += 1;
   }
-  public_vals[pub_val_idx] = rho + Fr::ONE;
+  public_vals[pub_val_idx] = rho;
 
 
   // Convert public vals to serializable format
