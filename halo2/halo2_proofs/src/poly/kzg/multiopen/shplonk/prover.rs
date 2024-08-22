@@ -202,7 +202,7 @@ where
             .map(|(poly, power_of_v)| poly * power_of_v)
             .reduce(|acc, poly| acc + &poly)
             .unwrap();
-
+        
         let h = self.params.commit(&h_x, Blind::default()).to_affine();
         transcript.write_point(h)?;
         let u: ChallengeU<_> = transcript.squeeze_challenge_scalar();
@@ -280,7 +280,6 @@ where
 
         let h = self.params.commit(&h_x, Blind::default()).to_affine();
         transcript.write_point(h)?;
-
         Ok(())
     }
 }

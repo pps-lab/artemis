@@ -51,6 +51,7 @@ pub struct GadgetConfig {
   pub columns: Vec<Column<Advice>>,
   pub columns_witness: Vec<Column<Advice>>,
   pub columns_poly: Vec<Column<Advice>>,
+  pub columns_poly_public: Vec<Column<Instance>>,
   pub fixed_columns: Vec<Column<Fixed>>,
   pub columns_public: Vec<Column<Instance>>,
   pub selectors: HashMap<GadgetType, Vec<Selector>>,

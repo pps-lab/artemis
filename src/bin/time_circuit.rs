@@ -31,9 +31,9 @@ fn main() {
     let root = root
         .titled("Example Circuit Layout", ("sans-serif", 60))
         .unwrap();
-
+  
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
-    time_circuit_kzg(circuit, commit);
+    time_circuit_kzg(circuit, commit, ell);
   } else {
     let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, commit, ell, k_ipt, c_ipt);
     let k = circuit.k;

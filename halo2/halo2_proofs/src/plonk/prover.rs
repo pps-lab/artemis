@@ -71,7 +71,6 @@ where
             return Err(Error::InvalidInstances);
         }
     }
-
     // Hash verification key into transcript
     pk.vk.hash_into(transcript)?;
 
@@ -147,7 +146,6 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
     stop_measure(start);
-
     #[derive(Clone)]
     struct AdviceSingle<C: CurveAffine, B: Basis> {
         pub advice_polys: Vec<Polynomial<C::Scalar, B>>,
@@ -406,7 +404,6 @@ where
                 }
                 stop_measure(start);
             }
-
             for (index, phase) in meta.challenge_phase.iter().enumerate() {
                 if current_phase == *phase {
                     let existing =
@@ -427,7 +424,6 @@ where
 
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
-
     let start = start_measure("lookups", false);
     let lookups: Vec<Vec<lookup::prover::Permuted<Scheme::Curve>>> = instance
         .iter()
@@ -456,7 +452,6 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
     stop_measure(start);
-
     // Sample beta challenge
     let beta: ChallengeBeta<_> = transcript.squeeze_challenge_scalar();
 
@@ -484,7 +479,7 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
     stop_measure(start);
-
+    
     let start = start_measure("lookups.commit_product", false);
     let lookups: Vec<Vec<lookup::prover::Committed<Scheme::Curve>>> = lookups
         .into_iter()
@@ -552,7 +547,7 @@ where
 
     let x: ChallengeX<_> = transcript.squeeze_challenge_scalar();
     let xn = x.pow(&[params.n() as u64, 0, 0, 0]);
-
+    
     let start = start_measure("instance eval_polynomial", false);
     if P::QUERY_INSTANCE {
         // Compute and hash instance evals for each circuit instance
@@ -598,7 +593,7 @@ where
         }
     }
     stop_measure(start);
-
+    
     // Compute and hash fixed evals (shared across all circuit instances)
     let start = start_measure("fixed eval_polynomial", false);
     let fixed_evals: Vec<_> = meta

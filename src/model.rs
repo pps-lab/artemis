@@ -477,6 +477,17 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       }
     };
 
+    let mut params_len = 0;
+    for (idx, tensor) in tensors.iter() {
+      for val in tensor {
+        params_len += 1;
+      }
+    }
+
+    while params_len % ell != 0 {
+      params_len += 1;
+    }
+
     // The input lookup is always used
     used_gadgets.insert(GadgetType::InputLookup);
     let used_gadgets = Arc::new(used_gadgets);
@@ -506,7 +517,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       tensors,
       dag_config,
       used_gadgets,
-      beta_pows: vec![],
+      beta_pows: vec![F::ZERO; params_len],
       k: k_ipt as usize,
       bits_per_elem: config.bits_per_elem.unwrap_or(k_ipt as i64) as usize,
       inp_idxes: config.inp_idxes.clone(),
@@ -610,8 +621,11 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       //   .collect::<Vec<_>>();
     } else {
       //println!("Poly ell: {:?}", (gadget_config.poly_ell * 2 + 2));
-      gadget_config.columns_poly = (0..(gadget_config.poly_ell * 2 + 2))
+      gadget_config.columns_poly = (0..(gadget_config.poly_ell + 2))
       .map(|_| meta.advice_column())
+      .collect::<Vec<_>>();
+      gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
+      .map(|_| meta.instance_column())
       .collect::<Vec<_>>();
       gadget_config = Poly2Chip::configure(meta, gadget_config);
     }
@@ -633,6 +647,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     gadget_config.columns = columns;
 
     let public_col = meta.instance_column();
+
     meta.enable_equality(public_col);
     gadget_config.columns_public = vec![public_col];
 
@@ -868,45 +883,19 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
     let mut rho = vec![];
     let mut poly_coeffs = vec![];
-    let mut poly_vals = vec![];
+    //let mut poly_vals = vec![];
     if !config.gadget_config.witness_column {
       for val in flat {
         poly_coeffs.push(val.clone());
       }
-      let poly_betas = layouter.assign_region(
-        || "beta_pows",
-        |mut region| {
-        //println!("witness columns len: {:?}", columns.len());
-          let mut cell_idx = 0;
-          let columns = &config.gadget_config.columns;
-          let pub_columns = &config.gadget_config.columns_public;
-          let mut betas = vec![];
-          for beta in self.beta_pows.clone() {
-            let row_idx_inst = cell_idx / pub_columns.len();
-            let col_idx_inst = cell_idx % pub_columns.len();
-            let row_idx = cell_idx / columns.len();
-            let col_idx = cell_idx % columns.len();
-            let cell = region.assign_advice(
-              || "assignment",
-              columns[col_idx],
-              row_idx,
-              || Value::known(beta),
-              )
-              .unwrap();
-            betas.push(Rc::new(cell));
-            cell_idx += 1;
-          } 
-          Ok(betas)
-        }
-      )?;
 
-      poly_vals = vec![poly_betas, poly_coeffs];
-      let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
-      let new_coeffs = poly_vals[1].iter().map(|x| x.as_ref()).collect::<Vec<_>>();
-      let poly_com_chip = Poly2Chip::<F>::construct(gadget_rc.clone());
+      //poly_vals = vec![poly_betas, poly_coeffs];
+      //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
+      let new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+      let poly_com_chip = Poly2Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone());
       let zero = constants.get(&0).unwrap();
       //println!("coeffs len: {}", new_coeffs.len());
-      rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_betas, new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+      rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
       println!("Poly coeffs len: {}", new_coeffs.len());
       println!("Rho: {:?}", rho);
     }
@@ -965,14 +954,14 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut new_public_vals = vec![];
 
     if !config.gadget_config.witness_column {
-      for idx in 0..poly_vals[0].len() {
-        pub_layouter
-        .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
-        .unwrap();
-        let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
-        new_public_vals.push(val);
-        total_idx += 1;
-      } 
+      // for idx in 0..poly_vals[0].len() {
+      //   pub_layouter
+      //   .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
+      //   .unwrap();
+      //   let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
+      //   new_public_vals.push(val);
+      //   total_idx += 1;
+      // } 
       for poly_res in rho {
         pub_layouter
         .constrain_instance(poly_res.cell(), config.public_col, total_idx)
@@ -981,7 +970,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
         new_public_vals.push(val);
         total_idx += 1;
       }
-      println!("Poly vals len: {}", poly_vals[0].len());
+      println!("Poly vals len: {}", poly_coeffs.len());
     }
 
     for cell in commitments.iter() {
@@ -993,16 +982,16 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       total_idx += 1;
     }
     let curr_idx = total_idx;
-    // for tensor in result {
-    //   for cell in tensor.iter() {
-    //     pub_layouter
-    //       .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
-    //       .unwrap();
-    //     let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
-    //     new_public_vals.push(val);
-    //     total_idx += 1;
-    //   }
-    // }
+    for tensor in result {
+      for cell in tensor.iter() {
+        pub_layouter
+          .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
+          .unwrap();
+        let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
+        new_public_vals.push(val);
+        total_idx += 1;
+      }
+    }
     println!("Res size: {}", total_idx - curr_idx);
     *PUBLIC_VALS.lock().unwrap() = new_public_vals;
 

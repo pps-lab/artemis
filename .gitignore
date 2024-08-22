@@ -31,7 +31,8 @@ testing/data
 
 # log
 *.txt
-
+*.png
+*.log
 # bench file
 summary.msgpack
 

@@ -401,7 +401,9 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
 ) -> Result<ExpressionPair<C::Scalar>, Error> {
     let blinding_factors = pk.vk.cs.blinding_factors();
     let usable_rows = params.n() as usize - (blinding_factors + 1);
-
+    // for value in &table_expression.values {
+    //     println!("Table: {:?}", value);
+    // }
     let mut permuted_input_expression: Vec<C::Scalar> = input_expression.to_vec();
     permuted_input_expression.truncate(usable_rows);
 
@@ -461,10 +463,12 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
                 *table_value = *input_value;
                 // Remove one instance of input_value from leftover_table_map
                 if let Some(count) = leftover_table_map.get_mut(&ScalarWrapper::new(*input_value)) {
+                    //println!("Yes: {:?}", input_value);
                     assert!(*count > 0);
                     *count -= 1;
                     None
                 } else {
+                    println!("No: {:?}", input_value);
                     // Return error if input_value not found
                     Some(Err(Error::ConstraintSystemFailure))
                 }
