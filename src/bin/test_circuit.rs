@@ -11,7 +11,7 @@ fn main() {
   let config_fname = std::env::args().nth(1).expect("config file path");
   let inp_fname = std::env::args().nth(2).expect("input file path");
   let witness_column = std::env::args().nth(3).expect("witness_col").parse().unwrap();
-  let poly_ell: usize = std::env::args().nth(3).expect("poly ell").parse().unwrap();
+  let poly_chunks: usize = std::env::args().nth(3).expect("poly chunks").parse().unwrap();
   let config: ModelMsgpack = load_model_msgpack(&config_fname, &inp_fname, witness_column);
 
   let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, witness_column, 0, 17, 10);

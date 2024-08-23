@@ -10,7 +10,7 @@ fn main() {
   let inp_fname = std::env::args().nth(2).expect("input file path");
   let kzg_or_ipa = std::env::args().nth(3).expect("kzg or ipa");
   let commit = std::env::args().nth(4).expect("witness col").parse().unwrap();
-  let ell: usize = std::env::args().nth(5).expect("ell for poly circuit").parse().unwrap();
+  let chunks: usize = std::env::args().nth(5).expect("chunks for poly circuit").parse().unwrap();
   let k_ipt: usize = std::env::args().nth(6).expect("num of rows").parse().unwrap();
   let c_ipt: usize = std::env::args().nth(7).expect("num of columns").parse().unwrap();
   let fname = std::env::args().nth(8).expect("graphic file name");
@@ -22,7 +22,7 @@ fn main() {
   }
 
   if kzg_or_ipa == "kzg" {
-    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, commit, ell, k_ipt, c_ipt);
+    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
     let k = circuit.k;
     println!("K: {}", k);
     use plotters::prelude::*;
@@ -33,9 +33,9 @@ fn main() {
         .unwrap();
   
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
-    time_circuit_kzg(circuit, commit, ell);
+    time_circuit_kzg(circuit, commit, chunks);
   } else {
-    let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, commit, ell, k_ipt, c_ipt);
+    let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
     let k = circuit.k;
 
     use plotters::prelude::*;

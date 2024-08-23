@@ -135,7 +135,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   let mut public_vals = vec![vec![]; poly_col_len + 1];
   public_vals[poly_col_len] = get_public_values();
   //let mut betas = vec![vec![]; poly_col_len];
-  if !commit_poly {
+  if commit_poly {
     for i in 0..poly_col_len {
       for j in 0..beta_pows.len() / poly_col_len {
         public_vals[i].push(beta_pows[i + j * poly_col_len] )

@@ -306,21 +306,12 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     Ok(constants)
   }
 
-  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, ell: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
-    let mut config = load_model_msgpack(config_file, inp_file, witness_column);
-    // if num_cols > 0 {
-    //   config.num_cols = num_cols;
-    // }
-    // if (num_cols > 16) {
-    //   config.k -=1 ;
-    // }
-    // let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
-    // gadget_config.poly_ell = ell;
-    // gadget_config.k = k_ipt;
-    Self::generate_from_msgpack(config, true, witness_column, ell, k_ipt, c_ipt)
+  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
+    let config = load_model_msgpack(config_file, inp_file, witness_column);
+    Self::generate_from_msgpack(config, true, witness_column, chunks, k_ipt, c_ipt)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool, ell: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -484,7 +475,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       }
     }
 
-    while params_len % ell != 0 {
+    while params_len % chunks != 0 {
       params_len += 1;
     }
 
@@ -509,7 +500,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
       commit_after: config.commit_after.clone().unwrap_or(vec![]),
       use_selectors: config.use_selectors.unwrap_or(true),
       num_bits_per_elem: config.bits_per_elem.unwrap_or(config.k),
-      poly_ell: ell,
+      poly_ell: chunks,
       ..cloned_gadget
     };
 
@@ -620,7 +611,6 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       //   .map(|_| meta.advice_column())
       //   .collect::<Vec<_>>();
     } else {
-      //println!("Poly ell: {:?}", (gadget_config.poly_ell * 2 + 2));
       gadget_config.columns_poly = (0..(gadget_config.poly_ell + 2))
       .map(|_| meta.advice_column())
       .collect::<Vec<_>>();
@@ -884,7 +874,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut rho = vec![];
     let mut poly_coeffs = vec![];
     //let mut poly_vals = vec![];
-    if !config.gadget_config.witness_column {
+    if config.gadget_config.witness_column {
       for val in flat {
         poly_coeffs.push(val.clone());
       }
@@ -953,7 +943,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut total_idx = 0;
     let mut new_public_vals = vec![];
 
-    if !config.gadget_config.witness_column {
+    if config.gadget_config.witness_column {
       // for idx in 0..poly_vals[0].len() {
       //   pub_layouter
       //   .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
