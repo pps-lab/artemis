@@ -24,14 +24,12 @@ fn main() {
   if kzg_or_ipa == "kzg" {
     let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
     let k = circuit.k;
-    println!("K: {}", k);
     use plotters::prelude::*;
     let root = BitMapBackend::new(&fname, (1000, 3000)).into_drawing_area();
     root.fill(&WHITE).unwrap();
     let root = root
         .titled("Example Circuit Layout", ("sans-serif", 60))
         .unwrap();
-  
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
     time_circuit_kzg(circuit, commit, chunks);
   } else {

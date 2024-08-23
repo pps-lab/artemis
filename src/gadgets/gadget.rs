@@ -46,7 +46,7 @@ pub enum GadgetType {
 
 #[derive(Clone, Debug, Default)]
 pub struct GadgetConfig {
-  pub witness_column: bool,
+  pub poly_commit: bool,
   pub used_gadgets: Arc<BTreeSet<GadgetType>>,
   pub columns: Vec<Column<Advice>>,
   pub columns_witness: Vec<Column<Advice>>,

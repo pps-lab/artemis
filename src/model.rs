@@ -311,7 +311,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     Self::generate_from_msgpack(config, true, witness_column, chunks, k_ipt, c_ipt)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, poly_commit: bool, chunks: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<F> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -467,17 +467,19 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
         final_out_idxes,
       }
     };
-
     let mut params_len = 0;
-    for (idx, tensor) in tensors.iter() {
-      for val in tensor {
+    if poly_commit {
+      for (idx, tensor) in tensors.iter() {
+        for val in tensor {
+          params_len += 1;
+        }
+      }
+  
+      while params_len % chunks != 0 {
         params_len += 1;
       }
     }
 
-    while params_len % chunks != 0 {
-      params_len += 1;
-    }
 
     // The input lookup is always used
     used_gadgets.insert(GadgetType::InputLookup);
@@ -486,7 +488,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> ModelCircuit<F> {
     let cloned_gadget = gadget.lock().unwrap().clone();
 
     *gadget.lock().unwrap() = GadgetConfig {
-      witness_column,
+      poly_commit,
       scale_factor: config.global_sf as u64,
       shift_min_val: -(config.global_sf * config.global_sf * (1 << 17)),
       div_outp_min_val: -(1 << (k_ipt as usize - 1)),
@@ -606,11 +608,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
   fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
-    if gadget_config.witness_column {
-      // gadget_config.columns_witness = (0..1)
-      //   .map(|_| meta.advice_column())
-      //   .collect::<Vec<_>>();
-    } else {
+    if gadget_config.poly_commit {
       gadget_config.columns_poly = (0..(gadget_config.poly_ell + 2))
       .map(|_| meta.advice_column())
       .collect::<Vec<_>>();
@@ -847,7 +845,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       let (mut remainder_tensor_map, flat) = self
         .assign_tensors_map(
           layouter.namespace(|| "assignment"),
-          config.gadget_config.witness_column,
+          config.gadget_config.poly_commit,
           &config.gadget_config.columns_witness,
           &config.gadget_config.columns,
           &assign_map,
@@ -863,7 +861,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       self
         .assign_tensors_vec(
           layouter.namespace(|| "assignment"),
-          config.gadget_config.witness_column,
+          config.gadget_config.poly_commit,
           &config.gadget_config.columns_witness,
           &config.gadget_config.columns,
           &self.tensors,
@@ -874,7 +872,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut rho = vec![];
     let mut poly_coeffs = vec![];
     //let mut poly_vals = vec![];
-    if config.gadget_config.witness_column {
+    if config.gadget_config.poly_commit {
       for val in flat {
         poly_coeffs.push(val.clone());
       }
@@ -943,15 +941,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     let mut total_idx = 0;
     let mut new_public_vals = vec![];
 
-    if config.gadget_config.witness_column {
-      // for idx in 0..poly_vals[0].len() {
-      //   pub_layouter
-      //   .constrain_instance(poly_vals[0][idx].cell(), config.public_col, total_idx)
-      //   .unwrap();
-      //   let val = convert_to_bigint(poly_vals[0][idx].value().map(|x| x.to_owned()));
-      //   new_public_vals.push(val);
-      //   total_idx += 1;
-      // } 
+    if config.gadget_config.poly_commit {
       for poly_res in rho {
         pub_layouter
         .constrain_instance(poly_res.cell(), config.public_col, total_idx)

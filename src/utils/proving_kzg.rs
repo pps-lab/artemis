@@ -89,9 +89,11 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   }
   println!("Poly coeff len: {}", poly_coeff.len());
   let mut beta_pows = (0..poly_coeff.len()).map(|i| beta.pow([i as u64])).collect::<Vec<_>>();
-  while beta_pows.len() % poly_col_len != 0 {
-    //inputs.push(&zero);
-    beta_pows.push(Fr::ZERO);
+  if commit_poly {
+      while beta_pows.len() % poly_col_len != 0 {
+      //inputs.push(&zero);
+      beta_pows.push(Fr::ZERO);
+    }
   }
   println!("Beta pows len: {}", beta_pows.len());
   circuit.beta_pows = beta_pows.clone();
