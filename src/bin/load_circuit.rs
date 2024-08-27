@@ -33,6 +33,6 @@ fn main() {
     // halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
   } else {
     let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, false, 0, 17, 10);
-    time_circuit_ipa(circuit);
+    //time_circuit_ipa(circuit);
   }
 }

@@ -178,7 +178,7 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
         || e,
       )
       .unwrap();
-
+    //println!("beta vec val: {:?}", beta_vec);
     Ok(vec![res])
   }
 

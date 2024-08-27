@@ -44,6 +44,6 @@ fn main() {
         .unwrap();
 
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
-    time_circuit_ipa(circuit);
+    time_circuit_ipa(circuit, commit, chunks);
   }
 }

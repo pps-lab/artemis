@@ -384,7 +384,18 @@ fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCur
     println!("CPLINK1: Prover time: {:?}", cplink1_timer.elapsed());
     (chats, ds, cprimes, wcom, bigc, d, x, zz)
 }
+// fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug> (
 
+// ) -> (
+//     Vec<E::G1>,
+//     Vec<E::G1>,
+//     Vec<E::G1>,
+//     E::G1,
+//     E::G1,
+//     E::G1,
+//     E::Scalar,
+//     E::Scalar
+// ) 
 fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBytes<64>, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug + MultiMillerLoop>(
     thetas: Vec<E::Scalar>, 
     HH: EvaluationDomain<E::Scalar>, 
