@@ -49,6 +49,9 @@ use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use core::fmt::Debug;
 use zkml::utils::helpers::poly_divmod;
+use rayon::slice::ParallelSlice;
+use rayon::iter::ParallelIterator;
+use rayon::iter::IntoParallelIterator;
 
 #[derive(Clone, Debug)]
 pub struct CS2_PP<P: Engine> {
@@ -110,6 +113,38 @@ pub fn gen_pows<Fr: WithSmallOrderMulGroup<3>>(alpha: Fr, t: usize) -> Vec<Fr> {
     powers_of_alpha
 }
 
+fn fast_product_parallel<F: WithSmallOrderMulGroup<3>>(polys: &[Polynomial<F, Coeff>]) -> Polynomial<F, Coeff> {
+    if polys.is_empty() {
+        return Polynomial::from_coefficients_vec(vec![F::ONE]);
+    }
+
+    // Group polynomials into chunks and compute products within each chunk
+    let chunk_size = (polys.len() as f64).sqrt() as usize + 1;
+    let chunk_products: Vec<_> = polys
+        .par_chunks(chunk_size)
+        .map(|chunk| chunk.iter().fold(Polynomial::from_coefficients_vec(vec![F::ONE]), |a, b| a * b))
+        .collect();
+
+    // Combine chunk products
+    chunk_products.into_par_iter().reduce(
+        || Polynomial::from_coefficients_vec(vec![F::ONE]),
+        |a, b| a * &b
+    )
+}
+
+fn fast_product<F: WithSmallOrderMulGroup<3>>(polys: &[Polynomial<F, Coeff>]) -> Polynomial<F, Coeff> {
+    if polys.is_empty() {
+        return Polynomial::from_coefficients_vec(vec![F::ONE]);
+    }
+    if polys.len() == 1 {
+        return polys[0].clone();
+    }
+    let mid = polys.len() / 2;
+    let left = fast_product(&polys[..mid]);
+    let right = fast_product(&polys[mid..]);
+    left* &right
+}
+
 pub fn vanishing_on_set<F: Field + WithSmallOrderMulGroup<3>>(set: &[F]) -> Polynomial<F, Coeff> {
     let mut vanishing = Polynomial::<F, Coeff>{
         values: vec![F::ONE],
@@ -130,8 +165,8 @@ pub fn vanishing_on_set<F: Field + WithSmallOrderMulGroup<3>>(set: &[F]) -> Poly
         iter += 1;
     }
     polys.push(vanishing);
-    vanishing = polys.iter().fold(Polynomial::<F, Coeff>::from_coefficients_vec(vec![F::ONE]), |a, b| a * b);
-    
+    //vanishing = polys.iter().fold(Polynomial::<F, Coeff>::from_coefficients_vec(vec![F::ONE]), |a, b| a * b);
+    vanishing = fast_product_parallel(&polys);
     vanishing
 }
 

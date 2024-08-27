@@ -33,6 +33,8 @@ testing/data
 *.txt
 *.png
 *.log
+*.svg 
+*.tex
 # bench file
 summary.msgpack
 
