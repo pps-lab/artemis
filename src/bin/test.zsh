@@ -6,7 +6,7 @@ trap "kill 0" EXIT
 cargo +nightly build --release
 #mkdir params_kzg
 #mkdir params_ipa
-
+#./target/release/time_circuit examples/twitter/config.msgpack examples/twitter/input.msgpack kzg false 0 17 5 pngs/twitter_nocom_kzg.png
 # shallownet
 ./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack kzg false 0 17 5 pngs/snet_nocom_kzg.png > logs/snet_nocom_kzg.txt &
 wait

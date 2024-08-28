@@ -608,10 +608,13 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
   fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
+    gadget_config.columns_poly = (0..(gadget_config.poly_ell))
+    .map(|_| meta.advice_column())
+    .collect::<Vec<_>>();
     if gadget_config.poly_commit {
-      gadget_config.columns_poly = (0..(gadget_config.poly_ell + 2))
-      .map(|_| meta.advice_column())
-      .collect::<Vec<_>>();
+      gadget_config.columns_poly.push(meta.advice_column());
+      gadget_config.columns_poly.push(meta.advice_column());
+      
       gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
       .map(|_| meta.instance_column())
       .collect::<Vec<_>>();
@@ -871,12 +874,36 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
     let mut rho = vec![];
     let mut poly_coeffs = vec![];
+    for val in flat {
+      poly_coeffs.push(val.clone());
+    }
     //let mut poly_vals = vec![];
-    if config.gadget_config.poly_commit {
-      for val in flat {
-        poly_coeffs.push(val.clone());
-      }
+    // let output = layouter
+    // .assign_region(
+    //   || "Poly rows",
+    //   |mut region| {
+    //     let mut cur_bias = bias.clone();
+    //     for i in 0..coeffs.len() / self.num_inputs_per_row() {
+    //       let weights =
+    //         coeffs[i * self.num_inputs_per_row()..(i + 1) * self.num_inputs_per_row()].to_vec();
+    //       cur_bias = self
+    //         .op_row_region(&mut region, i, &vec![weights], &vec![zero, &cur_bias])
+    //         .unwrap()[0]
+    //         .clone();
+    //     }
+    //     Ok(cur_bias)
+    //   },
+    // )
+    // .unwrap();
+    // for i in 0..poly_coeffs.len() / config.gadget_config.poly_ell {
+    //   let weights =
+    //     poly_coeffs[i * config.gadget_config.poly_ell..(i + 1) * config.gadget_config.poly_ell].to_vec();
+    //   for idx in 0..config.gadget_config.poly_ell {
+    //     poly_coeffs[idx].copy_advice("Witness", region, column, offset)
+    //   }
+    // }
 
+    if config.gadget_config.poly_commit {
       //poly_vals = vec![poly_betas, poly_coeffs];
       //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
       let new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
