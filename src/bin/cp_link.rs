@@ -851,7 +851,7 @@ fn main() {
     assert!(witness_size < 2usize.pow(pow as u32));
     let l: usize = args[3].parse().unwrap(); 
     let params = get_kzg_params("./params_kzg", pow as u32);
-    cplink(witness_size, pow, l, params);
+    cplink_lite(witness_size, pow, l, params);
 }
 #[test]
 fn test_cplink() {
@@ -865,4 +865,18 @@ fn test_cplink() {
     //let l = 10;
     let params =  get_kzg_params("./params_kzg", pow as u32);
     cplink(witness_size, pow, l, params);
+}
+
+#[test]
+fn test_cplink_lite() {
+    let args: Vec<String> = env::args().collect();
+    let pow: usize = 15;
+    let witness_size: usize = 10000 ;
+    assert!(witness_size < 2usize.pow(pow as u32));
+    let l: usize = 1;
+    //let witness_size = 10usize.pow(3);
+    //let col_size = witness_size.next_power_of_two();
+    //let l = 10;
+    let params =  get_kzg_params("./params_kzg", pow as u32);
+    cplink_lite(witness_size, pow, l, params);
 }
