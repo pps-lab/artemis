@@ -6,8 +6,9 @@ use std::{
 };
 
 use ff::{Field, WithSmallOrderMulGroup};
+use group::cofactor::CofactorCurveAffine;
 use halo2_proofs::{
-  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, halo2curves::bn256::{Bn256, Fr, G1Affine}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
+  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, halo2curves::bn256::{Bn256, Fr, G1Affine}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }, SerdeFormat
 };
@@ -75,31 +76,51 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
     circuit_duration
   );
   let mut circuit = circuit.clone();
-  let beta = Fr::random(&mut OsRng);
-  //let beta = Fr::from(2);
-  //let beta = Fr::ONE;
+
+  //let alpha = Fr::random(rand::thread_rng());
+  let alpha = Fr::ONE;
+  let beta = Fr::random(rand::thread_rng());
+  //let beta = Fr::one();
+
   let mut tensor_len = 0usize;
   let mut poly_coeff = vec![];
   for (tensor_idx, tensor) in circuit.tensors.clone() {
     for val in tensor.clone() {
-      tensor_len += 1;
       poly_coeff.push(val);
+      if tensor_len == 0 {
+        println!("Value: {:?}", val);
+      }
+      tensor_len += 1;
     }
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
-  println!("Poly coeff len: {}", poly_coeff.len());
-  let mut beta_pows = (0..poly_coeff.len()).map(|i| beta.pow([i as u64])).collect::<Vec<_>>();
+  println!("Poly coeff 0: {:?}", poly_coeff[0]);
+
+  let mut beta_pows = vec![];
+  for i in 0..poly_col_len {
+    beta_pows.extend((0..(poly_coeff.len() + poly_col_len - 1) / poly_col_len).map(|idx| beta.pow([idx as u64]) * alpha.pow([i as u64])).collect::<Vec<_>>());
+  }
+
   if commit_poly {
-      while beta_pows.len() % poly_col_len != 0 {
+    while beta_pows.len() % poly_col_len != 0 {
       //inputs.push(&zero);
       beta_pows.push(Fr::ZERO);
     }
+    while poly_coeff.len() % poly_col_len != 0  {
+      poly_coeff.push(Fr::ZERO);
+    }
   }
-  println!("Beta pows len: {}", beta_pows.len());
+
+  //println!("Beta pows len: {}", beta_pows.len());
   circuit.beta_pows = beta_pows.clone();
-  
-  let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff);
-  let rho = poly.evaluate(beta);
+  //let poly_coeffs = 
+  let polys = (0..poly_col_len).map(|x| {
+    let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
+    poly
+  }).collect::<Vec<_>>();
+
+  let poly_sum = polys.iter().fold(Polynomial::zero(), |a, b| a+b);
+  let rho = poly_sum.evaluate(beta);
   let blind = Blind::default();
 
   let vk_circuit = circuit.clone();
@@ -128,44 +149,45 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
 
   let fill_duration = start.elapsed();
   let proof_circuit = circuit.clone();
-  if commit_poly {
-    let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]; poly_col_len + 1]).unwrap();
-  } else {
-    let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]]).unwrap();
-  }
-
-
+  // if commit_poly {
+  //   let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]; poly_col_len + 1]).unwrap();
+  // } else {
+  //   let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]]).unwrap();
+  // }
+  let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]]).unwrap();
   println!(
     "Time elapsed in filling circuit: {:?}",
     fill_duration - pk_duration
   );
   let mut public_vals = vec![vec![]];
-  public_vals[0] = get_public_values();
   //let mut betas = vec![vec![]; poly_col_len];
-  if commit_poly {
-    public_vals = vec![vec![]; poly_col_len + 1];
-    public_vals[poly_col_len] = get_public_values();
-    for i in 0..poly_col_len {
-      for j in 0..beta_pows.len() / poly_col_len {
-        public_vals[i].push(beta_pows[i + j * poly_col_len] )
-      }
-    }
-    let mut pub_val_idx = 0;
-    // for beta in beta_pows {
-    //   public_vals[pub_val_idx] = beta;
-    //   pub_val_idx += 1;
-    // }
-    public_vals[poly_col_len][pub_val_idx] = rho;
-  }
+
+  // if commit_poly {
+  //   public_vals = vec![vec![]; poly_col_len + 1];
+  //   public_vals[poly_col_len] = get_public_values();
+  //   for i in 0..poly_col_len {
+  //     for j in 0..beta_pows.len() / poly_col_len {
+  //       public_vals[i].push(beta_pows[j + i * beta_pows.len() / poly_col_len]);
+  //     }
+  //   }
+
+  //   //public_vals[0] = vec![Fr::ONE; 1 << circuit.k];
+  //   let mut pub_val_idx = 0;
+  //   // for beta in beta_pows {
+  //   //   public_vals[pub_val_idx] = beta;
+  //   //   pub_val_idx += 1;
+  //   // }
+  //   public_vals[poly_col_len][pub_val_idx] = rho;
+  // } else {
+  //   public_vals[0] = get_public_values();
+  // }
+  public_vals[0] = get_public_values();
+  // if commit_poly {
+  //   public_vals[0][0] = rho;
+  // }
+
+
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
-  // Convert public vals to serializable format
-  // let public_vals_u8: Vec<u8> = public_vals
-  //   .iter()
-  //   .map(|v: &Fr| v.to_bytes().to_vec())
-  //   .flatten()
-  //   .collect();
-  // //let public_vals_u8_size = serialize(&public_vals_u8, "public_vals");
-  // println!("Public vals size: {} bytes", public_vals_u8_size);
 
   let proof_duration_start = start.elapsed();
   let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
@@ -189,11 +211,6 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   let proof_duration = start.elapsed();
   println!("Proving time: {:?}", proof_duration - proof_duration_start);
 
-  // let proof_size = serialize(&proof, "proof");
-  // let proof = std::fs::read("proof").unwrap();
-
-  //println!("Proof size: {} bytes", proof_size);
-
   let strategy = SingleStrategy::new(&params);
   let transcript_read = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
@@ -216,12 +233,12 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
 
   let mut transcript_kzg_proof = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-  let poly_com: G1Affine = params.commit(&poly, blind).to_affine();
-
+  let poly_coms: Vec<G1Affine> = polys.iter().map(|poly| params.commit(&poly, blind).to_affine()).collect::<Vec<_>>();
+  let poly_com_sum = poly_coms.iter().fold(G1Affine::identity(), |a, b| (a + b).into());
   let queries = [
     ProverQuery {
         point: beta,
-        poly: &poly,
+        poly: &poly_sum,
         blind,
     }
   ].to_vec();
@@ -247,7 +264,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   let mut transcript_kzg_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_kzg.as_slice());
 
   let queries = std::iter::empty()
-      .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
+      .chain(Some(VerifierQuery::new_commitment(&poly_com_sum, beta, rho)));
 
   let msm = DualMSM::new(&params);
   assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());

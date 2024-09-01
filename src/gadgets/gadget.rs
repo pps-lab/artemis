@@ -52,6 +52,7 @@ pub struct GadgetConfig {
   pub columns_witness: Vec<Column<Advice>>,
   pub columns_poly: Vec<Column<Advice>>,
   pub columns_poly_public: Vec<Column<Instance>>,
+  pub columns_poly_fixed: Vec<Column<Fixed>>,
   pub fixed_columns: Vec<Column<Fixed>>,
   pub columns_public: Vec<Column<Instance>>,
   pub selectors: HashMap<GadgetType, Vec<Selector>>,
@@ -77,6 +78,7 @@ pub struct GadgetConfig {
 pub fn convert_to_u64<F: PrimeField>(x: &F) -> u64 {
   let big = BigUint::from_bytes_le(x.to_repr().as_ref());
   let big_digits = big.to_u64_digits();
+  //println!("Big digits: {:?}", big_digits);
   if big_digits.len() > 2 {
     //println!("big_digits: {:?}", big_digits);
   }
@@ -85,6 +87,7 @@ pub fn convert_to_u64<F: PrimeField>(x: &F) -> u64 {
   } else if big_digits.len() == 0 {
     0
   } else {
+    println!("Problem val: {:?}", x);
     panic!();
   }
 }

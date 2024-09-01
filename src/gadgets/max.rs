@@ -113,7 +113,7 @@ impl<F: PrimeField> Gadget<F> for MaxChip<F> {
     }
 
     let min_val_pos = F::from((-self.config.shift_min_val) as u64);
-
+    //println!("Min val: {:?}", min_val_pos);
     let mut outp = vec![];
 
     let chunks: Vec<&[&AssignedCell<F, F>]> = inp.chunks(self.num_outputs_per_row()).collect();

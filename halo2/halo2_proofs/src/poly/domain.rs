@@ -14,7 +14,7 @@ use group::{
     ff::{BatchInvert, Field, PrimeField},
     Group,
 };
-
+use std::time::{Duration, Instant};
 use std::{env::var, marker::PhantomData};
 
 /// TEMP
@@ -289,13 +289,17 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     /// This function will panic if the provided vector is not the correct
     /// length.
     pub fn lagrange_to_coeff(&self, mut a: Polynomial<F, LagrangeCoeff>) -> Polynomial<F, Coeff> {
-        assert_eq!(a.values.len(), 1 << self.k);
+        let mut a_extended = a.clone();
+        let diff = self.n as usize - a.values.len();
+        //println!("K: {}, diff: {}", 1 << self.k, diff);
+        a_extended.values.extend(vec![F::ZERO; diff].iter());
+        assert_eq!(a_extended.values.len(), 1 << self.k);
 
         // Perform inverse FFT to obtain the polynomial in coefficient form
-        self.ifft(&mut a.values, self.omega_inv, self.k, self.ifft_divisor);
+        self.ifft(&mut a_extended.values, self.omega_inv, self.k, self.ifft_divisor);
 
         Polynomial {
-            values: a.values,
+            values: a_extended.values,
             _marker: PhantomData,
         }
     }
@@ -672,6 +676,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         rotations: I,
     ) -> Vec<F> {
         let mut results;
+        let timer = Instant::now();
         {
             let rotations = rotations.clone().into_iter();
             results = Vec::with_capacity(rotations.size_hint().1.unwrap_or(0));
@@ -682,13 +687,16 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             }
             results.iter_mut().batch_invert();
         }
+        let first = timer.elapsed();
+        //println!("li ONE: {:?}", first);
 
         let common = (xn - F::ONE) * self.barycentric_weight;
         for (rotation, result) in rotations.into_iter().zip(results.iter_mut()) {
             let rotation = Rotation(rotation);
             *result = self.rotate_omega(*result * common, rotation);
         }
-
+        let second = timer.elapsed();
+        //println!("li two: {:?}", second);
         results
     }
 

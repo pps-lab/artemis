@@ -22,7 +22,7 @@ use crate::{
     poseidon_commit::{PoseidonCommitChip, L, RATE, WIDTH},
   },
   gadgets::{
-    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
+    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, poly_3::Poly3Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
   },
   layers::{
     arithmetic::{add::AddChip, div_var::DivVarChip, mul::MulChip, sub::SubChip},
@@ -608,17 +608,18 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
   fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
-    gadget_config.columns_poly = (0..(gadget_config.poly_ell))
+    gadget_config.columns_poly = (0..(2 * gadget_config.poly_ell))
     .map(|_| meta.advice_column())
     .collect::<Vec<_>>();
     if gadget_config.poly_commit {
       gadget_config.columns_poly.push(meta.advice_column());
       gadget_config.columns_poly.push(meta.advice_column());
+      gadget_config.columns_poly.push(meta.advice_column());
       
-      gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
-      .map(|_| meta.instance_column())
-      .collect::<Vec<_>>();
-      gadget_config = Poly2Chip::configure(meta, gadget_config);
+      // gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
+      // .map(|_| meta.instance_column())
+      // .collect::<Vec<_>>();
+      gadget_config = Poly3Chip::configure(meta, gadget_config);
     }
     for col in gadget_config.columns_witness.iter() {
       meta.enable_equality(*col);
@@ -877,37 +878,13 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     for val in flat {
       poly_coeffs.push(val.clone());
     }
-    //let mut poly_vals = vec![];
-    // let output = layouter
-    // .assign_region(
-    //   || "Poly rows",
-    //   |mut region| {
-    //     let mut cur_bias = bias.clone();
-    //     for i in 0..coeffs.len() / self.num_inputs_per_row() {
-    //       let weights =
-    //         coeffs[i * self.num_inputs_per_row()..(i + 1) * self.num_inputs_per_row()].to_vec();
-    //       cur_bias = self
-    //         .op_row_region(&mut region, i, &vec![weights], &vec![zero, &cur_bias])
-    //         .unwrap()[0]
-    //         .clone();
-    //     }
-    //     Ok(cur_bias)
-    //   },
-    // )
-    // .unwrap();
-    // for i in 0..poly_coeffs.len() / config.gadget_config.poly_ell {
-    //   let weights =
-    //     poly_coeffs[i * config.gadget_config.poly_ell..(i + 1) * config.gadget_config.poly_ell].to_vec();
-    //   for idx in 0..config.gadget_config.poly_ell {
-    //     poly_coeffs[idx].copy_advice("Witness", region, column, offset)
-    //   }
-    // }
 
     if config.gadget_config.poly_commit {
       //poly_vals = vec![poly_betas, poly_coeffs];
       //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
-      let new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
-      let poly_com_chip = Poly2Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone());
+      let mut new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+      //let new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
+      let poly_com_chip = Poly3Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone(), vec![F::ONE; config.gadget_config.poly_ell]);
       let zero = constants.get(&0).unwrap();
       //println!("coeffs len: {}", new_coeffs.len());
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();

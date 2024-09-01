@@ -28,11 +28,11 @@ wait
 wait
 
 # resnet
-./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack kzg true 2 19 15 pngs/cifar10_poly_kzg.png > logs/cifar10_poly_kzg.txt &
+./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack kzg true 1 19 15 pngs/cifar10_poly_kzg.png > logs/cifar10_poly_kzg.txt &
 wait
 ./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack kzg false 0 19 15 pngs/cifar10_nocom_kzg.png > logs/cifar10_nocom_kzg.txt &
 wait
-./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack ipa true 2 19 15 pngs/cifar10_poly_ipa.png > logs/cifar10_poly_ipa.txt &
+./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack ipa true 1 19 15 pngs/cifar10_poly_ipa.png > logs/cifar10_poly_ipa.txt &
 wait
 ./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack ipa false 0 19 15 pngs/cifar10_nocom_ipa.png > logs/cifar10_nocom_ipa.txt &
 wait

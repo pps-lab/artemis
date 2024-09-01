@@ -9,7 +9,7 @@ use super::{
 };
 use crate::arithmetic::{compute_inner_product, CurveAffine};
 use crate::poly::commitment::{CommitmentScheme, Verifier};
-use crate::poly::VerificationStrategy;
+use crate::poly::{Polynomial, VerificationStrategy};
 use crate::poly::{
     commitment::{Blind, Params, MSM},
     Guard, VerifierQuery,
@@ -206,7 +206,8 @@ where
             .flat_map(|instance| instance.iter().map(|instance| instance.len()))
             .max_by(Ord::cmp)
             .unwrap_or_default();
-        //println!("Fourthhh step: {:?}", timer.elapsed());
+        println!("Fourthhh step: {:?}", timer.elapsed());
+        println!("Min: {} / Max: {} rotation, instance len: {}", min_rotation, max_rotation, max_instance_len);
         let timer = Instant::now();
         let l_i_s = &vk.domain.l_i_range(
             *x,
@@ -223,8 +224,14 @@ where
                     .iter()
                     .map(|(column, rotation)| {
                         let instances = instances[column.index()];
+                        //println!("Rotation: {:?}", rotation);
+                        //let poly = vk.domain.lagrange_to_coeff(Polynomial::from_coefficients_vec(instances.into()));
                         let offset = (max_rotation - rotation.0) as usize;
-                        compute_inner_product(instances, &l_i_s[offset..offset + instances.len()])
+                        //println!("Instances: {:?}", instances.iter().fold(Scheme::Scalar::ZERO, |a, b| a + b));
+                        let ip = compute_inner_product(instances, &l_i_s[offset..offset + instances.len()]);
+                        //let ip = poly.evaluate(vk.domain.get_omega());
+                        //println!("ip {:?}", ip);
+                        ip
                     })
                     .collect::<Vec<_>>()
             })
