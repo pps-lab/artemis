@@ -24,6 +24,7 @@ poly_cols=0
 cplink=false
 poly_com=false
 
+
 case "$name" in
     mnist)
         cols=10
@@ -34,7 +35,7 @@ case "$name" in
         ;;
     
     resnet18)
-        cols=8
+        cols=15
         rows=19
         name='cifar10'
         poly_cols=1
@@ -95,6 +96,8 @@ case "$name" in
         ;;
 esac
 
+name_ipt=$name
+
 case "$cp_snark" in
     nocom)
         cp_link=false
@@ -112,7 +115,7 @@ case "$cp_snark" in
         # e.g., python resnet_script.py
         ;;
     
-    cp_link)
+    cp_link+)
         cp_link=true
         poly_com=false
         echo "Running DLRM task..."
@@ -129,15 +132,13 @@ case "$cp_snark" in
         # e.g., python mobilenet_script.py
         ;;
 
-    cp_link_slow)
+    cp_link)
         cp_link=true
         poly_com=false
         echo "Running DLRM task..."
         # Add DLRM-specific commands here
         # e.g., python dlrm_script.py
         ;;
-
-    
     *)
         echo "Error: Unknown case '$case'"
         echo "Available cases: mnist, resnet, dlrm, mobilenet, vgg, gpt2, diffusion"
@@ -145,4 +146,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$1_input.msgpack $pc_type false $poly_cols $rows $cols false $num_runs $dir
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type false $poly_cols $rows $cols false $num_runs $dir
