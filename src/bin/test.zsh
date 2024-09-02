@@ -120,7 +120,7 @@ case "$cp_snark" in
     poseidon)
         cp_link=false
         poly_com=false
-        name=name+'_p'
+        name=$name'_p'
         echo "Running MobileNet task..."
         # Add MobileNet-specific commands here
         # e.g., python mobilenet_script.py
