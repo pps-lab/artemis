@@ -99,7 +99,7 @@ esac
 name_ipt=$name
 
 case "$cp_snark" in
-    nocom)
+    no_com)
         cp_link=false
         poly_com=false
         poly_cols=0
