@@ -40,7 +40,7 @@ pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   params
 }
 
-pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_len: usize) {
+pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String) {
   let mut rng = &mut rand::thread_rng();
   let start = Instant::now();
 
@@ -49,7 +49,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
   let empty_circuit = circuit.clone();
   let mut proof_circuit = circuit.clone();
 
-  let params = get_ipa_params("./params_ipa", degree);
+  let params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree);
 
   let circuit_duration = start.elapsed();
   println!(
@@ -180,22 +180,26 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
     fd.metadata().unwrap().len()
   };
   println!("Proof size: {} bytes", proof_size);
-
-  let strategy = SingleStrategy::new(&params);
-  let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-  assert!(
-    verify_proof(
-      &params,
-      pk.get_vk(),
-      strategy,
-      &[public_vals_slice.as_slice()],
-      &mut transcript
-    )
-    .is_ok(),
-    "proof did not verify"
-  );
-  let verify_duration = start.elapsed();
-  println!("Verifying time: {:?}", verify_duration - proof_duration);
+  let mut verifying_times = vec![];
+  for i in 0..num_runs {
+    let verification = Instant::now();
+    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+    let strategy = SingleStrategy::new(&params);
+    assert!(
+      verify_proof(
+        &params,
+        pk.get_vk(),
+        strategy,
+        &[public_vals_slice.as_slice()],
+        &mut transcript
+      )
+      .is_ok(),
+      "proof did not verify"
+    );
+    let verify_duration = verification.elapsed();
+    verifying_times.push(verify_duration);
+    println!("Verifying time: {:?}", verify_duration);
+  }
 
   let blind = Blind(Fp::ZERO);
   let poly_coms: Vec<EqAffine> = polys.iter().map(|poly| params.commit(&poly, blind).into()).collect();

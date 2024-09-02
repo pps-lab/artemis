@@ -1,9 +1,6 @@
 use core::num;
 use std::{
-  fs::File,
-  io::{BufReader, Write},
-  path::Path,
-  time::{Duration, Instant},
+  fs::File, io::{BufReader, Write}, path, path::Path, time::{Duration, Instant}
 };
 use crate::{utils::helpers::{cplink1_lite, powers, vanishing_on_set, verify1_lite}};
 use ff::{Field, WithSmallOrderMulGroup};
@@ -23,6 +20,7 @@ use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_va
 pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
   let rng = rand::thread_rng();
   let path = format!("{}/{}.params", params_dir, degree);
+  println!("Path: {}", path);
   let params_path = Path::new(&path);
   if File::open(&params_path).is_err() {
     let params = ParamsKZG::<Bn256>::setup(degree, rng);
@@ -66,12 +64,12 @@ pub fn verify_kzg(
   );
 }
 
-pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize) {
+pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String) {
   let rng = rand::thread_rng();
   let start = Instant::now();
 
   let degree = circuit.k as u32;
-  let params = get_kzg_params("./params_kzg", degree);
+  let params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree);
 
   let circuit_duration = start.elapsed();
   println!(
@@ -339,7 +337,7 @@ pub fn verify_circuit_kzg(
   public_vals_fname: &str,
 ) {
   let degree = circuit.k as u32;
-  let params = get_kzg_params("./params_kzg", degree);
+  let params = get_kzg_params("~/params_kzg", degree);
   println!("Loaded the parameters");
 
   let vk = VerifyingKey::read::<BufReader<File>, ModelCircuit<Fr>>(

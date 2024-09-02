@@ -3,19 +3,21 @@ set -xe
 trap "exit" INT TERM
 trap "kill 0" EXIT
 
-cargo +nightly build --release
-mkdir -p results
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
 # arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus']
 # arg4: num_runs - int
+# arg5: code directory
 # example: ./test.zsh mnist kzg nocom 5
 
 name="$1"
 pc_type="$2"
 cp_snark="$3"
 num_runs="$4"
+dir="$5"
 
+cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
+mkdir -p results
 cols=0
 rows=0
 poly_cols=0
@@ -31,9 +33,10 @@ case "$name" in
         # e.g., python mnist_script.py
         ;;
     
-    cifar10)
-        cols=15
+    resnet18)
+        cols=8
         rows=19
+        name='cifar10'
         poly_cols=1
         echo "Running ResNet task..."
         # Add ResNet-specific commands here
@@ -142,4 +145,4 @@ case "$cp_snark" in
         ;;
 esac
 
-./target/release/time_circuit examples/cifar/$name.msgpack examples/cifar/$1_input.msgpack $pc_type false $poly_cols $rows $cols false $num_runs
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$1_input.msgpack $pc_type false $poly_cols $rows $cols false $num_runs $dir
