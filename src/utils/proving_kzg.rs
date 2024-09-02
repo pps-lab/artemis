@@ -1,20 +1,23 @@
+use core::num;
 use std::{
   fs::File,
   io::{BufReader, Write},
   path::Path,
-  time::Instant,
+  time::{Duration, Instant},
 };
-
+use crate::{utils::helpers::{cplink1_lite, powers, vanishing_on_set, verify1_lite}};
 use ff::{Field, WithSmallOrderMulGroup};
 use group::cofactor::CofactorCurveAffine;
 use halo2_proofs::{
-  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, halo2curves::bn256::{Bn256, Fr, G1Affine}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
+  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, halo2curves::bn256::{Bn256, Fr, G1Affine}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }, SerdeFormat
 };
 use halo2curves::{bn256::pairing, pairing::Engine, group::Curve};
+use rand::thread_rng;
 use rand_core::OsRng;
 
+use csv::Writer;
 use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_values, poly_divmod}};
 
 pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
@@ -63,7 +66,7 @@ pub fn verify_kzg(
   );
 }
 
-pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize) {
+pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize) {
   let rng = rand::thread_rng();
   let start = Instant::now();
 
@@ -95,13 +98,19 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
   println!("Poly coeff 0: {:?}", poly_coeff[0]);
-
-  let mut beta_pows = vec![];
-  for i in 0..poly_col_len {
-    beta_pows.extend((0..(poly_coeff.len() + poly_col_len - 1) / poly_col_len).map(|idx| beta.pow([idx as u64]) * alpha.pow([i as u64])).collect::<Vec<_>>());
+  let mut polys = vec![Polynomial::from_coefficients_vec(poly_coeff.clone())];
+  if poly_col_len > 0 {
+    polys = (0..poly_col_len).map(|x| {
+      let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
+      poly
+    }).collect::<Vec<_>>();
   }
 
   if commit_poly {
+    let mut beta_pows = vec![];
+    for i in 0..poly_col_len {
+      beta_pows.extend((0..(poly_coeff.len() + poly_col_len - 1) / poly_col_len).map(|idx| beta.pow([idx as u64]) * alpha.pow([i as u64])).collect::<Vec<_>>());
+    }  
     while beta_pows.len() % poly_col_len != 0 {
       //inputs.push(&zero);
       beta_pows.push(Fr::ZERO);
@@ -109,16 +118,13 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
     while poly_coeff.len() % poly_col_len != 0  {
       poly_coeff.push(Fr::ZERO);
     }
+  
+    circuit.beta_pows = beta_pows.clone();
   }
 
   //println!("Beta pows len: {}", beta_pows.len());
-  circuit.beta_pows = beta_pows.clone();
-  //let poly_coeffs = 
-  let polys = (0..poly_col_len).map(|x| {
-    let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
-    poly
-  }).collect::<Vec<_>>();
 
+  //let poly_coeffs = 
   let poly_sum = polys.iter().fold(Polynomial::zero(), |a, b| a+b);
   let rho = poly_sum.evaluate(beta);
   let blind = Blind::default();
@@ -182,9 +188,9 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   //   public_vals[0] = get_public_values();
   // }
   public_vals[0] = get_public_values();
-  // if commit_poly {
-  //   public_vals[0][0] = rho;
-  // }
+  if commit_poly {
+    public_vals[0][0] = rho;
+  }
 
 
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
@@ -209,23 +215,55 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   .unwrap();
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
-  println!("Proving time: {:?}", proof_duration - proof_duration_start);
-
+  let mut proving_time = proof_duration - proof_duration_start;
+  //println!("Proving time: {:?}", proof_duration - proof_duration_start);
+  let mut proof_size = proof.len();
+  println!("Proof size: {}", proof.len());
   let strategy = SingleStrategy::new(&params);
   let transcript_read = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+  let mut verifying_time = vec![];
+  for i in 0..num_runs {
+    let vfy_timer = Instant::now();
+    println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
+    println!("Rho: {:?}", rho);
+    verify_kzg(
+      &params,
+      &pk.get_vk(),
+      strategy.clone(),
+      &public_vals_slice,
+      transcript_read.clone(),
+    );
+    let verify_duration = vfy_timer.elapsed();
+    //println!("Verifying time: {:?}", verify_duration - proof_duration);
+    verifying_time.push(verify_duration);
+  }
 
-  println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
-  println!("Rho: {:?}", rho);
-  verify_kzg(
-    &params,
-    &pk.get_vk(),
-    strategy,
-    &public_vals_slice,
-    transcript_read,
-  );
-  let verify_duration = start.elapsed();
-  println!("Verifying time: {:?}", verify_duration - proof_duration);
-  
+  //CPLink proof: 
+  if cp_link {
+    println!("Polys len: {}", polys.len());
+    let domain = EvaluationDomain::<Fr>::new(1, params.k());
+    let domain_vals = (0..poly_coeff.len() / poly_col_len).map(|i| domain.get_omega().pow([i as u64])).collect::<Vec<_>>();
+    // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
+    let z = vanishing_on_set(&domain_vals);
+    //let z = Polynomial::from_coefficients_vec(vec![Fr::one()]);
+    let z_com = params.commit_g2(&z);
+    //println!("poly sum: {:?}", poly_sum);
+    //println!("z: {:?}", z);
+    for poly in &polys {
+      let (q, mut uhat) = poly_divmod(poly, &z);   
+      uhat = poly.clone();
+      let chat = params.commit_g1(&uhat);
+      let polycom = params.commit_g1(&poly);
+      println!("Three");
+      let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&poly, &chat, &polycom, &z, &poly, &params, &domain);
+      proving_time += cplink_time;
+      for i in 0..num_runs {
+        verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+      }
+
+    }
+  }
+
   // KZG Commit proof
   let kzg_proof_timer = Instant::now();
 
@@ -233,7 +271,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
 
   let mut transcript_kzg_proof = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-  let poly_coms: Vec<G1Affine> = polys.iter().map(|poly| params.commit(&poly, blind).to_affine()).collect::<Vec<_>>();
+  let poly_coms: Vec<G1Affine> = polys.iter().map(|poly| params.commit(poly, blind).to_affine()).collect::<Vec<_>>();
   let poly_com_sum = poly_coms.iter().fold(G1Affine::identity(), |a, b| (a + b).into());
   let queries = [
     ProverQuery {
@@ -251,9 +289,10 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
       .unwrap();
 
   let proof_kzg = transcript_kzg_proof.finalize();
-
+  proof_size += proof_kzg.len();
   //let pi = params.commit(&q, blind);
   println!("KZG proof time: {:?}", kzg_proof_timer.elapsed());
+  proving_time += kzg_proof_timer.elapsed();
   //KZG Commit vfy
   let kzg_vfy_timer = Instant::now();
   // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
@@ -270,6 +309,26 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());
 
   println!("KZG vfy time: {:?}", kzg_vfy_timer.elapsed());
+
+  println!("Proving time: {:?}", proving_time);
+  println!("Verifying time: {:?}", verifying_time);
+
+  // Create a file to write the CSV to
+  let file = File::create("output.csv").unwrap();
+
+  // Create a CSV writer
+  let mut wtr = Writer::from_writer(file);
+
+  // Write the header row
+  wtr.write_record(&["Prover time", "Verifier time", "Proof size"]).unwrap();
+  // Write some rows of data
+  let proving_time_str = format!("{:?}", proving_time);
+  let verifying_time_str = format!("{:?}", verifying_time);
+  wtr.write_record(&[proving_time_str, verifying_time_str, proof_size.to_string()]).unwrap();
+  // Flush and finish writing
+  wtr.flush().unwrap();
+
+  println!("CSV file created successfully.");
 }
 
 // Standalone verification

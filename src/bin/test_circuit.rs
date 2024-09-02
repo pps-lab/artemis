@@ -13,7 +13,6 @@ fn main() {
   let witness_column = std::env::args().nth(3).expect("witness_col").parse().unwrap();
   let poly_chunks: usize = std::env::args().nth(3).expect("poly chunks").parse().unwrap();
   let config: ModelMsgpack = load_model_msgpack(&config_fname, &inp_fname, witness_column);
-
   let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, witness_column, 0, 17, 10);
 
   let _prover = MockProver::run(config.k.try_into().unwrap(), &circuit, vec![vec![]]).unwrap();

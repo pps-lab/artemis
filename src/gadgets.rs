@@ -22,3 +22,4 @@ pub mod nonlinear;
 pub mod poly;
 pub mod poly_2;
 pub mod poly_3;
+pub mod poly_4;

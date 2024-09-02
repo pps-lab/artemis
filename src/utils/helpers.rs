@@ -1,10 +1,16 @@
+use std::time::Duration;
+use std::{marker::PhantomData, time::Instant};
+use std::fmt::Debug;
 use ff::{Field, WithSmallOrderMulGroup};
+use group::Curve;
 use halo2_proofs::{
-  circuit::{AssignedCell, Value},
-  halo2curves::ff::PrimeField, poly::{Coeff, Polynomial},
+  circuit::{AssignedCell, Value}, halo2curves::ff::PrimeField, helpers::SerdeCurveAffine, poly::{kzg::commitment::ParamsKZG, Coeff, EvaluationDomain, Polynomial}
 };
+use halo2curves::pairing::Engine;
 use ndarray::{Array, IxDyn};
 use num_bigint::BigUint;
+use rand_core::OsRng;
+use rayon::{iter::{IntoParallelIterator, ParallelIterator}, slice::ParallelSlice};
 
 use crate::{gadgets::gadget::convert_to_u128, model::PUBLIC_VALS};
 
@@ -53,6 +59,181 @@ pub fn print_assigned_arr<F: PrimeField>(
   }
 }
 
+pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug> (
+  u: &Polynomial<E::Scalar, Coeff>,
+  chat: &E::G1,
+  bigc: &E::G1,
+  z: &Polynomial<E::Scalar, Coeff>,
+  poly: &Polynomial<E::Scalar, Coeff>,
+  params: &ParamsKZG<E>,
+  //ck: CS2_PP<E>,
+  HH: &EvaluationDomain<E::Scalar>,
+) -> (
+  E::G1,
+  E::G1,
+  E::G1,
+  E::G1,
+  E::G1,
+  E::G1,
+  E::Scalar,
+  E::Scalar,
+  Duration
+) {
+  // let chat = params.commit_g1(&u);
+  // let bigc = params.commit_g1(&poly);
+  let cplink1_timer = Instant::now();
+  let qus_timer = Instant::now();
+  let HH_vals: Vec<E::Scalar> = powers(HH.get_omega()).take(10).collect();
+
+  let rng = OsRng;
+  let (uhat, q_small) = {
+      //let (q, r) = uprimes[i].clone().divide_with_q_and_r(&zs[i].clone()).unwrap();
+      let (q, r) = poly_divmod(&u, &z);  
+      // u = q * z + r
+      // chat = d_small * z_com + cprime
+      println!("Diff: {:?}", (q.clone() *z + &r - u).is_zero() );
+      (r, q)
+  };
+
+  //println!("Uhat: {:?}", uhat);
+  println!("Diff: {:?}", poly_divmod(&(uhat.clone() - poly), &z).1.is_zero());
+
+  //let bigqu_timer = Instant::now();
+  let sum = uhat.clone();
+
+  let mut vanishing = vec![E::Scalar::ZERO; HH.get_n() as usize + 1];
+  vanishing[0] = -E::Scalar::ONE;
+  vanishing[HH.get_n() as usize] = E::Scalar::ONE;
+  //let vanishing_poly = HH.coeff_from_vec(vanishing);
+
+  let q = poly.clone() - &sum;
+  //let (q, r) = q.divide_with_q_and_r(&zhats[l]).unwrap();
+  let (q, r) = poly_divmod(&q, &z);
+  assert!(r.is_zero(), "R value: {:?}, Q value: {:?}\n, ", r, q);
+
+  let gamma = E::Scalar::ZERO;
+  let o = E::Scalar::ZERO;
+  let oprime = Polynomial::from_coefficients_vec(vec![E::Scalar::ZERO]);
+
+  let cprime = {
+      //let uhatcom = eval_on_pnt_in_grp::<E::G1, E>(&uhats[i], &ck.pws_g1);
+      let uhatcom = params.commit_g1(&uhat);
+      //let oprimecom = eval_on_pnt_in_grp::<E::G1, E>(&oprimes[i], &ck.pws_rando);
+      let oprimecom = params.commit_g1(&oprime);
+      uhatcom + oprimecom
+  };
+
+  let d_small = {
+      //let qcom = eval_on_pnt_in_grp::<E::G1, E>(&qs[i], &ck.pws_g1);
+      let qcom = params.commit_g1(&q_small);
+      //let gammacom = eval_on_pnt_in_grp::<E::G1, E>(&Polynomial::from_coefficients_vec(vec![gammas[i]]), &ck.pws_rando);
+      let gammacom = params.commit_g1(&Polynomial::from_coefficients_vec(vec![gamma]));
+      qcom - gammacom
+  };
+
+  let beta = Polynomial::<E::Scalar, Coeff>::zero();
+  //let d = eval_on_pnt_in_grp::<E::G1, E>(&q, &ck.pws_g1) + eval_on_pnt_in_grp::<E::G1, E>(&beta, &ck.pws_rando);
+  let d = params.commit_g1(&q) + params.commit_g1(&beta);
+  //println!("Commitment time: {:?}", commit_timer.elapsed());
+
+  let x = E::Scalar::random(&mut OsRng);
+  let mut osum = Polynomial::<E::Scalar, Coeff>::zero();
+  osum = osum + &(Polynomial::from_coefficients_vec(vec![o]));
+
+  let otilde = Polynomial::zero() - &(beta + &osum);
+  let zz = otilde.evaluate(x);
+  let (w, rem) = (otilde - &Polynomial::from_coefficients_vec(vec![zz])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-x, E::Scalar::ONE])).unwrap();
+  //let wcom = eval_on_pnt_in_grp::<E::G1, E>(&w, &ck.pws_rando);
+  let wcom = params.commit_g1(&w);
+  let proving_time = cplink1_timer.elapsed();
+  println!("CPLINK1: Prover time: {:?}", cplink1_timer.elapsed());
+  (*chat, d_small, cprime, wcom, *bigc, d, x, zz, proving_time)
+}
+
+pub fn verify1_lite<P: Engine + Debug> (
+  cprime: P::G1,
+  chat: P::G1,
+  d_small: P::G1,
+  params: ParamsKZG<P>,
+  z_com: P::G2,
+  wcom: P::G1,
+  bigc: P::G1,
+  d: P::G1,
+  x: P::Scalar,
+  z: P::Scalar,
+) -> Duration {
+  let verifier_timer = Instant::now();
+  // First CPlink1 check:
+  // chat = d_small * z + cprime
+  // 
+  let term1 = P::pairing(&chat.to_affine(), &params.g2());
+  let term2 = P::pairing(&d_small.to_affine(), &z_com.to_affine());
+  let term3 = P::pairing(&cprime.to_affine(), &params.g2());
+  assert_eq!(term1, term2 + term3);
+
+  // Second CPLink1 check:
+  let term1 = P::pairing(&wcom.to_affine(), &params.commit_g2(&Polynomial::from_coefficients_vec(vec![-x, P::Scalar::ONE])).to_affine());
+  let term2 = P::pairing(&bigc.to_affine(), &params.g2());
+  let term3 = P::pairing(&d.to_affine(), &z_com.to_affine());
+
+  let term4 = P::pairing(&cprime.to_affine(), &params.g2());
+
+  let term5 = P::pairing(&params.commit_g1(&Polynomial::from_coefficients_vec(vec![z])).to_affine(), &params.s_g2());
+
+  let lhs = term1 + term3 + term4 + term5;
+  let rhs = term2;
+  assert_eq!(lhs, rhs);
+  println!("CPLINK1: Verifier time: {:?}", verifier_timer.elapsed());
+  verifier_timer.elapsed()
+}
+
+fn fast_product_parallel<F: WithSmallOrderMulGroup<3>>(polys: &[Polynomial<F, Coeff>]) -> Polynomial<F, Coeff> {
+  if polys.is_empty() {
+      return Polynomial::from_coefficients_vec(vec![F::ONE]);
+  }
+
+  // Group polynomials into chunks and compute products within each chunk
+  let chunk_size = (polys.len() as f64).sqrt() as usize + 1;
+  let chunk_products: Vec<_> = polys
+      .par_chunks(chunk_size)
+      .map(|chunk| chunk.iter().fold(Polynomial::from_coefficients_vec(vec![F::ONE]), |a, b| a * b))
+      .collect();
+
+  // Combine chunk products
+  chunk_products.into_par_iter().reduce(
+      || Polynomial::from_coefficients_vec(vec![F::ONE]),
+      |a, b| a * &b
+  )
+}
+
+pub fn powers<F: Field>(base: F) -> impl Iterator<Item = F> {
+  std::iter::successors(Some(F::ONE), move |power| Some(base * power))
+}
+
+pub fn vanishing_on_set<F: Field + WithSmallOrderMulGroup<3>>(set: &[F]) -> Polynomial<F, Coeff> {
+  let mut vanishing = Polynomial::<F, Coeff>{
+      values: vec![F::ONE],
+      _marker: PhantomData,
+  };
+
+  let mut iter = 0;
+  let mut polys = vec![];
+  for point in set {
+      vanishing = vanishing.naive_mul(&Polynomial::<F, Coeff>{
+          values: vec![-*point, F::ONE],
+          _marker: PhantomData,
+      });
+      if iter % 1000 == 0 {
+          polys.push(vanishing);
+          vanishing = Polynomial::<F, Coeff>::from_coefficients_vec(vec![F::ONE]);
+      }
+      iter += 1;
+  }
+  polys.push(vanishing);
+  //vanishing = polys.iter().fold(Polynomial::<F, Coeff>::from_coefficients_vec(vec![F::ONE]), |a, b| a * b);
+  vanishing = fast_product_parallel(&polys);
+  vanishing
+}
 // Get the public values
 pub fn get_public_values<F: PrimeField>() -> Vec<F> {
   let mut public_vals = vec![];
@@ -195,9 +376,12 @@ fn poly_recip<F: Field + WithSmallOrderMulGroup<3>>(p: &Polynomial<F, Coeff>) ->
 }
 /// Fast polynomial division u(x) / v(x).
 pub fn poly_divmod<F: Field + WithSmallOrderMulGroup<3>>(u: &Polynomial<F, Coeff>, v: &Polynomial<F, Coeff>) -> (Polynomial<F, Coeff>, Polynomial<F, Coeff>) {
+
   let m = poly_deg(u);
   let n = poly_deg(v);
-
+  if m < n {
+    return (Polynomial::zero(), u.clone())
+  }
   // Ensure deg(v) is one less than some power of 2
   let nd = (n + 1).next_power_of_two() - 1 - n;
   let ue = poly_scale(u, nd as isize);

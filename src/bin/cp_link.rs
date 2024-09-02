@@ -97,7 +97,7 @@ pub fn eval_on_pnt_in_grp2<G: Curve, E: Engine<G2 = G> + Debug>(
     comm
 }
 
-fn powers<F: Field>(base: F) -> impl Iterator<Item = F> {
+pub fn powers<F: Field>(base: F) -> impl Iterator<Item = F> {
     std::iter::successors(Some(F::ONE), move |power| Some(base * power))
 }
 
@@ -386,7 +386,9 @@ fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCur
 }
 
 fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug> (
-    uprime: Polynomial<E::Scalar, Coeff>,
+    u: Polynomial<E::Scalar, Coeff>,
+    chat: E::G1,
+    bigc: E::G1,
     z: Polynomial<E::Scalar, Coeff>,
     poly: Polynomial<E::Scalar, Coeff>,
     params: ParamsKZG<E>,
@@ -402,7 +404,8 @@ fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: Ser
     E::Scalar,
     E::Scalar
 ) {
-    let chat = params.commit_g1(&uprime);
+    // let chat = params.commit_g1(&u);
+    // let bigc = params.commit_g1(&poly);
     let cplink1_timer = Instant::now();
     let qus_timer = Instant::now();
     let HH_vals: Vec<E::Scalar> = powers(HH.get_omega()).take(10).collect();
@@ -410,7 +413,7 @@ fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: Ser
     let rng = OsRng;
     let (uhat, q_small) = {
         //let (q, r) = uprimes[i].clone().divide_with_q_and_r(&zs[i].clone()).unwrap();
-        let (q, r) = poly_divmod(&uprime, &z);    
+        let (q, r) = poly_divmod(&u, &z);    
         (r, q)
     };
 
@@ -427,14 +430,9 @@ fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: Ser
     let (q, r) = poly_divmod(&q, &z);
     assert!(r.is_zero(), "R value: {:?}, Q value: {:?}\n, ", r, q);
 
-
     let gamma = E::Scalar::ZERO;
     let o = E::Scalar::ZERO;
     let oprime = Polynomial::from_coefficients_vec(vec![E::Scalar::ZERO]);
-
-    //let commit_timer = Instant::now();
-    let bigc = params.commit_g1(&poly);
-    //let bigc = eval_on_pnt_in_grp::<E::G1, E>(&poly, &ck.pws_g1);
 
     let cprime = {
         //let uhatcom = eval_on_pnt_in_grp::<E::G1, E>(&uhats[i], &ck.pws_g1);
@@ -721,7 +719,9 @@ fn cplink_lite (witness_size: usize, col_size: usize, l: usize, params: ParamsKZ
     // CPLINK1 (uhats are uprimes in paper)
     let u = us[0].clone();
     let z = zs[0].clone();
-    let (chats, d_small, cprime, wcom, bigc, d, x, zz) = cplink1_lite(u, z, poly, params.clone(), HH);
+    let chat = params.commit_g1(&u);
+    let bigc = params.commit_g1(&poly);
+    let (chats, d_small, cprime, wcom, bigc, d, x, zz) = cplink1_lite(u, chat, bigc, z, poly, params.clone(), HH);
     //println!("TOTAL: Prover time: {:?}", prover_timer.elapsed());
     // Verify CPlink1
     verify1_lite(cprime, chats, d_small, params, z_coms[0], wcom, bigc, d, x, zz);

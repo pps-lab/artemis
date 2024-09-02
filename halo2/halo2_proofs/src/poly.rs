@@ -139,7 +139,7 @@ impl <F: Field> Polynomial<F, Coeff> {
 
     pub fn normalize(&self) -> Self {
         let mut poly = self.clone();
-        while let Some(true) = poly.values.last().map(|c| *c == F::ZERO) {
+        while let Some(true) = poly.values.last().map(|c| *c == F::ZERO && poly.values.len() > 1) {
             poly.values.pop();
         }
         poly

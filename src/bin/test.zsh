@@ -4,122 +4,142 @@ trap "exit" INT TERM
 trap "kill 0" EXIT
 
 cargo +nightly build --release
-#mkdir params_kzg
-#mkdir params_ipa
-#./target/release/time_circuit examples/twitter/config.msgpack examples/twitter/input.msgpack kzg false 0 17 5 pngs/twitter_nocom_kzg.png
-# shallownet
-./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack kzg false 0 17 5 pngs/snet_nocom_kzg.png > logs/snet_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack kzg true 1 17 5 pngs/snet_poly_kzg.png > logs/snet_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack ipa false 0 17 5 pngs/snet_nocom_ipa.png > logs/snet_nocom_ipa.txt &
-wait
-./target/release/time_circuit examples/mnist/shallownet_model.msgpack examples/mnist/inp.msgpack ipa true 1 17 5 pngs/snet_poly_ipa.png > logs/snet_poly_ipa.txt &
-wait
 
-# mnist
-./target/release/time_circuit examples/mnist/model.msgpack examples/mnist/inp.msgpack kzg false 0 15 10 pngs/mnist_nocom_kzg.png > logs/mnist_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/mnist/model.msgpack examples/mnist/inp.msgpack kzg true 1 15 10 pngs/mnist_poly_kzg.png > logs/mnist_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/mnist/model.msgpack examples/mnist/inp.msgpack ipa false 0 15 10 pngs/mnist_nocom_ipa.png > logs/mnist_nocom_ipa.txt &
-wait
-./target/release/time_circuit examples/mnist/model.msgpack examples/mnist/inp.msgpack ipa true 1 15 10 pngs/mnist_poly_ipa.png > logs/mnist_poly_ipa.txt &
-wait
+# arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
+# arg2: pc_type = ['kzg', 'ipa']
+# arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus']
+# arg4: num_runs - int
+# example: ./test.zsh mnist kzg nocom 5
 
-# resnet
-./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack kzg true 1 19 15 pngs/cifar10_poly_kzg.png > logs/cifar10_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack kzg false 0 19 15 pngs/cifar10_nocom_kzg.png > logs/cifar10_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack ipa true 1 19 15 pngs/cifar10_poly_ipa.png > logs/cifar10_poly_ipa.txt &
-wait
-./target/release/time_circuit examples/cifar/cifar10.msgpack examples/cifar/cifar10_input.msgpack ipa false 0 19 15 pngs/cifar10_nocom_ipa.png > logs/cifar10_nocom_ipa.txt &
-wait
+name="$1"
+pc_type="$2"
+cp_snark="$3"
+num_runs="$4"
 
-# dlrm
-./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack kzg false 0 20 6 pngs/dlrm_nocom_kzg.png > logs/dlrm_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack kzg true 1 20 6 pngs/dlrm_poly_kzg.png > logs/dlrm_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack ipa false 0 20 6 pngs/dlrm_nocom_ipa.png > logs/dlrm_nocom_ipa.txt &
-wait
-./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack ipa true 1 20 6 pngs/dlrm_poly_ipa.png > logs/dlrm_poly_ipa.txt &
-wait
+cols=0
+rows=0
+poly_cols=0
+cplink=false
+poly_com=false
 
-# mobilenet
-./target/release/time_circuit examples/cifar/mobilenet.msgpack examples/cifar/mobilenet_input.msgpack kzg true 1 23 20 pngs/mobilenet_poly_kzg.png &> logs/mobilenet_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/mobilenet.msgpack examples/cifar/mobilenet_input.msgpack kzg false 0 23 20 pngs/mobilenet_nocom_kzg.png &> logs/mobilenet_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/mobilenet.msgpack examples/cifar/mobilenet_input.msgpack ipa true 1 23 20 pngs/mobilenet_poly_ipa.png &> logs/mobilenet_poly_ipa.txt &
-wait
-./target/release/time_circuit examples/cifar/mobilenet.msgpack examples/cifar/mobilenet_input.msgpack ipa false 0 23 20 pngs/mobilenet_nocom_ipa.png &> logs/mobilenet_nocom_ipa.txt &
-wait
+case "$name" in
+    mnist)
+        cols=10
+        rows=15
+        poly_cols=1
+        # Add MNIST-specific commands here
+        # e.g., python mnist_script.py
+        ;;
+    
+    cifar10)
+        cols=15
+        rows=19
+        poly_cols=1
+        echo "Running ResNet task..."
+        # Add ResNet-specific commands here
+        # e.g., python resnet_script.py
+        ;;
+    
+    dlrm)
+        cols=33
+        k=17
+        poly_cols=5
+        echo "Running DLRM task..."
+        # Add DLRM-specific commands here
+        # e.g., python dlrm_script.py
+        ;;
+    
+    mobilenet)
+        cols=20
+        k=23
+        poly_cols=1
+        echo "Running MobileNet task..."
+        # Add MobileNet-specific commands here
+        # e.g., python mobilenet_script.py
+        ;;
+    
+    vgg)
+        cols=16
+        k=22
+        poly_cols=4
+        echo "Running VGG task..."
+        # Add VGG-specific commands here
+        # e.g., python vgg_script.py
+        ;;
+    
+    gpt2)
+        cols=13
+        k=25
+        poly_cols=3
+        echo "Running GPT-2 task..."
+        # Add GPT-2-specific commands here
+        # e.g., python gpt2_script.py
+        ;;
+    
+    diffusion)
+        cols=29
+        k=24
+        poly_cols=2
+        echo "Running Diffusion task..."
+        # Add Diffusion-specific commands here
+        # e.g., python diffusion_script.py
+        ;;
+    
+    *)
+        echo "Error: Unknown case '$case'"
+        echo "Available cases: mnist, resnet, dlrm, mobilenet, vgg, gpt2, diffusion"
+        exit 1
+        ;;
+esac
 
-# vgg
-./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack kzg true 2 23 10 pngs/vgg_poly_kzg.png > logs/vgg_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack kzg false 0 23 10 pngs/vgg_nocom_kzg.png > logs/vgg_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack ipa true 2 23 10 pngs/vgg_poly_ipa.png > logs/vgg_poly_ipa.txt &
-wait
-./target/release/time_circuit examples/cifar/vgg.msgpack examples/cifar/vgg_input.msgpack ipa false 0 23 10 pngs/vgg_nocom_ipa.png > logs/vgg_nocom_ipa.txt &
-wait
+case "$cp_snark" in
+    nocom)
+        cp_link=false
+        poly_com=false
+        poly_cols=0
+        # Add MNIST-specific commands here
+        # e.g., python mnist_script.py
+        ;;
+    
+    poly)
+        cp_link=false
+        poly_com=true
+        echo "Running ResNet task..."
+        # Add ResNet-specific commands here
+        # e.g., python resnet_script.py
+        ;;
+    
+    cp_link)
+        cp_link=true
+        poly_com=false
+        echo "Running DLRM task..."
+        # Add DLRM-specific commands here
+        # e.g., python dlrm_script.py
+        ;;
+    
+    poseidon)
+        cp_link=false
+        poly_com=false
+        name=name+'_p'
+        echo "Running MobileNet task..."
+        # Add MobileNet-specific commands here
+        # e.g., python mobilenet_script.py
+        ;;
 
-# gpt2
-./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg true 3 25 13 pngs/gpt2_poly_kzg.png > logs/gpt2_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg false 0 25 13 pngs/gpt2_nocom_kzg.png > logs/gpt2_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack ipa true 3 25 13 pngs/gpt2_poly_ipa.png > logs/gpt2_poly_ipa.txt &
-wait
-./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack ipa false 0 25 13 pngs/gpt2_nocom_ipa.png > logs/gpt2_nocom_ipa.txt &
-wait
+    cp_link_slow)
+        cp_link=true
+        poly_com=false
+        echo "Running DLRM task..."
+        # Add DLRM-specific commands here
+        # e.g., python dlrm_script.py
+        ;;
 
-# diffusion
-./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg true 1 25 13 pngs/diffusion_poly_kzg.png > logs/diffusion_poly_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg false 0 25 13 pngs/diffusion_nocom_kzg.png > logs/diffusion_nocom_kzg.txt &
-wait
-./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack ipa true 1 25 13 pngs/diffusion_poly_ipa.png > logs/diffusion_poly_ipa.txt &
-wait
-./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack ipa false 0 25 13 pngs/diffusion_nocom_ipa.png > logs/diffusion_nocom_ipa.txt &
-wait
+    
+    *)
+        echo "Error: Unknown case '$case'"
+        echo "Available cases: mnist, resnet, dlrm, mobilenet, vgg, gpt2, diffusion"
+        exit 1
+        ;;
+esac
 
-# ./target/release/time_circuit examples/cifar/cifar10_p.msgpack examples/cifar/cifar10_input.msgpack kzg false 0 19 15 pngs/cifar10_pos_kzg.png > logs/cifar10_pos_kzg.txt &
-# wait
-
-# ./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack kzg false 0 20 6 pngs/dlrm_nocom_kzg.png > logs/dlrm_nocom_kzg.txt &
-# wait
-
-
-
-# ./target/release/time_circuit examples/cifar/dlrm.msgpack examples/cifar/dlrm_input.msgpack kzg true 1 20 6 pngs/dlrm_poly_kzg.png > logs/dlrm_poly_kzg.txt &
-# wait
-
-
-# ./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg true 3 25 13 pngs/gpt2_poly_kzg.png > logs/gpt2_poly_kzg.txt &
-# wait
-# ./target/release/time_circuit examples/nlp/gpt-2/model.msgpack examples/nlp/gpt-2/inp.msgpack kzg false 0 25 13 pngs/gpt2_nocom_kzg.png > logs/gpt2_nocom_kzg.txt &
-# wait
-
-# ./target/release/time_circuit examples/mnist/shallownet_p.msgpack examples/mnist/inp.msgpack kzg false 0 19 8 pngs/snet_pos_kzg.png > logs/snet_pos_kzg.txt &
-# wait
-# ./target/release/time_circuit examples/cifar/mnist_p.msgpack examples/mnist/inp.msgpack kzg false 0 19 10 pngs/mnist_pos_kzg.png > logs/mnist_pos_kzg.txt &
-# wait
-# ./target/release/time_circuit examples/cifar/dlrm_p.msgpack examples/cifar/dlrm_input.msgpack kzg false 0 21 11 pngs/dlrm_pos_kzg.png > logs/dlrm_pos_kzg.txt &
-# wait
-# ./target/release/time_circuit examples/cifar/vgg_p.msgpack examples/cifar/vgg_input.msgpack kzg false 0 25 12 pngs/vgg_pos_kzg.png &> logs/vgg_pos_kzg.txt &
-# wait
-
-
-
-
-
-# ./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg false 0 25 13 pngs/diffusion_pos_kzg.png > logs/diffusion_pos_kzg.txt &
-# wait
-
-#sudo shutdown now -h
-#~/../../dev/null
-# wait $pid0 $pid1 $pid2 $pid3
+./target/release/time_circuit examples/cifar/$name.msgpack examples/cifar/$1_input.msgpack $pc_type false $poly_cols $rows $cols false $num_runs

@@ -39,6 +39,7 @@ rand_core = "0.6.4"
 criterion = "0.5.1"
 group = "0.13.0"
 ff = "0.13.0"
+csv = "1.1"
 
 [[bench]]
 name = "benchmark_ipa_fft"

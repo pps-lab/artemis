@@ -22,7 +22,7 @@ use crate::{
     poseidon_commit::{PoseidonCommitChip, L, RATE, WIDTH},
   },
   gadgets::{
-    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, poly_3::Poly3Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
+    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, poly_3::Poly3Chip, poly_4::Poly4Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
   },
   layers::{
     arithmetic::{add::AddChip, div_var::DivVarChip, mul::MulChip, sub::SubChip},
@@ -608,7 +608,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
 
   fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
-    gadget_config.columns_poly = (0..(2 * gadget_config.poly_ell))
+    gadget_config.columns_poly = (0..(gadget_config.poly_ell))
     .map(|_| meta.advice_column())
     .collect::<Vec<_>>();
     if gadget_config.poly_commit {
@@ -619,7 +619,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       // gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
       // .map(|_| meta.instance_column())
       // .collect::<Vec<_>>();
-      gadget_config = Poly3Chip::configure(meta, gadget_config);
+      gadget_config = Poly4Chip::configure(meta, gadget_config);
     }
     for col in gadget_config.columns_witness.iter() {
       meta.enable_equality(*col);
@@ -884,34 +884,13 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
       //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
       let mut new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
       //let new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
-      let poly_com_chip = Poly3Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone(), vec![F::ONE; config.gadget_config.poly_ell]);
+      let poly_com_chip = Poly4Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone(), vec![F::ONE; config.gadget_config.poly_ell]);
       let zero = constants.get(&0).unwrap();
       //println!("coeffs len: {}", new_coeffs.len());
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
       println!("Poly coeffs len: {}", new_coeffs.len());
       println!("Rho: {:?}", rho);
     }
-    // let cell_idx = 0;
-    // for tensor in tensors {
-    //   let mut flat = vec![];
-    //   for val in tensor.iter() {
-    //     let row_idx = cell_idx;
-    //     let cell = region
-    //       .assign_advice(
-    //         || "assignment",
-    //         columns_witness[0],
-    //         row_idx,
-    //         || Value::known(*val),
-    //       )
-    //       .unwrap();
-    //     flat.push(Rc::new(cell));
-    //     cell_idx += 1;
-    //   }
-    //   let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
-    //   assigned_tensors.insert(*tensor_idx, tensor);
-    //   // let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
-    //   // assigned_tensors.insert(*tensor_idx, tensor);
-    // }
 
     // Perform the dag
     let dag_chip = DAGLayerChip::<F>::construct(self.dag_config.clone());
