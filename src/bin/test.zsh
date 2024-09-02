@@ -4,7 +4,7 @@ trap "exit" INT TERM
 trap "kill 0" EXIT
 
 cargo +nightly build --release
-
+mkdir results
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
 # arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus']

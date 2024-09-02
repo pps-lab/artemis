@@ -314,7 +314,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   println!("Verifying time: {:?}", verifying_time);
 
   // Create a file to write the CSV to
-  let file = File::create("output.csv").unwrap();
+  let file = File::create("results/output.csv").unwrap();
 
   // Create a CSV writer
   let mut wtr = Writer::from_writer(file);
