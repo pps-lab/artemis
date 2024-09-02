@@ -1,0 +1,22 @@
+---
+
+instance_type: r6i.8xlarge
+ec2_volume_size: 250
+
+# NOTE: these are a custom image where the dependencies are already installed
+ec2_image_id:  ami-0e186ae40aec080b1
+ec2_volume_snapshot: snap-0a498111f262306f4
+
+# INFO: not setup for euler currently
+#euler_job_minutes: 120 # individual job time
+#euler_cpu_cores: 4
+#euler_cpu_mem_per_core_mb: 3072
+#euler_gpu_number: 0
+#euler_gpu_min_mem_per_gpu_mb: 0
+#euler_gpu_model: ~ # if set to a specific GPU, then the euler_gpu_min_mem_per_gpu_mb is ignored
+#euler_env: gcc/8.2.0 python/3.9.9
+#euler_scratch_dir: "/cluster/scratch/{{ euler_user }}"
+
+
+docker_image_id: "doe-ubuntu20"
+docker_image_tag: "latest"

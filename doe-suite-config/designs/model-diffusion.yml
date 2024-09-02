@@ -1,0 +1,75 @@
+
+
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+  model: diffusion
+
+# no_com, cp_link, cp_link+, poly, poseidon
+
+exp_kzg_no:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: no_com
+    pc_type: kzg
+
+
+exp_kzg_poly:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: cp_link
+    pc_type: kzg
+
+
+exp_kzg_horner:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: cp_link+
+    pc_type: kzg
+
+
+exp_kzg_cplink:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: poly
+    pc_type: kzg
+
+# cpsnark: poseidon    too expensive to run
+
+######################IPA Below
+
+exp_ipa_no:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: no_com
+    pc_type: ipa
+
+
+exp_ipa_poly:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: cp_link
+    pc_type: ipa
+
+
+exp_ipa_horner:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: cp_link+
+    pc_type: ipa
+
+
+exp_ipa_cplink:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: poly
+    pc_type: ipa
+
+# cpsnark: poseidon    too expensive to run

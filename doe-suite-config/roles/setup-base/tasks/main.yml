@@ -1,0 +1,22 @@
+---
+
+
+- debug:
+    msg: "-> base only"
+  tags: [print_action]
+
+#- name: Update repositories cache and install required packages
+#  become: True
+#  apt:
+#    pkg:
+#    # TODO: add other required packages (only for base)
+
+
+- name: Build the Artifact
+  ansible.builtin.shell:
+    cmd: "cargo +nightly build --release"  # {{ cargo_loc}}
+    chdir: "{{ exp_code_dir }}"
+#  environment:
+#    GUROBI_HOME: "{{ gurobi.home }}"
+#    LD_LIBRARY_PATH: "{{ gurobi.ld_library_path }}"
+  tags: [print_action]

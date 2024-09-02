@@ -1,0 +1,48 @@
+
+# For the small models, we have a single suite with a two experiments (cpsnark pc_type ipa vs kzg) that contains all factors for models and cpsnarks
+
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+
+exp_kzg:
+  n_repetitions: 1
+  host_types:
+    small:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "hello: [% my_run.cmd %]"
+  base_experiment:
+    model:
+      $FACTOR$: [mnist, snet, resnet18, dlrm]
+    cpsnark:
+      $FACTOR$: [no_com, cp_link, cp_link+, poly, poseidon]
+    pc_type: kzg
+
+
+exp_ipa:
+  n_repetitions: 1
+  host_types:
+    small:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "[% my_run.cmd %]"
+  base_experiment:
+    model:
+      $FACTOR$: [mnist, snet, resnet18, dlrm]
+    cpsnark:
+      $FACTOR$: [no_com, cp_link, cp_link+, poly, poseidon]
+    pc_type: ipa
+
+
+
+# TODO [nku] an error pipeline is not really setup currently -> how to detect that something has gone wrong?
+$ETL$:
+  warn_error:
+    experiments: "*"
+    extractors:
+      ErrorExtractor: {} # raise error on unexpected, non-empty file
+      IgnoreExtractor: {file_regex: ["stdout.log", "output.csv"]} # expect and ignore stdout.log
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

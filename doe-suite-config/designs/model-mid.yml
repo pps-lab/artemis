@@ -1,0 +1,83 @@
+
+
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+# TODO [nku] THE HOST TYPES MAY STILL NEED TO BE ADAPTED
+
+############ experiments using poseidon
+exp_kzg_mobilenet_poseidon:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: poseidon
+    pc_type: kzg
+
+
+exp_ipa_mobilenet_poseidon:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: poseidon
+    pc_type: ipa
+
+
+exp_kzg_vgg_poseidon:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark: poseidon
+    pc_type: kzg
+
+
+exp_ipa_vgg_poseidon:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark: poseidon
+    pc_type: ipa
+
+
+#####################Experiments using other cpsnarks (i.e., not poseidon)
+
+exp_kzg_mobilenet_others:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark:
+      $FACTOR$: [no_com, cp_link, cp_link+, poly] # all except poseidon
+    pc_type: kzg
+
+
+exp_ipa_mobilenet_others:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark:
+      $FACTOR$: [no_com, cp_link, cp_link+, poly] # all except poseidon
+    pc_type: ipa
+
+
+exp_kzg_vgg_others:
+  n_repetitions: 1
+  host_types: {small: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark:
+      $FACTOR$: [no_com, cp_link, cp_link+, poly] # all except poseidon
+    pc_type: kzg
+
+
+exp_ipa_vgg_others:
+  n_repetitions: 1
+  host_types: {small: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark:
+      $FACTOR$: [no_com, cp_link, cp_link+, poly] # all except poseidon
+    pc_type: ipa
