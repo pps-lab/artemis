@@ -1,3 +1,4 @@
+use core::num;
 use std::{
   fs::File,
   io::{BufReader, Write},
@@ -5,6 +6,7 @@ use std::{
   time::Instant,
 };
 
+use csv::Writer;
 use group::{cofactor::CofactorCurveAffine, Group};
 use halo2_proofs::{
   arithmetic::eval_polynomial, circuit, dev::MockProver, halo2curves::pasta::{EqAffine, Fp}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof}, poly::{
@@ -79,8 +81,6 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
     fill_duration - pk_duration
   );
 
-  // IPA Commit proof
-  let ipa_proof_timer = Instant::now();
   //let poly_coeff = vec![Fp::one(); 1 << params.k()];
   let mut tensor_len = 0usize;
   let mut poly_coeff = vec![];
@@ -111,25 +111,24 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
       poly_coeff.push(Fp::ZERO);
     }
   }
+  let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
+  let mut polys = vec![Polynomial::from_coefficients_vec(poly_coeff.clone())];
+  if poly_col_len > 0 {
+    polys = (0..poly_col_len).map(|x| {
+      let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
+      poly
+    }).collect::<Vec<_>>();
+  }
 
-  let polys = (0..poly_col_len).map(|x| {
-    let mut coeffs = poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec();
-    //coeffs.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32) - coeffs.len()]);
-    println!("Coeffs len: {}", coeffs.len());
-    let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(coeffs) * alpha.pow([x as u64]);
-    poly
-  }).collect::<Vec<_>>();
-  let poly_sum = polys.iter().fold(Polynomial::zero(), |a, b| a+b);
   //let mut beta_pows = (0..poly_coeff.len()).map(|i| beta.pow([i as u64])).collect::<Vec<_>>();
   //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32) - poly_coeff.len()]);
 
   println!("Poly coeff len: {}", poly_coeff.len());
-  let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
 
   proof_circuit.beta_pows = beta_pows.clone();
   //println!("Circ beta pows: {:?}", circuit.beta_pows);
   // Evaluate the polynomial
-  let rho = eval_polynomial(&poly_sum, *beta);
+  let rho = eval_polynomial(&poly, *beta);
 
   let mut public_vals = vec![vec![]];
   //let mut betas = vec![vec![]; poly_col_len];
@@ -170,17 +169,10 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
   println!("Proving time: {:?}", proof_duration - proof_duration_start);
-
-  let proof_size = {
-    let mut folder = std::path::PathBuf::new();
-    folder.push("proof");
-    let mut fd = std::fs::File::create(folder.as_path()).unwrap();
-    folder.pop();
-    fd.write_all(&proof).unwrap();
-    fd.metadata().unwrap().len()
-  };
-  println!("Proof size: {} bytes", proof_size);
-  let mut verifying_times = vec![];
+  let mut proving_time = proof_duration - proof_duration_start;
+  println!("Proof size: {} bytes", proof.len());
+  let proof_size = proof.len();
+  let mut verifying_time = vec![];
   for i in 0..num_runs {
     let verification = Instant::now();
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
@@ -197,57 +189,85 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
       "proof did not verify"
     );
     let verify_duration = verification.elapsed();
-    verifying_times.push(verify_duration);
-    println!("Verifying time: {:?}", verify_duration);
+    verifying_time.push(verify_duration);
+    //println!("Verifying time: {:?}", verify_duration);
   }
 
-  let blind = Blind(Fp::ZERO);
-  let poly_coms: Vec<EqAffine> = polys.iter().map(|poly| params.commit(&poly, blind).into()).collect();
-  let poly_coms_sum = poly_coms.iter().fold(Eq::identity(), |a, b| a + b).into();
-
-  transcript_proof.write_point(poly_coms_sum).unwrap();
   if commit_poly {
-      while beta_pows.len() % poly_col_len != 0 {
-      //inputs.push(&zero);
-      beta_pows.push(Fp::ZERO);
+      // IPA Commit proof
+    let ipa_proof_timer = Instant::now();
+    let blind = Blind(Fp::ZERO);
+    let poly_coms: Vec<EqAffine> = polys.iter().map(|poly| params.commit(&poly, blind).into()).collect();
+    let poly_coms_sum = poly_coms.iter().fold(Eq::identity(), |a, b| a + b).into();
+  
+    transcript_proof.write_point(poly_coms_sum).unwrap();
+    if commit_poly {
+        while beta_pows.len() % poly_col_len != 0 {
+        //inputs.push(&zero);
+        beta_pows.push(Fp::ZERO);
+      }
+    }
+  
+    transcript_proof.write_scalar(rho).unwrap();
+  
+    let (proof, ch_prover) = {
+        ipa::commitment::create_proof(&params, rng, &mut transcript_proof, &poly, blind, *beta).unwrap();
+        let ch_prover = transcript_proof.squeeze_challenge();
+        (transcript_proof.finalize(), ch_prover)
+    };
+
+    println!("IPA commit proof time: {:?}", ipa_proof_timer.elapsed());
+    proving_time += ipa_proof_timer.elapsed();
+
+    // Verify the opening proof
+    for i in 0..num_runs {
+      let ipa_vfy_timer = Instant::now();
+      let mut transcript =
+          Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(&proof[..]);
+      let beta_prime = transcript.squeeze_challenge_scalar::<()>();
+      assert_eq!(*beta, *beta_prime);
+      let p_prime = transcript.read_point().unwrap();
+      assert_eq!(poly_coms_sum, p_prime);
+      let rho_prime = transcript.read_scalar().unwrap();
+      assert_eq!(rho, rho_prime);
+      let mut commitment_msm = MSMIPA::new(&params);
+      commitment_msm.append_term(Fp::one(), poly_coms_sum.into());
+    
+      let guard = ipa::commitment::verify_proof(&params, commitment_msm, &mut transcript, *beta, rho).unwrap();
+      let ch_verifier = transcript.squeeze_challenge();
+      assert_eq!(*ch_prover, *ch_verifier);
+              // Test guard behavior prior to checking another proof
+      {
+        // Test use_challenges()
+        let msm_challenges = guard.clone().use_challenges();
+        assert!(msm_challenges.check());
+    
+        // Test use_g()
+        let g = guard.compute_g();
+        let (msm_g, _accumulator) = guard.clone().use_g(g);
+        assert!(msm_g.check());
+      }
+      println!("IPA commit vfy time: {:?}", ipa_vfy_timer.elapsed());
+      verifying_time[i] += ipa_vfy_timer.elapsed();
     }
   }
+  println!("Proving time: {:?}", proving_time);
+  println!("Verifying time: {:?}", verifying_time);
 
-  transcript_proof.write_scalar(rho).unwrap();
+  // Create a file to write the CSV to
+  let file = File::create("results/output.csv").unwrap();
 
-  let (proof, ch_prover) = {
-      ipa::commitment::create_proof(&params, rng, &mut transcript_proof, &poly_sum, blind, *beta).unwrap();
-      let ch_prover = transcript_proof.squeeze_challenge();
-      (transcript_proof.finalize(), ch_prover)
-  };
-  println!("IPA commit proof time: {:?}", ipa_proof_timer.elapsed());
-  // Verify the opening proof
-  let ipa_vfy_timer = Instant::now();
-  let mut transcript =
-      Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(&proof[..]);
-  let beta_prime = transcript.squeeze_challenge_scalar::<()>();
-  assert_eq!(*beta, *beta_prime);
-  let p_prime = transcript.read_point().unwrap();
-  assert_eq!(poly_coms_sum, p_prime);
-  let rho_prime = transcript.read_scalar().unwrap();
-  assert_eq!(rho, rho_prime);
-  println!("Rho: {:?}, Rho prime: {:?}", rho, rho_prime);
-  let mut commitment_msm = MSMIPA::new(&params);
-  commitment_msm.append_term(Fp::one(), poly_coms_sum.into());
+  // Create a CSV writer
+  let mut wtr = Writer::from_writer(file);
 
-  let guard = ipa::commitment::verify_proof(&params, commitment_msm, &mut transcript, *beta, rho).unwrap();
-  let ch_verifier = transcript.squeeze_challenge();
-  assert_eq!(*ch_prover, *ch_verifier);
-          // Test guard behavior prior to checking another proof
-  {
-    // Test use_challenges()
-    let msm_challenges = guard.clone().use_challenges();
-    assert!(msm_challenges.check());
+  // Write the header row
+  wtr.write_record(&["Prover time", "Verifier time", "Proof size"]).unwrap();
+  // Write some rows of data
+  let proving_time_str = format!("{:?}", proving_time);
+  let verifying_time_str = format!("{:?}", verifying_time);
+  wtr.write_record(&[proving_time_str, verifying_time_str, proof_size.to_string()]).unwrap();
+  // Flush and finish writing
+  wtr.flush().unwrap();
 
-    // Test use_g()
-    let g = guard.compute_g();
-    let (msm_g, _accumulator) = guard.clone().use_g(g);
-    assert!(msm_g.check());
-  }
-  println!("IPA commit vfy time: {:?}", ipa_vfy_timer.elapsed());
+  println!("CSV file created successfully.");
 }

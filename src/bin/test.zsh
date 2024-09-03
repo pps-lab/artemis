@@ -8,7 +8,7 @@ trap "kill 0" EXIT
 # arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus']
 # arg4: num_runs - int
 # arg5: code directory
-# example: ./test.zsh mnist kzg nocom 5
+# example: ./test.zsh mnist kzg nocom 5 
 
 name="$1"
 pc_type="$2"
@@ -27,45 +27,75 @@ poly_com=false
 
 case "$name" in
     mnist)
-        cols=10
-        rows=15
-        poly_cols=1
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=10
+            rows=19
+            poly_cols=0
+        else
+            cols=10
+            rows=15
+            poly_cols=1
+        fi
         # Add MNIST-specific commands here
         # e.g., python mnist_script.py
         ;;
     
     resnet18)
-        cols=15
-        rows=19
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=13
+            rows=20
+            poly_cols=0
+        else
+            cols=15
+            rows=19
+            poly_cols=1
+        fi
         name='cifar10'
-        poly_cols=1
         echo "Running ResNet task..."
         # Add ResNet-specific commands here
         # e.g., python resnet_script.py
         ;;
     
     dlrm)
-        cols=33
-        k=17
-        poly_cols=5
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=10
+            k=21
+            poly_cols=0
+        else
+            cols=33
+            k=17
+            poly_cols=5
+        fi
         echo "Running DLRM task..."
         # Add DLRM-specific commands here
         # e.g., python dlrm_script.py
         ;;
     
     mobilenet)
-        cols=20
-        k=23
-        poly_cols=1
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=20
+            k=24
+            poly_cols=0
+        else 
+            cols=20
+            k=23
+            poly_cols=1
+        fi 
         echo "Running MobileNet task..."
         # Add MobileNet-specific commands here
         # e.g., python mobilenet_script.py
         ;;
     
     vgg)
-        cols=16
-        k=22
-        poly_cols=4
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=12
+            k=25
+            poly_cols=0
+        else 
+            cols=16
+            k=22
+            poly_cols=4
+        fi 
         echo "Running VGG task..."
         # Add VGG-specific commands here
         # e.g., python vgg_script.py
@@ -103,41 +133,28 @@ case "$cp_snark" in
         cp_link=false
         poly_com=false
         poly_cols=0
-        # Add MNIST-specific commands here
-        # e.g., python mnist_script.py
         ;;
     
     poly)
         cp_link=false
         poly_com=true
-        echo "Running ResNet task..."
-        # Add ResNet-specific commands here
-        # e.g., python resnet_script.py
         ;;
     
     cp_link+)
         cp_link=true
         poly_com=false
-        echo "Running DLRM task..."
-        # Add DLRM-specific commands here
-        # e.g., python dlrm_script.py
         ;;
     
     poseidon)
         cp_link=false
         poly_com=false
         name=$name'_p'
-        echo "Running MobileNet task..."
-        # Add MobileNet-specific commands here
-        # e.g., python mobilenet_script.py
         ;;
 
     cp_link)
         cp_link=true
         poly_com=false
         echo "Running DLRM task..."
-        # Add DLRM-specific commands here
-        # e.g., python dlrm_script.py
         ;;
     *)
         echo "Error: Unknown case '$case'"
