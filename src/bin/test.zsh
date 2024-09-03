@@ -58,13 +58,13 @@ case "$name" in
     
     dlrm)
         if [ "$cp_snark" = "poseidon" ]; then
-            cols=10
+            cols=11
             rows=21
             poly_cols=0
         else
-            cols=33
-            rows=17
-            poly_cols=5
+            cols=9
+            rows=19
+            poly_cols=2
         fi
         echo "Running DLRM task..."
         # Add DLRM-specific commands here
