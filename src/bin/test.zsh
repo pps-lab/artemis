@@ -154,6 +154,7 @@ case "$cp_snark" in
     cp_link)
         cp_link=true
         poly_com=false
+        poly_cols=0
         ;;
     *)
         echo "Error: Unknown case '$case'"

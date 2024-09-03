@@ -2,7 +2,8 @@ use core::num;
 use std::{
   fs::File, io::{BufReader, Write}, path, path::Path, time::{Duration, Instant}
 };
-use crate::{utils::helpers::{cplink1_lite, powers, vanishing_on_set, verify1_lite}};
+use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanishing_on_set, verify1, verify1_lite};
+use bitvec::order::verify;
 use ff::{Field, WithSmallOrderMulGroup};
 use group::cofactor::CofactorCurveAffine;
 use halo2_proofs::{
@@ -15,6 +16,7 @@ use rand::thread_rng;
 use rand_core::OsRng;
 
 use csv::Writer;
+use rmp_serde::config;
 use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_values, poly_divmod}};
 
 pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
@@ -64,7 +66,7 @@ pub fn verify_kzg(
   );
 }
 
-pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String) {
+pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
   let rng = rand::thread_rng();
   //println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
   let start = Instant::now();
@@ -206,27 +208,49 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
 
   //CPLink proof: 
   if cp_link {
-    println!("Polys len: {}", polys.len());
-    let domain = EvaluationDomain::<Fr>::new(1, params.k());
-    let domain_vals = (0..poly_coeff.len() / poly_col_len).map(|i| domain.get_omega().pow([i as u64])).collect::<Vec<_>>();
-    // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
-    let z = vanishing_on_set(&domain_vals);
-    //let z = Polynomial::from_coefficients_vec(vec![Fr::one()]);
-    let z_com = params.commit_g2(&z);
-    //println!("poly sum: {:?}", poly_sum);
-    //println!("z: {:?}", z);
-    for poly in &polys {
-      //let (q, mut uhat) = poly_divmod(poly, &z);   
-      let uhat = poly.clone();
-      let chat = params.commit_g1(&uhat);
-      let polycom = params.commit_g1(&poly);
-      println!("Three");
-      let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&poly, &chat, &polycom, &z, &poly, &params, &domain);
-      proving_time += cplink_time;
+    if poly_col_len < 1  {
+      // slow
+      let col_size = circuit.k;
+      let witness_size =  poly_coeff.len();
+      let l = c;
+      let size = witness_size / l;
+      let (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, params);
+      let vals = (0..l).map(|y| poly_coeff[y*size..(y+1)*size].to_vec()).collect::<Vec<_>>();
+      let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
+      let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
+      let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
+      let z_v_com = params.commit_g1(&z_v);
+      let poly = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
+      let (uprimes, cp2_prove, cp2_vfy) = cplink2(thetas, HH.clone(), us, z_v, z_v_com, u_coms, params.clone());
+      let (chats, ds, cprimes, wcom, bigc, d, x, zz, cp1_prove) = cplink1(uprimes, zs, zhats, poly, params.clone(), z_last, HH);
+      proving_time += cp1_prove + cp2_prove;
       for i in 0..num_runs {
-        verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+        let cp1_vfy = verify1(&cprimes, &chats, &ds, &params,&z_coms, &zhat_coms, wcom, bigc, d, x, zz);
+        let vfy_total = cp1_vfy + cp2_vfy;
+        verifying_time[i] += vfy_total;
       }
-
+    } else {
+      //fast
+      let domain = EvaluationDomain::<Fr>::new(1, params.k());
+      let domain_vals = (0..poly_coeff.len() / poly_col_len).map(|i| domain.get_omega().pow([i as u64])).collect::<Vec<_>>();
+      // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
+      let z = vanishing_on_set(&domain_vals);
+      //let z = Polynomial::from_coefficients_vec(vec![Fr::one()]);
+      let z_com = params.commit_g2(&z);
+      //println!("poly sum: {:?}", poly_sum);
+      //println!("z: {:?}", z);
+      for poly in &polys {
+        //let (q, mut uhat) = poly_divmod(poly, &z);   
+        let uhat = poly.clone();
+        let chat = params.commit_g1(&uhat);
+        let polycom = params.commit_g1(&poly);
+        println!("Three");
+        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&poly, &chat, &polycom, &z, &poly, &params, &domain);
+        proving_time += cplink_time;
+        for i in 0..num_runs {
+          verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+        }
+      }
     }
   }
 
