@@ -48,8 +48,36 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
 
   let degree = circuit.k as u32;
   let mut circuit = circuit.clone();
-  let empty_circuit = circuit.clone();
-  let mut proof_circuit = circuit.clone();
+
+  let mut tensor_len = 0usize;
+  let mut poly_coeff = Vec::with_capacity(2usize.pow((circuit.k + poly_col_len) as u32));
+  for (tensor_idx, tensor) in circuit.tensors.clone() {
+    for val in tensor.clone() {
+      tensor_len += 1;
+      poly_coeff.push(val);
+    }
+    //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
+  }
+  
+  let mut transcript_proof =
+      Blake2bWrite::<Vec<u8>, EqAffine, Challenge255<EqAffine>>::init(vec![]);
+  let beta = transcript_proof.squeeze_challenge_scalar::<()>();
+  //let alpha = Fp::random(&mut thread_rng());
+  let alpha = Fp::ONE;
+
+  if commit_poly {
+    let beta_pows = (0..poly_col_len + 1).map(|i| beta.pow([i as u64])).rev().collect::<Vec<_>>();
+
+    while poly_coeff.len() % poly_col_len != 0  {
+      poly_coeff.push(Fp::ZERO);
+    }
+    //circuit.beta_pows = beta_pows.clone();
+
+    circuit.beta_pows = beta_pows.clone();
+  }
+
+  // let empty_circuit = circuit.clone();
+  // let mut proof_circuit = circuit.clone();
 
   let params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree);
 
@@ -59,58 +87,36 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
     circuit_duration
   );
 
-  let vk = keygen_vk(&params, &empty_circuit).unwrap();
+  let vk = keygen_vk(&params, &circuit).unwrap();
   let vk_duration = start.elapsed();
   println!(
     "Time elapsed in generating vkey: {:?}",
     vk_duration - circuit_duration
   );
 
-  let pk = keygen_pk(&params, vk, &empty_circuit).unwrap();
+  let pk = keygen_pk(&params, vk, &circuit).unwrap();
   let pk_duration = start.elapsed();
   println!(
     "Time elapsed in generating pkey: {:?}",
     pk_duration - vk_duration
   );
-  drop(empty_circuit);
+  //drop(empty_circuit);
+
 
   let fill_duration = start.elapsed();
-  let _prover = MockProver::run(degree, &proof_circuit, vec![vec![];  poly_col_len + 1]).unwrap();
+  let _prover = MockProver::run(degree, &circuit, vec![vec![]]).unwrap();
   println!(
     "Time elapsed in filling circuit: {:?}",
     fill_duration - pk_duration
   );
 
   //let poly_coeff = vec![Fp::one(); 1 << params.k()];
-  let mut tensor_len = 0usize;
-  let mut poly_coeff = vec![];
-  for (tensor_idx, tensor) in circuit.tensors.clone() {
-    for val in tensor.clone() {
-      tensor_len += 1;
-      poly_coeff.push(val);
-    }
-    //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
+  //println!("poly coeff len: {}", poly_coeff.len());
+  //println!("sum: {}", circuit.k as u32 + poly_col_len as u32);
+  while poly_coeff.len() < 2usize.pow(circuit.k as u32 + poly_col_len as u32) {
+    poly_coeff.push(Fp::ZERO);
   }
-
-  let mut transcript_proof =
-      Blake2bWrite::<Vec<u8>, EqAffine, Challenge255<EqAffine>>::init(vec![]);
-  let beta = transcript_proof.squeeze_challenge_scalar::<()>();
-  //let alpha = Fp::random(&mut thread_rng());
-  let alpha = Fp::ONE;
-  let mut beta_pows = vec![];
-  for i in 0..poly_col_len {
-    beta_pows.extend((0..(poly_coeff.len() + poly_col_len - 1) / poly_col_len).map(|idx| beta.pow([idx as u64]) * alpha.pow([i as u64])).collect::<Vec<_>>());
-  }
-
-  if commit_poly {
-    while beta_pows.len() % poly_col_len != 0 {
-      //inputs.push(&zero);
-      beta_pows.push(Fp::ZERO);
-    }
-    while poly_coeff.len() % poly_col_len != 0  {
-      poly_coeff.push(Fp::ZERO);
-    }
-  }
+  //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32 + poly_col_len as u32) - poly_coeff.len()]);
   let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![Polynomial::from_coefficients_vec(poly_coeff.clone())];
   if poly_col_len > 0 {
@@ -121,11 +127,11 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
   }
 
   //let mut beta_pows = (0..poly_coeff.len()).map(|i| beta.pow([i as u64])).collect::<Vec<_>>();
-  //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32) - poly_coeff.len()]);
 
-  println!("Poly coeff len: {}", poly_coeff.len());
 
-  proof_circuit.beta_pows = beta_pows.clone();
+  //println!("Poly coeff len: {}", poly_coeff.len());
+
+  
   //println!("Circ beta pows: {:?}", circuit.beta_pows);
   // Evaluate the polynomial
   let rho = eval_polynomial(&poly, *beta);
@@ -133,26 +139,11 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
   let mut public_vals = vec![vec![]];
   //let mut betas = vec![vec![]; poly_col_len];
 
-  if commit_poly {
-    public_vals = vec![vec![]; poly_col_len + 1];
-    public_vals[poly_col_len] = get_public_values();
-    for i in 0..poly_col_len {
-      for j in 0..beta_pows.len() / poly_col_len {
-        public_vals[i].push(beta_pows[j + i * beta_pows.len() / poly_col_len]);
-      }
-    }
-
-    //public_vals[0] = vec![Fr::ONE; 1 << circuit.k];
-    let mut pub_val_idx = 0;
-    // for beta in beta_pows {
-    //   public_vals[pub_val_idx] = beta;
-    //   pub_val_idx += 1;
-    // }
-    public_vals[poly_col_len][pub_val_idx] = rho;
-  } else {
-    public_vals[0] = get_public_values();
+  public_vals[0] = get_public_values();
+  if commit_poly { 
+    public_vals[0][0] = rho;
   }
-  
+
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
 
   let proof_duration_start = start.elapsed();
@@ -160,7 +151,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
   create_proof::<IPACommitmentScheme<EqAffine>, ProverIPA<EqAffine>, _, _, _, _>(
     &params,
     &pk,
-    &[proof_circuit],
+    &[circuit],
     &[&public_vals_slice.as_slice()],
     &mut rand::thread_rng(),
     &mut transcript,
@@ -195,23 +186,18 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
 
   if commit_poly {
       // IPA Commit proof
+    let poly_params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + poly_col_len as u32);
     let ipa_proof_timer = Instant::now();
     let blind = Blind(Fp::ZERO);
-    let poly_coms: Vec<EqAffine> = polys.iter().map(|poly| params.commit(&poly, blind).into()).collect();
-    let poly_coms_sum = poly_coms.iter().fold(Eq::identity(), |a, b| a + b).into();
+    let poly_com: EqAffine = poly_params.commit(&poly, blind).into();
+    //let poly_coms_sum = poly_coms.iter().fold(Eq::identity(), |a, b| a + b).into();
   
-    transcript_proof.write_point(poly_coms_sum).unwrap();
-    if commit_poly {
-        while beta_pows.len() % poly_col_len != 0 {
-        //inputs.push(&zero);
-        beta_pows.push(Fp::ZERO);
-      }
-    }
+    transcript_proof.write_point(poly_com).unwrap();
   
     transcript_proof.write_scalar(rho).unwrap();
   
     let (proof, ch_prover) = {
-        ipa::commitment::create_proof(&params, rng, &mut transcript_proof, &poly, blind, *beta).unwrap();
+        ipa::commitment::create_proof(&poly_params, rng, &mut transcript_proof, &poly, blind, *beta).unwrap();
         let ch_prover = transcript_proof.squeeze_challenge();
         (transcript_proof.finalize(), ch_prover)
     };
@@ -227,13 +213,13 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
       let beta_prime = transcript.squeeze_challenge_scalar::<()>();
       assert_eq!(*beta, *beta_prime);
       let p_prime = transcript.read_point().unwrap();
-      assert_eq!(poly_coms_sum, p_prime);
+      assert_eq!(poly_com, p_prime);
       let rho_prime = transcript.read_scalar().unwrap();
       assert_eq!(rho, rho_prime);
-      let mut commitment_msm = MSMIPA::new(&params);
-      commitment_msm.append_term(Fp::one(), poly_coms_sum.into());
+      let mut commitment_msm = MSMIPA::new(&poly_params);
+      commitment_msm.append_term(Fp::one(), poly_com.into());
     
-      let guard = ipa::commitment::verify_proof(&params, commitment_msm, &mut transcript, *beta, rho).unwrap();
+      let guard = ipa::commitment::verify_proof(&poly_params, commitment_msm, &mut transcript, *beta, rho).unwrap();
       let ch_verifier = transcript.squeeze_challenge();
       assert_eq!(*ch_prover, *ch_verifier);
               // Test guard behavior prior to checking another proof

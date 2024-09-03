@@ -162,4 +162,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type false $poly_cols $rows $cols false $num_runs $dir
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $num_runs $dir

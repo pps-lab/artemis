@@ -614,7 +614,7 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     if gadget_config.poly_commit {
       gadget_config.columns_poly.push(meta.advice_column());
       gadget_config.columns_poly.push(meta.advice_column());
-      gadget_config.columns_poly.push(meta.advice_column());
+      //gadget_config.columns_poly.push(meta.advice_column());
       
       // gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
       // .map(|_| meta.instance_column())
@@ -878,14 +878,19 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>> Circuit<F> for ModelCircuit<F> 
     for val in flat {
       poly_coeffs.push(val.clone());
     }
-
+    println!("Poly commit: {:?}", config.gadget_config.poly_commit);
     if config.gadget_config.poly_commit {
       //poly_vals = vec![poly_betas, poly_coeffs];
       //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
-      let mut new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
-      //let new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
-      let poly_com_chip = Poly4Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone(), vec![F::ONE; config.gadget_config.poly_ell]);
       let zero = constants.get(&0).unwrap();
+      let mut new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+      while new_coeffs.len() % (self.beta_pows.len() - 1) != 0 {
+        new_coeffs.push(&zero);
+      }
+
+      new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
+      let poly_com_chip = Poly4Chip::<F>::construct(gadget_rc.clone(), self.beta_pows.clone(), vec![F::ONE; config.gadget_config.poly_ell]);
+
       //println!("coeffs len: {}", new_coeffs.len());
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
       println!("Poly coeffs len: {}", new_coeffs.len());
