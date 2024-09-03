@@ -59,11 +59,11 @@ case "$name" in
     dlrm)
         if [ "$cp_snark" = "poseidon" ]; then
             cols=10
-            k=21
+            rows=21
             poly_cols=0
         else
             cols=33
-            k=17
+            rows=17
             poly_cols=5
         fi
         echo "Running DLRM task..."
@@ -74,11 +74,11 @@ case "$name" in
     mobilenet)
         if [ "$cp_snark" = "poseidon" ]; then
             cols=20
-            k=24
+            rows=24
             poly_cols=0
         else 
             cols=20
-            k=23
+            rows=23
             poly_cols=1
         fi 
         echo "Running MobileNet task..."
@@ -89,11 +89,11 @@ case "$name" in
     vgg)
         if [ "$cp_snark" = "poseidon" ]; then
             cols=12
-            k=25
+            rows=25
             poly_cols=0
         else 
             cols=16
-            k=22
+            rows=22
             poly_cols=4
         fi 
         echo "Running VGG task..."
@@ -103,7 +103,7 @@ case "$name" in
     
     gpt2)
         cols=13
-        k=25
+        rows=25
         poly_cols=3
         echo "Running GPT-2 task..."
         # Add GPT-2-specific commands here
@@ -112,7 +112,7 @@ case "$name" in
     
     diffusion)
         cols=29
-        k=24
+        rows=24
         poly_cols=2
         echo "Running Diffusion task..."
         # Add Diffusion-specific commands here
@@ -154,7 +154,6 @@ case "$cp_snark" in
     cp_link)
         cp_link=true
         poly_com=false
-        echo "Running DLRM task..."
         ;;
     *)
         echo "Error: Unknown case '$case'"
