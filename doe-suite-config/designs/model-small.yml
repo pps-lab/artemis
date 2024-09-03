@@ -11,14 +11,13 @@ exp_kzg:
     small:
       n: 1
       init_roles: setup-base
-      $CMD$: "hello: [% my_run.cmd %]"
+      $CMD$: "[% my_run.cmd %]"
   base_experiment:
     model:
-      $FACTOR$: [mnist, snet, resnet18, dlrm]
+      $FACTOR$: [mnist, resnet18, dlrm]
     cpsnark:
-      $FACTOR$: [no_com, cp_link, cp_link+, poly, poseidon]
+      $FACTOR$: [no_com, cp_link+, poseidon, poly] #, cp_link] TODO [nku] BRING BACK ONCE DONE
     pc_type: kzg
-
 
 exp_ipa:
   n_repetitions: 1
@@ -29,20 +28,19 @@ exp_ipa:
       $CMD$: "[% my_run.cmd %]"
   base_experiment:
     model:
-      $FACTOR$: [mnist, snet, resnet18, dlrm]
+      $FACTOR$: [mnist, resnet18, dlrm]
     cpsnark:
-      $FACTOR$: [no_com, cp_link, cp_link+, poly, poseidon]
+      $FACTOR$: [no_com, poseidon, poly] # INFO: cp_link, cp_link+ -> not with ipa
     pc_type: ipa
 
 
-
-# TODO [nku] an error pipeline is not really setup currently -> how to detect that something has gone wrong?
 $ETL$:
-  warn_error:
+  overview:
     experiments: "*"
     extractors:
-      ErrorExtractor: {} # raise error on unexpected, non-empty file
-      IgnoreExtractor: {file_regex: ["stdout.log", "output.csv"]} # expect and ignore stdout.log
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
     transformers: []
     loaders:
       CsvSummaryLoader: {skip_empty: True}

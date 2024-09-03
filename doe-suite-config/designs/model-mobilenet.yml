@@ -1,0 +1,57 @@
+
+
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+############ experiments using poseidon
+exp_kzg_mobilenet_poseidon:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: poseidon
+    pc_type: kzg
+
+
+exp_ipa_mobilenet_poseidon:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: poseidon
+    pc_type: ipa
+
+
+#####################Experiments using other cpsnarks (i.e., not poseidon)
+
+exp_kzg_mobilenet_others:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark:
+      $FACTOR$: [no_com, cp_link+, poly] # cp_link] # all except poseidon  # TODO: BRING BACK ONCE CP_LINK EXISTS
+    pc_type: kzg
+
+
+exp_ipa_mobilenet_others:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark:
+      $FACTOR$: [no_com, poly] # all except poseidon     # INFO: cp_link, cp_link+ -> not with ipa
+    pc_type: ipa
+
+
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

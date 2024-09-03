@@ -1,4 +1,4 @@
-
+# NOTE: With the current vCPU limit of 640, we can run up to 5 large instances at the same time.
 
 $SUITE_VARS$:
   $INCLUDE_VARS$: general.yml
@@ -6,7 +6,7 @@ $SUITE_VARS$:
 
 # no_com, cp_link, cp_link+, poly, poseidon
 
-exp_kzg_no:
+exp_kzg_no_com:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
@@ -14,15 +14,15 @@ exp_kzg_no:
     pc_type: kzg
 
 
-exp_kzg_poly:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: cp_link
-    pc_type: kzg
+#exp_kzg_cp_link:
+#  n_repetitions: 1
+#  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+#  base_experiment:
+#    cpsnark: cp_link # TODO [nku] CAN NOT BE RUN CURRENTLY
+#    pc_type: kzg
 
 
-exp_kzg_horner:
+exp_kzg_cp_link_plus:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
@@ -30,7 +30,7 @@ exp_kzg_horner:
     pc_type: kzg
 
 
-exp_kzg_cplink:
+exp_kzg_poly:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
@@ -41,7 +41,7 @@ exp_kzg_cplink:
 
 ######################IPA Below
 
-exp_ipa_no:
+exp_ipa_no_com:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
@@ -53,23 +53,18 @@ exp_ipa_poly:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
-    cpsnark: cp_link
-    pc_type: ipa
-
-
-exp_ipa_horner:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: cp_link+
-    pc_type: ipa
-
-
-exp_ipa_cplink:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
     cpsnark: poly
     pc_type: ipa
 
 # cpsnark: poseidon    too expensive to run
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

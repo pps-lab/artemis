@@ -20,3 +20,22 @@
 #    GUROBI_HOME: "{{ gurobi.home }}"
 #    LD_LIBRARY_PATH: "{{ gurobi.ld_library_path }}"
   tags: [print_action]
+
+
+- name: Create a symbolic link to the ipa_parameters (to avoid copying)
+  ansible.builtin.file:
+    src: ~/halo2test/params_ipa
+    dest: "{{ exp_code_dir }}/params_ipa"
+    state: link
+
+- name: Create a symbolic link to the kzg_parameters (to avoid copying)
+  ansible.builtin.file:
+    src: ~/halo2test/params_kzg
+    dest: "{{ exp_code_dir }}/params_kzg"
+    state: link
+
+- name: Create a symbolic link to the cifar examples
+  ansible.builtin.file:
+    src: ~/halo2test/examples/cifar
+    dest: "{{ exp_code_dir }}/examples/cifar"
+    state: link

@@ -1,6 +1,6 @@
 ---
 
-instance_type: r6i.16xlarge
+instance_type: r6i.32xlarge
 ec2_volume_size: 250
 
 # NOTE: these are a custom image where the dependencies are already installed

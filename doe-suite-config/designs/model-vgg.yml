@@ -1,0 +1,39 @@
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+
+exp_kzg_vgg_poseidon:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark: poseidon
+    pc_type: kzg
+
+
+exp_ipa_vgg_poseidon:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark: poseidon
+    pc_type: ipa
+
+exp_kzg_vgg_others:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark:
+      $FACTOR$: [no_com, cp_link+, poly] # cp_link] # all except poseidon TODO [nku] BRING THIS BACK
+    pc_type: kzg
+
+
+exp_ipa_vgg_others:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark:
+      $FACTOR$: [no_com, poly] # all except poseidon
+    pc_type: ipa

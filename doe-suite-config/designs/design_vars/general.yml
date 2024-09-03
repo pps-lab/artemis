@@ -2,7 +2,7 @@
 
 num_verifier_reps: 5
 
-cmd: "{{ exp_code_dir }}/src/bin/test.zsh [% model %] [% pc_type %] [% pcsnark %] [% num_verifier_reps %]"
+cmd: "[% 'exp_code_dir' | at_runtime(exp_host_lst) %]/src/bin/test.zsh [% my_run.model %] [% my_run.pc_type %] [% my_run.cpsnark %] [% my_run.num_verifier_reps %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]"
 
 
 
