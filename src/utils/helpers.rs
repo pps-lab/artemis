@@ -419,10 +419,9 @@ pub fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAf
     col_size: u32,
     witness_size: usize,
     l: usize,
-    params: ParamsKZG<E>
+    params: &ParamsKZG<E>
 ) -> (
     //CS2_PP<E>,
-    ParamsKZG<E>,
     EvaluationDomain<E::Scalar>,
     Vec<E::Scalar>,
     Vec<Polynomial<E::Scalar, Coeff>>,
@@ -480,7 +479,7 @@ pub fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAf
     let commitments_time = setuptimer.elapsed();
     println!("SETUP: Commitments time: {:?}", commitments_time - polynomial_time);
     println!("SETUP: Total time: {:?}", setuptimer.elapsed());
-    (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms)
+    (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms)
 }
 
 pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug> (

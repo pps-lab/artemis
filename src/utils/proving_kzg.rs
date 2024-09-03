@@ -214,7 +214,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
       let witness_size =  poly_coeff.len();
       let l = c;
       let size = witness_size / l;
-      let (params, HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, params);
+      let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, &params);
       let vals = (0..l).map(|y| poly_coeff[y*size..(y+1)*size].to_vec()).collect::<Vec<_>>();
       let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
       let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
@@ -257,7 +257,11 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
   // KZG Commit proof
 
   if commit_poly {
-    let poly_params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + poly_col_len as u32);
+    let mut poly_params = params;
+    if (poly_col_len) > 1  {
+      poly_params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
+    }
+
     let kzg_proof_timer = Instant::now();
     println!("Tensor len: {}", tensor_len);
   
