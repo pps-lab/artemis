@@ -61,6 +61,9 @@ case "$name" in
             cols=11
             rows=21
             poly_cols=0
+        elif [ "$cp_snark" = "cp_link" ]; then
+            cols=6
+            rows=20
         else
             cols=9
             rows=19
@@ -91,6 +94,9 @@ case "$name" in
             cols=12
             rows=25
             poly_cols=0
+        elif [ "$cp_snark" = "cp_link" ]; then
+            cols=10
+            rows=24
         else 
             cols=17
             rows=22
@@ -102,18 +108,28 @@ case "$name" in
         ;;
     
     gpt2)
-        cols=13
-        rows=25
-        poly_cols=3
+        if [ "$cp_snark" = "cp_link" ]; then
+            cols=10
+            rows=27
+        else 
+            cols=13
+            rows=25
+            poly_cols=3
+        fi 
         echo "Running GPT-2 task..."
         # Add GPT-2-specific commands here
         # e.g., python gpt2_script.py
         ;;
     
     diffusion)
-        cols=29
-        rows=24
-        poly_cols=2
+        if [ "$cp_snark" = "cp_link" ]; then
+            cols=15
+            rows=25
+        else 
+            cols=29
+            rows=24
+            poly_cols=2
+        fi 
         echo "Running Diffusion task..."
         # Add Diffusion-specific commands here
         # e.g., python diffusion_script.py
