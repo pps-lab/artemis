@@ -92,7 +92,7 @@ case "$name" in
             rows=25
             poly_cols=0
         else 
-            cols=16
+            cols=17
             rows=22
             poly_cols=4
         fi 
