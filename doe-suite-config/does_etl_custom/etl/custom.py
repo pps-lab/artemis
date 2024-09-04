@@ -9,6 +9,7 @@ import os
 import json
 import statistics
 import ast
+import warnings
 import yaml
 
 class ErrorExpectedFileExtractor(Extractor):
@@ -48,6 +49,11 @@ class OsirisPreprocessTransformer(Transformer):
 
     def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
 
+        # TODO [nku] remove fake entry
+
+
+
+
         # parse prover time
         df['prover_time_sec'] = (df['Prover time'].replace({'s':'*1'}, regex=True)
                                             .dropna()
@@ -81,4 +87,30 @@ class OsirisPreprocessTransformer(Transformer):
         # parse and aggregate verifier time measurements
         df = df.apply(aggregate, axis=1)
 
+        # TODO [nku] REMOVE AGAIN
+        fake = []
+        for model in ['gpt2', 'diffusion']:
+            for pc_type in ['ipa', 'kzg']:
+                fake.append({"model": model,  "cpsnark": "no_com", "pc_type": pc_type, "prover_time_sec": 0.0, "mean(verifier_time_ms)": 0.0, 'stddev(verifier_time_ms)': 0.0})
+        df_fake = pd.DataFrame(fake)
+
+        df = pd.concat([df, df_fake], ignore_index=True)
+
         return df
+
+
+
+class ResultFilterTransformer(Transformer):
+
+
+    def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
+
+        msg = """In the initial set of results for ipa poly on the smaller models (mnist, resnet18, dlrm, mobilenet, vgg) the suite_name was not set correctly
+        We have used a naive verification approach leading to a slow verification time.
+        We filter out these results because we re-run the experiments in the suite poly-ipa with the a better verficication approach.
+        """
+        warnings.warn(msg)
+        condition = (df["model"].isin(["mnist", "resnet18", "dlrm", "mobilenet", "vgg"])) & (df["cpsnark"] == "poly") & (df["pc_type"] == "ipa") & (df["suite_name"] != "poly-ipa")
+        df1 = df[~condition]
+
+        return df1

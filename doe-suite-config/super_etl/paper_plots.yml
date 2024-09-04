@@ -4,10 +4,11 @@ $SUITE_ID$:
   # TODO [nku] SET THE RUN IDS OF THE RESULTS
   model-small: "1725369940"
   model-mobilenet: "1725371439"
-  #model-vgg: "<PLACEHOLDER>"
+  model-vgg: "1725388515"
   #model-diffusion: "<PLACEHOLDER>"
   #model-gpt2: "<PLACEHOLDER>"
-  cplink: "1725379289"
+  cplink: "1725423229" # "1725379289" # TODO [nku] THIS WILL NEED TO BE REPLACED
+  poly-ipa: "1725441369"
 
 
 
@@ -18,6 +19,8 @@ $ETL$:
       model-small: "*"
       model-mobilenet: "*"
       cplink: "*"
+      model-vgg: "*"
+      poly-ipa: "*"
       # TODO [nku] add the other suites
     extractors:
       ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
@@ -31,19 +34,22 @@ $ETL$:
     experiments:
       model-small: "*"
       model-mobilenet: "*"
+      model-vgg: "*"
       cplink: "*"
+      poly-ipa: "*"
       # TODO [nku] add the other suites
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
       IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
     transformers:
     - name: OsirisPreprocessTransformer
+    - name: ResultFilterTransformer
     loaders:
       CsvSummaryLoader: {skip_empty: True}
       MyCustomColumnCrossPlotLoader:
         data_filter:
           allowed:
-            model: [mnist, resnet18, dlrm, mobilenet, vgg, gpt2, diffusion]
+            model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
             cpsnark: [no_com, poly, cp_link+, cp_link, poseidon]
             pc_type: [kzg, ipa]
 
@@ -121,7 +127,7 @@ $ETL$:
           ###### Configure each element (artist) in subfigure (ax)
         - cum_artist_config:
           # colors from: https://davidmathlogic.com/colorblind/#%23000000-%23E69F00-%2356B4E9-%23009E73-%23F0E442-%230072B2-%23D55E00-%23CC79A7
-          - color: grey # "#000000"
+          - color: "#D8D7D2" # "#000000"
             jp_query: starts_with(cpsnark, 'no_com')
           - color: "#009E73" #"#D55E00"
             jp_query: starts_with(cpsnark, 'cp_link+')

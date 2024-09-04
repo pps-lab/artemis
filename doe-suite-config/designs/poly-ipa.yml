@@ -1,7 +1,8 @@
+# POLY IPA [mnist, resnet, dlrm, mobilenet, vgg] needs to be re-run because of a faster verifier implementation
 $SUITE_VARS$:
   $INCLUDE_VARS$: general.yml
 
-exp_kzg:
+exp_poly_ipa_small:
   n_repetitions: 1
   host_types:
     small:
@@ -10,47 +11,29 @@ exp_kzg:
       $CMD$: "[% my_run.cmd %]"
   base_experiment:
     model:
-      $FACTOR$: [dlrm, mnist, resnet18]
-    cpsnark:
-      $FACTOR$: [cp_link]
-    pc_type: kzg
+      $FACTOR$: [mnist, resnet18, dlrm]
+    cpsnark: poly
+    pc_type: ipa
 
 
-exp_kzg_mobilenet_others:
+exp_poly_ipa_mobilenet:
   n_repetitions: 1
   host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
     model: mobilenet
-    cpsnark:
-      $FACTOR$: [cp_link]
-    pc_type: kzg
+    cpsnark: poly
+    pc_type: ipa
 
-
-exp_kzg_vgg_others:
+exp_poly_ipa_vgg:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
     model: vgg
-    cpsnark:
-      $FACTOR$: [cp_link] # all except poseidon
-    pc_type: kzg
+    cpsnark: poly
+    pc_type: ipa
 
 
-exp_kzg_gpt2_cp_link:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: cp_link
-    pc_type: kzg
-    model: gpt2
 
-exp_kzg_diffusion_cp_link:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: cp_link
-    pc_type: kzg
-    model: diffusion
 
 $ETL$:
   overview:
