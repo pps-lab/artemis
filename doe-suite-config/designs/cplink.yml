@@ -35,14 +35,14 @@ exp_kzg_vgg_others:
       $FACTOR$: [cp_link] # all except poseidon
     pc_type: kzg
 
-
-exp_kzg_gpt2_cp_link:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: cp_link
-    pc_type: kzg
-    model: gpt2
+# NOTE: not feasible
+#exp_kzg_gpt2_cp_link:
+#  n_repetitions: 1
+#  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+#  base_experiment:
+#    cpsnark: cp_link
+#    pc_type: kzg
+#    model: gpt2
 
 exp_kzg_diffusion_cp_link:
   n_repetitions: 1

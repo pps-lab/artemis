@@ -14,11 +14,11 @@ exp_kzg_no_com:
     pc_type: kzg
 
 
-#exp_kzg_cp_link:
+#exp_kzg_cp_link:   # -> is run as part of cplink experiment
 #  n_repetitions: 1
 #  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
 #  base_experiment:
-#    cpsnark: cp_link # TODO [nku] CAN NOT BE RUN CURRENTLY
+#    cpsnark: cp_link
 #    pc_type: kzg
 
 

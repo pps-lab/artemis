@@ -49,15 +49,13 @@ class OsirisPreprocessTransformer(Transformer):
 
     def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
 
-        # TODO [nku] remove fake entry
-
-
-
-
         # parse prover time
         df['prover_time_sec'] = (df['Prover time'].replace({'s':'*1'}, regex=True)
                                             .dropna()
                                             .apply(pd.eval))
+
+
+        df["proof_size_bytes"] = df["Proof size"].apply(pd.to_numeric)
 
 
 
@@ -87,7 +85,7 @@ class OsirisPreprocessTransformer(Transformer):
         # parse and aggregate verifier time measurements
         df = df.apply(aggregate, axis=1)
 
-        # TODO [nku] REMOVE AGAIN
+        # TODO [nku] REMOVE FAKE ENTRIES AGAIN
         fake = []
         for model in ['gpt2', 'diffusion']:
             for pc_type in ['ipa', 'kzg']:
@@ -95,6 +93,10 @@ class OsirisPreprocessTransformer(Transformer):
         df_fake = pd.DataFrame(fake)
 
         df = pd.concat([df, df_fake], ignore_index=True)
+
+
+        # select relevant columns
+        df = df.filter(items=['suite_name', 'suite_id', 'exp_name', 'run', 'host_type', 'model', 'cpsnark', 'pc_type', 'prover_time_sec', 'proof_size_bytes', 'mean(verifier_time_ms)', 'stddev(verifier_time_ms)'])
 
         return df
 

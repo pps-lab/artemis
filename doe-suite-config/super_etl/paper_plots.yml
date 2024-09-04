@@ -80,6 +80,10 @@ $ETL$:
             #value_multiplier: 1.0
             unit_label: ms
 
+          proof_size:
+            value_cols: [proof_size_bytes]
+            unit_label: bytes
+
         cum_plot_config:
         - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 5, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}} # show a legend in figure where col1 == 'A'
 
@@ -162,3 +166,5 @@ $ETL$:
 
             prover_time: Prover
             verifier_time: Verifier
+
+            proof_size: Proof Size
