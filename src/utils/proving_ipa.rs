@@ -169,7 +169,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
   println!("Proving time: {:?}", proof_duration - proof_duration_start);
   let mut proving_time = proof_duration - proof_duration_start;
   println!("Proof size: {} bytes", proof.len());
-  let proof_size = proof.len();
+  let mut proof_size = proof.len();
   let mut verifying_time = vec![];
   for i in 0..num_runs {
     let verification = Instant::now();
@@ -223,7 +223,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
 
     println!("IPA commit proof time: {:?}", ipa_proof_timer.elapsed());
     proving_time += ipa_proof_timer.elapsed();
-
+    proof_size += proof.len();
     // Verify the opening proof
     for i in 0..num_runs {
       let ipa_vfy_timer = Instant::now();
