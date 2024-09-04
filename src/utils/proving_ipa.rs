@@ -117,7 +117,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_l
 
   let mut poly_params = params.clone();
   if poly_col_len > 1 {
-    poly_params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + poly_col_len as u32);
+    poly_params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
   }
 
   while poly_coeff.len() < 2usize.pow(poly_params.k() as u32) {
