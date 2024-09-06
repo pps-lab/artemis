@@ -57,57 +57,58 @@ $ETL$:
             pc_type: [kzg, ipa]
 
         fig_foreach:
-          cols: [$metrics$] # separate figure for prover and verifier
+          cols: [$metrics$]
           # jp_except...
-
-        subplot_grid:
-          rows: [pc_type]
-          cols: [model]
-          share_y: none #col # <- for prover time NOTE
-          share_x: all
-          kwargs:
-            constrained_layout: True
 
         # define metrics (select the data columns)
         metrics:
           prover_time:
             value_cols: [prover_time_sec]
             value_divider: 60.0
-            #value_multiplier: 1.0
             unit_label: min
 
           verifier_time:
             value_cols: [mean(verifier_time_sec)]
             error_cols: [stddev(verifier_time_sec)]
             value_divider: 1.0
-            #value_multiplier: 1.0
             unit_label: sec
 
           proof_size:
             value_cols: [proof_size_bytes]
-            unit_label: bytes
+            value_divider: 1000.0
+            unit_label: kB
 
+        ########## Configure each plot:
         cum_plot_config:
-        - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 5, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}} # show a legend in figure where col1 == 'A'
+        - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 5, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}}
+        - jp_query: ("$metrics$" != 'verifier_time')
+          subplot_grid:
+            rows: [pc_type]
+            cols: [model]
+            share_y: col
+            share_x: all
+            kwargs:
+              constrained_layout: True
+
+        - jp_query: ("$metrics$" == 'verifier_time')
+          subplot_grid:
+            rows: [pc_type]
+            cols: [model]
+            share_y: none
+            share_x: all
+            kwargs:
+              constrained_layout: True
 
         ########## Configure each Subplot:
-
         cum_subplot_config:
-
-        - jp_query: (subplot_col_idx == `0` && pc_type == 'ipa')
-          yaxis:
-            #lim: {min: -0.9, max: 2.15}
-            label: {template: "{pc_type} {$metrics$} [{$metric_unit$}]"}
-            major_formatter: round_short
-        - jp_query: (subplot_col_idx == `0` && pc_type == 'kzg')
+        - jp_query: (subplot_col_idx == `0`)
           yaxis:
             label: {template: "{pc_type} {$metrics$} [{$metric_unit$}]"}
             major_formatter: round_short
         - jp_query: (subplot_row_idx == `0`)
           ax_title: {template: "{model}"}
 
-        - jp_query: (pc_type == 'kzg')
-          xaxis:
+        - xaxis:
             tick_params:
             - {axis: x, which: both, labelsize: 8}
             - {axis: x, which: major, pad: 10}
@@ -116,20 +117,6 @@ $ETL$:
               cols: [cpsnark]
               label: {template: ""}
               #jp_except: "(cpsnark == 'cp_link+') || (cpsnark == 'cp_link')"
-
-        - jp_query: (pc_type == 'ipa')
-          #yaxis:
-          #  lim: {min: -0.9, max: 2.15}
-          xaxis:
-            tick_params:
-            - {axis: x, which: both, labelsize: 8}
-            - {axis: x, which: major, pad: 10}
-          chart:
-            bar_foreach:
-              cols: [cpsnark]
-              label: {template: ""}
-              #jp_except: "(cpsnark == 'cp_link+') || (cpsnark == 'cp_link')"
-
 
           ###### Configure each element (artist) in subfigure (ax)
         - cum_artist_config:
