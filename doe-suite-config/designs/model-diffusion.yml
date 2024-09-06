@@ -49,12 +49,12 @@ exp_ipa_no_com:
     pc_type: ipa
 
 
-exp_ipa_poly:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: poly
-    pc_type: ipa
+#exp_ipa_poly:
+#  n_repetitions: 1
+#  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+#  base_experiment:
+#    cpsnark: poly
+#    pc_type: ipa
 
 # cpsnark: poseidon    too expensive to run
 

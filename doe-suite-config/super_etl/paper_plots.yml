@@ -1,14 +1,13 @@
 ---
 
 $SUITE_ID$:
-  # TODO [nku] SET THE RUN IDS OF THE RESULTS
   model-small: "1725369940"
   model-mobilenet: "1725371439"
   model-vgg: "1725388515"
-  #model-diffusion: "<PLACEHOLDER>"
-  #model-gpt2: "<PLACEHOLDER>"
-  cplink: "1725423229" # "1725379289" # TODO [nku] THIS WILL NEED TO BE REPLACED
-  poly-ipa: "1725441369"
+  model-diffusion: "1725448679"
+  model-gpt2: "1725465767"
+  cplink: "1725423229" # "1725379289"
+  poly-ipa: "1725483589"   # "1725441369" <- the old one
 
 
 
@@ -21,7 +20,8 @@ $ETL$:
       cplink: "*"
       model-vgg: "*"
       poly-ipa: "*"
-      # TODO [nku] add the other suites
+      model-diffusion: "*"
+      model-gpt2: "*"
     extractors:
       ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
       IgnoreExtractor: {file_regex: ["stdout.log"]}
@@ -37,7 +37,8 @@ $ETL$:
       model-vgg: "*"
       cplink: "*"
       poly-ipa: "*"
-      # TODO [nku] add the other suites
+      model-diffusion: "*"
+      model-gpt2: "*"
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
       IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
@@ -46,6 +47,8 @@ $ETL$:
     - name: ResultFilterTransformer
     loaders:
       CsvSummaryLoader: {skip_empty: True}
+      OsirisFactorLoader: {}
+      ProofSizeTableLoader: {}
       MyCustomColumnCrossPlotLoader:
         data_filter:
           allowed:
@@ -60,7 +63,7 @@ $ETL$:
         subplot_grid:
           rows: [pc_type]
           cols: [model]
-          share_y: none
+          share_y: none #col # <- for prover time NOTE
           share_x: all
           kwargs:
             constrained_layout: True
@@ -69,16 +72,16 @@ $ETL$:
         metrics:
           prover_time:
             value_cols: [prover_time_sec]
-            #value_divider: 1.0
+            value_divider: 60.0
             #value_multiplier: 1.0
-            unit_label: sec
+            unit_label: min
 
           verifier_time:
-            value_cols: [mean(verifier_time_ms)]
-            error_cols: [stddev(verifier_time_ms)]
-            #value_divider: 1.0
+            value_cols: [mean(verifier_time_sec)]
+            error_cols: [stddev(verifier_time_sec)]
+            value_divider: 1.0
             #value_multiplier: 1.0
-            unit_label: ms
+            unit_label: sec
 
           proof_size:
             value_cols: [proof_size_bytes]
@@ -146,20 +149,20 @@ $ETL$:
             zorder: 10000
             jp_query: starts_with(cpsnark, 'cp_link+') || starts_with(cpsnark, 'poly')
           label_map:
-            no_com: No commitment
-            cp_link: CPLink
-            cp_link+: CPLink+ (Ours)
-            poly: Polynomial (Ours)
+            no_com: No Commitment
+            cp_link: Lunar
+            cp_link+: Apollo (Ours)
+            poly: Artemis (Ours)
             poseidon: Poseidon
 
-            mnist: MNIST~10k
-            snet: SNET~100k
-            resnet18: ResNet18~280k
-            dlrm: DLRM~750k
-            mobilenet: MOBILENET~3.5m
-            vgg: VGG~15m
-            gpt2: GPT2~81m
-            diffusion: DIFFUSION~19.5m
+            mnist: MNIST ~8k
+            snet: SNET ~100k
+            resnet18: ResNet-18 ~280k
+            dlrm: DLRM ~764k
+            mobilenet: MobileNet ~3.5m
+            vgg: VGG-16 ~15m
+            gpt2: GPT-2 ~81m
+            diffusion: Diffusion ~19.5m
 
             kzg: KZG
             ipa: IPA

@@ -33,6 +33,14 @@ exp_poly_ipa_vgg:
     pc_type: ipa
 
 
+exp_poly_ipa_diffusion:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: diffusion
+    cpsnark: poly
+    pc_type: ipa
+
 
 
 $ETL$:
