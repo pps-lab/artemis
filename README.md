@@ -1,14 +1,12 @@
 # Artemis: Efficient Commit-and-Prove SNARKs for zkML
 
-This repository contains the implementation of Apollo and Artemis, our CP-SNARK constructions from our paper (#TODO: add arxiv link!).
+This repository contains the implementation of Apollo and Artemis, our CP-SNARK constructions from [our paper](https://arxiv.org/abs/2409.12055).
 The underlying zkML implementation is based on the [zkML](https://github.com/uiuc-kang-lab/zkml) paper/repo.
 
 
 ## zkML
 zkml is a framework for constructing proofs of ML model execution in ZK-SNARKs.
-Read our [blog
-post](https://medium.com/@danieldkang/trustless-verification-of-machine-learning-6f648fd8ba88)
-and [paper](https://arxiv.org/abs/2210.08674) for implementation details.
+Read the [paper](https://arxiv.org/abs/2210.08674) for implementation details.
 
 zkml requires the nightly build of Rust:
 
