@@ -76,8 +76,3 @@ cd ../../
 ./target/release/test_circuit examples/mnist/converted_model.msgpack examples/mnist/example_inp.msgpack
 ```
 
-
-## Contact us
-
-If you're interested in extending or using zkml, please contact us at `ddkang
-[at] g.illinois.edu`.
