@@ -1,9 +1,0 @@
-Witness size: 100, Columns size 10, Columns 10
-SETUP: Parameters time: 629.167µs
-SETUP: Polynomials time: 275.188292ms
-SETUP: Commitments time: 262.037208ms
-SETUP: Total time: 537.881542ms
-CPLINK2: Prover time: 279.336333ms
-CPLINK2: Verifier time: 5.036542ms
-CPLINK1: Prover time: 1.210138792s
-CPLINK1: Verifier time: 35.708833ms
