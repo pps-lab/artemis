@@ -4,8 +4,13 @@ instance_type: r6i.16xlarge
 ec2_volume_size: 250
 
 # NOTE: these are a custom image where the dependencies are already installed
-ec2_image_id: ami-01fdb4c1524317f2d
-ec2_volume_snapshot: snap-0de52c055cbba1dc2
+#ec2_image_id: ami-01fdb4c1524317f2d
+#ec2_volume_snapshot: snap-0de52c055cbba1dc2
+
+# Ubuntu 24.04 LTS
+ec2_image_id: ami-0d64bb532e0502c46
+ec2_volume_snapshot: snap-0e966f459c12e6315
+
 
 # INFO: not setup for euler currently
 #euler_job_minutes: 120 # individual job time

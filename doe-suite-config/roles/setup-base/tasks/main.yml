@@ -5,37 +5,117 @@
     msg: "-> base only"
   tags: [print_action]
 
-#- name: Update repositories cache and install required packages
-#  become: True
-#  apt:
-#    pkg:
-#    # TODO: add other required packages (only for base)
+- name: Update repositories cache and install required packages
+  become: True
+  apt:
+    pkg:
+      - build-essential
+      - pkg-config
+      - clang
+      - libfontconfig1-dev
+      - zsh
+
+#### INSTALL RUST
+
+- name: Install Rust
+  block:
+
+    - name: remove existing rust version
+      become: true
+      apt:
+        pkg:
+          - rustc
+        state: absent
+        update_cache: yes
+
+    - name: check if cargo is installed
+      shell: command -v cargo
+      register: cargo_exists
+      failed_when: false
+
+    - name: Download Installer
+      when: cargo_exists.stdout == ""
+      get_url:
+        url: https://sh.rustup.rs
+        dest: /tmp/sh.rustup.rs
+        mode: '0755'
+        force: 'yes'
+      tags:
+        - rust
+
+    - name: install rust/cargo
+      when: cargo_exists.stdout == ""
+      shell: |
+        source ~/.bashrc
+        /tmp/sh.rustup.rs -y
+      args:
+        executable: /bin/bash
+      tags:
+        - rust
 
 
 - name: Build the Artifact
-  ansible.builtin.shell:
-    cmd: "cargo +nightly build --release"  # {{ cargo_loc}}
+  ansible.builtin.shell: |
+    . ~/.bashrc
+    . "$HOME/.cargo/env"
+    rustup install nightly
+    cargo +nightly build --release
+  args:
     chdir: "{{ exp_code_dir }}"
-#  environment:
-#    GUROBI_HOME: "{{ gurobi.home }}"
-#    LD_LIBRARY_PATH: "{{ gurobi.ld_library_path }}"
   tags: [print_action]
 
+- name: "Check if AWS CLI is installed"
+  ansible.builtin.stat:
+    path: "/usr/local/bin/aws"
+  register: aws_cli_stat
+- name: Setup awscli
+  when: aws_cli_stat.stat.exists == False
+  block:
+    - name: Install packages
+      become: True
+      apt:
+        pkg:
+          - zip
+        update_cache: yes
 
-- name: Create a symbolic link to the ipa_parameters (to avoid copying)
-  ansible.builtin.file:
-    src: ~/halo2test/params_ipa
-    dest: "{{ exp_code_dir }}/params_ipa"
-    state: link
+    - name: Download awscli
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
 
-- name: Create a symbolic link to the kzg_parameters (to avoid copying)
-  ansible.builtin.file:
-    src: ~/halo2test/params_kzg
-    dest: "{{ exp_code_dir }}/params_kzg"
-    state: link
+    - name: Unpack awscli
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: yes
 
-- name: Create a symbolic link to the cifar examples
+    - name: Install awscli via shell
+      become: True
+      ansible.builtin.shell:
+        chdir: /tmp
+        cmd: ./aws/install
+        creates: /usr/local/bin/aws
+
+
+# TODO: Copy from S3
+#
+# params_ipa, params_kzg
+# examples/cifar only
+#
+- name: Download S3 Artifacts (for loop)
+  ansible.builtin.shell:
+    cmd: "aws s3 sync s3://{{ input_bucket_name }}/{{ artifact.s3 }} {{ exp_code_dir }}/{{ artifact.local }} --no-sign-request"
+  loop:
+    - s3: examples/models
+      local: examples/cifar
+  loop_control:
+    loop_var: artifact
+
+- name: Create param dirs (ipa and kzg)
   ansible.builtin.file:
-    src: ~/halo2test/examples/cifar
-    dest: "{{ exp_code_dir }}/examples/cifar"
-    state: link
+    state: directory
+    path: "{{ exp_code_dir }}/{{ item }}"
+  loop:
+    - "params_ipa"
+    - "params_kzg"
+
