@@ -4,7 +4,7 @@ This repository contains the implementation of Apollo and Artemis, our CP-SNARK 
 The underlying zkML implementation is based on the [zkML](https://github.com/uiuc-kang-lab/zkml) paper/repo.
 
 ## Requirements
-__TODO__ @nikolay Any requirements on Rust?
+Rust
 
 ### Artifacts
 This repository requires several artifacts related to the model definitions used in the evaluation.

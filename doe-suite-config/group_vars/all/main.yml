@@ -3,10 +3,11 @@
 
 # set remote repository (code will be cloned on each remote host)
 #git_remote_repository: "https://github.com/pps-lab/artemis.git"
-git_remote_repository: "git@github.com:pps-lab/artemis.git"
+#git_remote_repository: "git@github.com:pps-lab/artemis.git"
 # TODO: Update to HTTPS, does not seem to be working with doe-suite at the moment
-#git_remote_repository:
-#  - repo: "https://github.com/pps-lab/artemis.git"
+git_remote_repository:
+  - repo: "https://github.com/pps-lab/artemis.git"
+    version: "main"
 
 prj_id_prefix: "artemis"
 
