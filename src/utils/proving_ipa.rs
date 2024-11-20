@@ -43,7 +43,7 @@ pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   params
 }
 
-pub fn time_circuit_ipa(circuit: ModelCircuit<Fp>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String) {
+pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String) {
   let mut rng = &mut rand::thread_rng();
   let start = Instant::now();
 

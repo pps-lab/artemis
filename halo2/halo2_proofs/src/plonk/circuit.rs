@@ -29,7 +29,7 @@ pub trait ColumnType:
 }
 
 /// A column with an index and type
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default)]
 pub struct Column<C: ColumnType> {
     index: usize,
     column_type: C,
@@ -97,7 +97,7 @@ impl<C: ColumnType> PartialOrd for Column<C> {
 
 pub(crate) mod sealed {
     /// Phase of advice column
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
     pub struct Phase(pub(super) u8);
 
     impl Phase {
@@ -193,11 +193,11 @@ impl std::fmt::Debug for Advice {
 }
 
 /// A fixed column
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default)]
 pub struct Fixed;
 
 /// An instance column
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default)]
 pub struct Instance;
 
 /// An enum over the Advice, Fixed, Instance structs
@@ -453,7 +453,7 @@ impl TryFrom<Column<Any>> for Column<Instance> {
 ///     Ok(())
 /// }
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Selector(pub(crate) usize, bool);
 
 impl Selector {
@@ -565,7 +565,7 @@ impl InstanceQuery {
 /// they cannot simultaneously be used as general fixed columns.
 ///
 /// [`Layouter::assign_table`]: crate::circuit::Layouter::assign_table
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default)]
 pub struct TableColumn {
     /// The fixed column that this table column is stored in.
     ///

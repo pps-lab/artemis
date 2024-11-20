@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::{Fr, G1Affine};
 use zkml::{
   layers::{
     arithmetic::{add::AddChip, div_var::DivVarChip, mul::MulChip, sub::SubChip},
@@ -41,7 +41,7 @@ fn main() {
   let config_fname = std::env::args().nth(1).expect("config file path");
 
   let config = load_config_msgpack(&config_fname, false);
-  let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, false, 0, 17, 10);
+  let circuit = ModelCircuit::<G1Affine>::generate_from_msgpack(config, false, false, 0, 17, 10);
   let num_cols = GADGET_CONFIG.lock().unwrap().num_cols as i64;
 
   let mut num_rows = circuit.num_random;

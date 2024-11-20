@@ -19,6 +19,7 @@ halo2 = { path = "halo2/halo2"}
 halo2curves = { path = "halo2/halo2curves"}
 halo2_gadgets = { path = "halo2/halo2_gadgets", features = ["circuit-params"] }
 halo2_proofs = { path = "halo2/halo2_proofs", features = ["circuit-params", "dev-graph"] }
+ecc = { path = "halo2/ecc"}
 graphviz-rust = "0.9.0"
 lazy_static = "1.4.0"
 ndarray = "0.15.6"

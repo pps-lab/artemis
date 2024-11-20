@@ -1,4 +1,4 @@
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::G1Affine;
 use zkml::{
   model::ModelCircuit,
   utils::{loader::load_config_msgpack, proving_kzg::verify_circuit_kzg},
@@ -20,7 +20,7 @@ fn main() {
 
   if kzg_or_ipa == "kzg" {
     let config = load_config_msgpack(&config_fname, witness_column_str);
-    let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false, witness_column_str, 0, 17, 10);
+    let circuit = ModelCircuit::<G1Affine>::generate_from_msgpack(config, false, witness_column_str, 0, 17, 10);
     let k = circuit.k;
     let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
     use plotters::prelude::*;

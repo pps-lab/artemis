@@ -48,6 +48,9 @@ name = "fft"
 harness = false
 
 [dependencies]
+num-bigint = { version = "0.4", features = ["rand"] }
+num-integer = "0.1"
+num-traits = "0.2"
 itertools = "0.10"
 backtrace = { version = "0.3", optional = true }
 rayon = "1.5.1"

@@ -52,7 +52,7 @@ $ETL$:
       MyCustomColumnCrossPlotLoader:
         data_filter:
           allowed:
-            model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
+            model: [vgg, diffusion, gpt2]
             cpsnark: [no_com, poly, cp_link+, cp_link, poseidon]
             pc_type: [kzg, ipa]
 
@@ -80,7 +80,7 @@ $ETL$:
 
         ########## Configure each plot:
         cum_plot_config:
-        - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 5, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}}
+        - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 4, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}}
         - jp_query: ("$metrics$" != 'verifier_time')
           subplot_grid:
             rows: [pc_type]

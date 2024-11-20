@@ -7,7 +7,7 @@ use std::io::Error;
 use std::marker::PhantomData;
 use std::panic;
 use halo2_proofs::{
-    halo2curves::bn256::{G1, Fr},
+    halo2curves::bn256::{G1, Fr, G1Affine},
     plonk::{ConstraintSystem, Circuit},
     dev::cost::CircuitCost,
 };
@@ -45,11 +45,11 @@ use zkml::{
   model::{ModelCircuit, GADGET_CONFIG},
 };
 
-fn circuit_cost_without_permutation(circuit: ModelCircuit<Fr>, k: u64) -> u64 {
+fn circuit_cost_without_permutation(circuit: ModelCircuit<G1Affine>, k: u64) -> u64 {
     let mut k = k;
     loop {
       let result = panic::catch_unwind(|| {
-        CircuitCost::<G1, ModelCircuit<Fr>>::measure((k as u32).try_into().unwrap(), &circuit)
+        CircuitCost::<G1, ModelCircuit<G1Affine>>::measure((k as u32).try_into().unwrap(), &circuit)
       });
       match result {
         Ok(_) => {
@@ -64,10 +64,10 @@ fn circuit_cost_without_permutation(circuit: ModelCircuit<Fr>, k: u64) -> u64 {
     k as u64
   }
 
-fn load_constraint_from_circuit(_circuit: &ModelCircuit<Fr>) -> ConstraintSystem<Fr> {
+fn load_constraint_from_circuit(_circuit: &ModelCircuit<G1Affine>) -> ConstraintSystem<Fr> {
     // create constraint system to collect custom gates
     let mut cs: ConstraintSystem<Fr> = Default::default();
-    let _ = ModelCircuit::configure(&mut cs);
+    let _ = ModelCircuit::<G1Affine>::configure(&mut cs);
     cs
 }
 
@@ -303,7 +303,7 @@ fn main() -> Result<(), Error> {
     panic!("Must specify kzg or ipa");
   }
 
-  let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, false, 0, 17, 10);
+  let circuit = ModelCircuit::<G1Affine>::generate_from_file(&config_fname, &inp_fname, false, 0, 17, 10);
   //let config = load_config_msgpack(&config_fname);
   //let circuit = ModelCircuit::<Fr>::generate_from_msgpack(config, false);
 

@@ -66,7 +66,7 @@ pub fn verify_kzg(
   );
 }
 
-pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
+pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
   let rng = rand::thread_rng();
   //println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
   let start = Instant::now();
@@ -146,13 +146,16 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
 
   let fill_duration = start.elapsed();
   let proof_circuit = circuit.clone();
-
-  let _prover = MockProver::run(degree, &proof_circuit, vec![vec![]]).unwrap();
+  let mut public_vals = vec![vec![]];
+  if commit_poly {
+    public_vals.push(vec![]);
+  }
+  let _prover = MockProver::run(degree, &proof_circuit, public_vals.clone()).unwrap();
   println!(
     "Time elapsed in filling circuit: {:?}",
     fill_duration - pk_duration
   );
-  let mut public_vals = vec![vec![]];
+
   //let mut betas = vec![vec![]; poly_col_len];
 
   public_vals[0] = get_public_values();
@@ -171,7 +174,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
     Challenge255<G1Affine>,
     _,
     Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-    ModelCircuit<Fr>,
+    ModelCircuit<G1Affine>,
   >(
     &params,
     &pk,
@@ -333,7 +336,7 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<Fr>, commit_poly: bool, poly_col_l
 
 // Standalone verification
 pub fn verify_circuit_kzg(
-  circuit: ModelCircuit<Fr>,
+  circuit: ModelCircuit<G1Affine>,
   vkey_fname: &str,
   proof_fname: &str,
   public_vals_fname: &str,
@@ -342,7 +345,7 @@ pub fn verify_circuit_kzg(
   let params = get_kzg_params("~/params_kzg", degree);
   println!("Loaded the parameters");
 
-  let vk = VerifyingKey::read::<BufReader<File>, ModelCircuit<Fr>>(
+  let vk = VerifyingKey::read::<BufReader<File>, ModelCircuit<G1Affine>>(
     &mut BufReader::new(File::open(vkey_fname).unwrap()),
     SerdeFormat::RawBytes,
     (),

@@ -1,4 +1,4 @@
-use halo2_proofs::halo2curves::{bn256::Fr, pasta::Fp};
+use halo2_proofs::halo2curves::{bn256::{Fr, G1Affine}, pasta::{Fp, EqAffine}};
 use zkml::{
   model::ModelCircuit,
   utils::{proving_ipa::time_circuit_ipa, proving_kzg::time_circuit_kzg},
@@ -25,7 +25,7 @@ fn main() {
   }
 
   if kzg_or_ipa == "kzg" {
-    let circuit = ModelCircuit::<Fr>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
+    let circuit = ModelCircuit::<G1Affine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
     let k = circuit.k;
     // use plotters::prelude::*;
     // let root = BitMapBackend::new(&fname, (1000, 3000)).into_drawing_area();
@@ -36,7 +36,7 @@ fn main() {
     // halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
     time_circuit_kzg(circuit, commit, chunks, cp_link, num_runs, directory, c_ipt);
   } else {
-    let circuit = ModelCircuit::<Fp>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
+    let circuit = ModelCircuit::<EqAffine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt);
     let k = circuit.k;
 
     // use plotters::prelude::*;
