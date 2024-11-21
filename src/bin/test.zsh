@@ -23,7 +23,7 @@ rows=0
 poly_cols=0
 cplink=false
 poly_com=false
-
+pedersen=false
 
 case "$name" in
     mnist)
@@ -31,6 +31,9 @@ case "$name" in
             cols=10
             rows=19
             poly_cols=0
+        elif [ "$cp_snark" = "pedersen" ]; then
+            cols=10
+            rows=18
         else
             cols=10
             rows=15
@@ -48,7 +51,7 @@ case "$name" in
         else
             cols=15
             rows=19
-            poly_cols=1
+            poly_cols=3
         fi
         name='cifar10'
         echo "Running ResNet task..."
@@ -67,7 +70,7 @@ case "$name" in
         else
             cols=9
             rows=19
-            poly_cols=2
+            poly_cols=3
         fi
         echo "Running DLRM task..."
         # Add DLRM-specific commands here
@@ -172,6 +175,13 @@ case "$cp_snark" in
         poly_com=false
         poly_cols=0
         ;;
+
+    pedersen)
+        cp_link=false
+        poly_com=true
+        poly_cols=3
+        pedersen=true
+        ;;
     *)
         echo "Error: Unknown case '$case'"
         echo "Available cases: mnist, resnet, dlrm, mobilenet, vgg, gpt2, diffusion"
@@ -179,4 +189,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $num_runs $dir
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir

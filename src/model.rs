@@ -328,12 +328,12 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
     Ok(constants)
   }
 
-  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<C> {
+  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize, pedersen: bool) -> ModelCircuit<C> {
     let config = load_model_msgpack(config_file, inp_file, witness_column);
-    Self::generate_from_msgpack(config, true, witness_column, chunks, k_ipt, c_ipt)
+    Self::generate_from_msgpack(config, true, witness_column, chunks, k_ipt, c_ipt, pedersen)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, poly_commit: bool, chunks: usize, k_ipt: usize, c_ipt: usize) -> ModelCircuit<C> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, poly_commit: bool, chunks: usize, k_ipt: usize, c_ipt: usize, pedersen: bool) -> ModelCircuit<C> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -511,6 +511,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
 
     *gadget.lock().unwrap() = GadgetConfig {
       poly_commit,
+      pedersen,
       scale_factor: config.global_sf as u64,
       shift_min_val: -(config.global_sf * config.global_sf * (1 << 17)),
       div_outp_min_val: -(1 << (k_ipt as usize - 1)),
@@ -654,6 +655,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let columns = (0..gadget_config.num_cols)
       .map(|_| meta.advice_column())
       .collect::<Vec<_>>();
+    let maingate_cols = columns[0..5].to_vec();
     for col in columns.iter() {
       meta.enable_equality(*col);
     }
@@ -727,11 +729,9 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     };
     let mut main_gate_config= MainGateConfig::default();
     let mut range_config= RangeConfig::default();
-
-    if gadget_config.poly_commit {
+    if gadget_config.pedersen {
       let rns = Rns::<C::Base, C::ScalarExt, 4, 68>::construct();
-
-      main_gate_config = MainGate::<C::ScalarExt>::configure(meta);
+      main_gate_config = MainGate::<C::ScalarExt>::configure_reuse(meta, gadget_config.columns_poly.clone(), gadget_config.columns_public[0]);
       let overflow_bit_lens = rns.overflow_lengths();
       let composition_bit_lens = vec![17];
 
@@ -936,8 +936,9 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
       println!("Poly coeffs len: {}", new_coeffs.len());
       println!("Rho: {:?}", rho);
+    }
 
-
+    if config.gadget_config.pedersen {
       let ecc_chip_config = config.ecc_chip_config();
       let mut ecc_chip =
           BaseFieldEccChip::<C, 4, 68>::new(ecc_chip_config);
@@ -950,8 +951,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
               let offset = 0;
               let ctx = &mut RegionCtx::new(region, offset);
               ecc_chip.assign_aux_generator(ctx, Value::known(aux_generator))?;
-              ecc_chip.assign_aux(ctx, 1, 1)?;
-              ecc_chip.get_mul_aux(1, 1)?;
+              ecc_chip.assign_aux(ctx, 2, 1)?;
+              ecc_chip.get_mul_aux(2, 1)?;
               Ok(())
           },
       )?;
@@ -970,7 +971,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
               let s = main_gate.assign_value(ctx, Value::known(s))?;
               let result_0 = ecc_chip.assign_point(ctx, Value::known(result.into()))?;
 
-              let result_1 = ecc_chip.mul(ctx, &base, &s, 1)?;
+              let result_1 = ecc_chip.mul(ctx, &base, &s, 2)?;
               ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
 
               Ok(())

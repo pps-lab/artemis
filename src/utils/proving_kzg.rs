@@ -73,7 +73,12 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
 
   let degree = circuit.k as u32;
   let params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree);
-
+  let mut poly_params = params.clone();
+  if commit_poly {
+    if (poly_col_len) > 1  {
+      poly_params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
+    }
+  }
   let circuit_duration = start.elapsed();
   println!(
     "Time elapsed in params construction: {:?}",
@@ -147,9 +152,9 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
   let fill_duration = start.elapsed();
   let proof_circuit = circuit.clone();
   let mut public_vals = vec![vec![]];
-  if commit_poly {
-    public_vals.push(vec![]);
-  }
+  // if commit_poly {
+  //   public_vals.push(vec![]);
+  // }
   let _prover = MockProver::run(degree, &proof_circuit, public_vals.clone()).unwrap();
   println!(
     "Time elapsed in filling circuit: {:?}",
@@ -178,12 +183,26 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
   >(
     &params,
     &pk,
-    &[proof_circuit],
+    &[proof_circuit.clone()],
     &[public_vals_slice.as_slice()],
     rng,
     &mut transcript,
   )
   .unwrap();
+
+  // DRAW Circ
+  println!("Draw circuit");
+  let k = proof_circuit.k;
+  use plotters::prelude::*;
+  let root = BitMapBackend::new("circ.png", (1000, 3000)).into_drawing_area();
+  root.fill(&WHITE).unwrap();
+  let root = root
+      .titled("Example Circuit Layout", ("sans-serif", 60))
+      .unwrap();
+  halo2_proofs::dev::CircuitLayout::default().render(k as u32, &proof_circuit, &root).unwrap();
+
+
+
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
   let mut proving_time = proof_duration - proof_duration_start;
@@ -260,11 +279,6 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
   // KZG Commit proof
 
   if commit_poly {
-    let mut poly_params = params;
-    if (poly_col_len) > 1  {
-      poly_params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
-    }
-
     let kzg_proof_timer = Instant::now();
     println!("Tensor len: {}", tensor_len);
   

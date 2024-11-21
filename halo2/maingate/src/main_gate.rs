@@ -520,6 +520,88 @@ impl<F: PrimeField> MainGate<F> {
             instance,
         }
     }
+
+    /// Configure by reusing existing advice columns
+    pub fn configure_reuse(meta: &mut ConstraintSystem<F>, advice_cols: Vec<Column<Advice>>, instance_col: Column<Instance>) -> MainGateConfig {
+        let (a, b, c, d, e) = (advice_cols[0], advice_cols[1], advice_cols[2], advice_cols[3], advice_cols[4]);
+        // let b = meta.advice_column();
+        // let c = meta.advice_column();
+        // let d = meta.advice_column();
+        // let e = meta.advice_column();
+        
+        let sa = meta.fixed_column();
+        let sb = meta.fixed_column();
+        let sc = meta.fixed_column();
+        let sd = meta.fixed_column();
+        let se = meta.fixed_column();
+
+        let s_mul_ab = meta.fixed_column();
+        let s_mul_cd = meta.fixed_column();
+
+        let se_next = meta.fixed_column();
+        let s_constant = meta.fixed_column();
+
+        let instance = instance_col;
+
+        meta.enable_equality(a);
+        meta.enable_equality(b);
+        meta.enable_equality(c);
+        meta.enable_equality(d);
+        meta.enable_equality(e);
+        meta.enable_equality(instance);
+
+        meta.create_gate("main_gate", |meta| {
+            let a = meta.query_advice(a, Rotation::cur());
+            let b = meta.query_advice(b, Rotation::cur());
+            let c = meta.query_advice(c, Rotation::cur());
+            let d = meta.query_advice(d, Rotation::cur());
+            let e_next = meta.query_advice(e, Rotation::next());
+            let e = meta.query_advice(e, Rotation::cur());
+
+            let sa = meta.query_fixed(sa, Rotation::cur());
+            let sb = meta.query_fixed(sb, Rotation::cur());
+            let sc = meta.query_fixed(sc, Rotation::cur());
+            let sd = meta.query_fixed(sd, Rotation::cur());
+            let se = meta.query_fixed(se, Rotation::cur());
+
+            let se_next = meta.query_fixed(se_next, Rotation::cur());
+
+            let s_mul_ab = meta.query_fixed(s_mul_ab, Rotation::cur());
+            let s_mul_cd = meta.query_fixed(s_mul_cd, Rotation::cur());
+
+            let s_constant = meta.query_fixed(s_constant, Rotation::cur());
+
+            vec![
+                a.clone() * sa
+                    + b.clone() * sb
+                    + c.clone() * sc
+                    + d.clone() * sd
+                    + e * se
+                    + a * b * s_mul_ab
+                    + c * d * s_mul_cd
+                    + se_next * e_next
+                    + s_constant,
+            ]
+        });
+
+        MainGateConfig {
+            a,
+            b,
+            c,
+            d,
+            e,
+            sa,
+            sb,
+            sc,
+            sd,
+            se,
+            se_next,
+            s_constant,
+            s_mul_ab,
+            s_mul_cd,
+            instance,
+        }
+    }
 }
 
 #[cfg(test)]
