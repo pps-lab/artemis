@@ -51,7 +51,7 @@ case "$name" in
         else
             cols=15
             rows=19
-            poly_cols=3
+            poly_cols=1
         fi
         name='cifar10'
         echo "Running ResNet task..."
@@ -70,7 +70,7 @@ case "$name" in
         else
             cols=9
             rows=19
-            poly_cols=3
+            poly_cols=2
         fi
         echo "Running DLRM task..."
         # Add DLRM-specific commands here
@@ -179,8 +179,10 @@ case "$cp_snark" in
     pedersen)
         cp_link=false
         poly_com=true
-        poly_cols=3
         pedersen=true
+        if [ "$poly_cols" -lt 3 ]; then
+            poly_cols=3
+        fi
         ;;
     *)
         echo "Error: Unknown case '$case'"
