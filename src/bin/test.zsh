@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 set -xe
 trap "exit" INT TERM
-trap "kill 0" EXIT
+#trap "kill 0" EXIT
 
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
