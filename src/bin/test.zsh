@@ -112,8 +112,8 @@ case "$name" in
     
     gpt2)
         if [ "$cp_snark" = "poseidon" ]; then
-            cols=13
-            rows=26
+            cols=26
+            rows=25
             poly_cols=0
         elif [ "$cp_snark" = "cp_link" ]; then
             cols=10
