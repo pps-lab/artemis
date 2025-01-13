@@ -111,7 +111,11 @@ case "$name" in
         ;;
     
     gpt2)
-        if [ "$cp_snark" = "cp_link" ]; then
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=13
+            rows=26
+            poly_cols=0
+        elif [ "$cp_snark" = "cp_link" ]; then
             cols=10
             rows=27
         else 
@@ -125,7 +129,11 @@ case "$name" in
         ;;
     
     diffusion)
-        if [ "$cp_snark" = "cp_link" ]; then
+        if [ "$cp_snark" = "poseidon" ]; then
+            cols=29
+            rows=25
+            poly_cols=0
+        elif [ "$cp_snark" = "cp_link" ]; then
             cols=15
             rows=25
         else 
