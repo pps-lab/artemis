@@ -117,7 +117,7 @@ pub fn bench_ipa_permute_expression_pair(c: &mut Criterion) {
 
 criterion_group!{
     name=benches; 
-    config=Criterion::default().sample_size(10); 
+    config=Criterion::default().sample_size(1); 
     targets=bench_ipa_permute_expression_pair
 }
 criterion_main!(benches);

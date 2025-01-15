@@ -31,7 +31,7 @@ pub fn bench_ipa_add(c: &mut Criterion) {
 
 criterion_group!{
     name=benches;
-    config=Criterion::default(); 
+    config=Criterion::default().sample_size(1); 
     targets=bench_ipa_add
 }
 criterion_main!(benches);
