@@ -6,55 +6,49 @@ $SUITE_VARS$:
 
 # no_com, cp_link, cp_link+, poly, poseidon
 
-exp_kzg_no_com:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: no_com
-    pc_type: kzg
-
-
 #exp_kzg_cp_link:
 #  n_repetitions: 1
 #  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
 #  base_experiment:
-#    cpsnark: cp_link   # TODO [nku] CAN NOT BE RUN CURRENTLY
+#    cpsnark: cp_link
+#    pc_type: kzg
+#
+#
+#exp_kzg_cp_link_plus:
+#  n_repetitions: 1
+#  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+#  base_experiment:
+#    cpsnark: cp_link+
 #    pc_type: kzg
 
 
-exp_kzg_cp_link_plus:
+exp_kzg_others:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
-    cpsnark: cp_link+
-    pc_type: kzg
-
-
-exp_kzg_poly:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: poly
+    cpsnark:
+      $FACTOR$: [no_com, poly, pedersen]
     pc_type: kzg
 
 # cpsnark: poseidon    too expensive to run
 
 ######################IPA Below
 
-exp_ipa_no_com:
+exp_ipa:
   n_repetitions: 1
   host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
   base_experiment:
-    cpsnark: no_com
+    cpsnark:
+      $FACTOR$: [no_com, poly, pedersen]
     pc_type: ipa
 
 
-exp_ipa_poly:
-  n_repetitions: 1
-  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
-  base_experiment:
-    cpsnark: poly
-    pc_type: ipa
+#exp_ipa_poly:
+#  n_repetitions: 1
+#  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+#  base_experiment:
+#    cpsnark: poly
+#    pc_type: ipa
 
 # cpsnark: poseidon    too expensive to run
 

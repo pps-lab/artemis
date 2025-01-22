@@ -22,6 +22,25 @@ exp_ipa_mobilenet_poseidon:
     pc_type: ipa
 
 
+############ experiments using poseidon
+exp_kzg_mobilenet_poly_pedersen:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: pedersen
+    pc_type: kzg
+
+
+exp_ipa_mobilenet_poly_pedersen:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: pedersen
+    pc_type: ipa
+
+
 #####################Experiments using other cpsnarks (i.e., not poseidon)
 
 exp_kzg_mobilenet_others:
@@ -30,7 +49,7 @@ exp_kzg_mobilenet_others:
   base_experiment:
     model: mobilenet
     cpsnark:
-      $FACTOR$: [no_com, cp_link+, poly] # cp_link] # all except poseidon  # TODO: BRING BACK ONCE CP_LINK EXISTS
+      $FACTOR$: [no_com, cp_link+, poly, cp_link] # all except poseidon  # TODO: BRING BACK ONCE CP_LINK EXISTS
     pc_type: kzg
 
 

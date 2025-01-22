@@ -30,7 +30,15 @@ class ErrorExpectedFileExtractor(Extractor):
         return errors
 
 
+class MergeRowsTransformer(Transformer):
 
+    def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
+        # each entry has two rows, we want to merge the Prover time, Verifier time, and Proof size and max_rss.
+        # one row has Prover time, Verifier time, and Proof size, and max_rss nan, the other row the opposite
+        group = ['suite_name', 'suite_id', 'exp_name', 'run', 'host_type', 'model', 'cpsnark', 'pc_type']
+        merged_df = df.groupby(group).apply(lambda group: group.ffill().bfill()).drop_duplicates(subset=group).reset_index(drop=True)
+
+        return merged_df
 
 class OsirisPreprocessTransformer(Transformer):
 
@@ -96,11 +104,11 @@ class OsirisPreprocessTransformer(Transformer):
 
 
         # select relevant columns
-        df = df.filter(items=['suite_name', 'suite_id', 'exp_name', 'run', 'host_type', 'model', 'cpsnark', 'pc_type', 'prover_time_sec', 'proof_size_bytes', 'mean(verifier_time_sec)', 'stddev(verifier_time_sec)'])
+        df = df.filter(items=['suite_name', 'suite_id', 'exp_name', 'run', 'host_type', 'model', 'cpsnark', 'pc_type', 'prover_time_sec', 'proof_size_bytes', 'mean(verifier_time_sec)', 'stddev(verifier_time_sec)', 'max_rss'])
 
 
         # compute factor vs no_com baseline
-        for data_col in ["prover_time_sec", "mean(verifier_time_sec)", "proof_size_bytes"]:
+        for data_col in ["prover_time_sec", "mean(verifier_time_sec)", "proof_size_bytes", "max_rss"]:
             result_col = f"{data_col}_factor_vs_nocom (no_com=1)"
             df = compute_factor_vs_baseline(df, data_col=data_col, baseline_col="cpsnark", baseline_value="no_com", result_col=result_col, group_cols=["model", "pc_type"])
 
@@ -144,6 +152,39 @@ class ResultFilterTransformer(Transformer):
 
         return df1
 
+class ArtificialResultTransformer(Transformer):
+
+    # Duplicates cpsnark=poly rows to create fake cp_snark=poly_pedersen rows, but keeping the same values in the other rows
+    # prover_time_sec, mean(verifier_time_sec) are multiplied by 1.2
+
+    def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
+
+        condition = (df["cpsnark"] == "poly")
+        df1 = df[condition].copy()
+        df1["cpsnark"] = "poly_pedersen"
+        df1["prover_time_sec"] = df1["prover_time_sec"] * 1.2
+        df1["mean(verifier_time_sec)"] = df1["mean(verifier_time_sec)"] * 1.2
+        df1["proof_size_bytes"] = df1["proof_size_bytes"] * 1.2
+
+        df_concat = pd.concat([df, df1], ignore_index=True)
+
+        return df_concat
+
+
+class FactorPerModelLoader(Loader):
+
+    def load(self, df: pd.DataFrame, options: Dict, etl_info: Dict) -> None:
+
+        output_dir = self.get_output_dir(etl_info)
+
+        res = df.filter(["model", "cpsnark", "pc_type", "prover_time_sec_factor_vs_nocom (no_com=1)", "mean(verifier_time_sec)_factor_vs_nocom (no_com=1)", "proof_size_bytes_factor_vs_nocom (no_com=1)", "max_rss_factor_vs_nocom (no_com=1)"])
+        res.sort_values(by=["pc_type", "model", "cpsnark"], inplace=True)
+
+        # filter out temp
+        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+"))]
+        res = res.filter(["model", "cpsnark", "max_rss_factor_vs_nocom (no_com=1)", "prover_time_sec_factor_vs_nocom (no_com=1)"])
+
+        res.to_html(f"{output_dir}/model_ factor_vs_nocom.html")
 
 
 class OsirisFactorLoader(Loader):
@@ -159,15 +200,16 @@ class OsirisFactorLoader(Loader):
 
         print(df.columns)
 
-        agg_d = {"prover_time_sec_factor_vs_nocom (no_com=1)": ["min", "max"], "mean(verifier_time_sec)_factor_vs_nocom (no_com=1)": ["min", "max"], "proof_size_bytes_factor_vs_nocom (no_com=1)": ["min", "max"]}
+        agg_d = {"prover_time_sec_factor_vs_nocom (no_com=1)": ["min", "max"], "mean(verifier_time_sec)_factor_vs_nocom (no_com=1)": ["min", "max"], "proof_size_bytes_factor_vs_nocom (no_com=1)": ["min", "max"],
+                 "max_rss_factor_vs_nocom (no_com=1)": ["min", "max"]}
 
 
         res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
         res1.to_html(f"{output_dir}/factor_vs_nocom.html")
 
 
-        res2 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
-        res2.to_html(f"{output_dir}/factor_vs_kzg.html")
+        # res2 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
+        # res2.to_html(f"{output_dir}/factor_vs_kzg.html")
 
 
 class ProofSizeTableLoader(Loader):

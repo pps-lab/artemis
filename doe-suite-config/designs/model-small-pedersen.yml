@@ -16,7 +16,7 @@ exp_kzg:
     model:
       $FACTOR$: [mnist, resnet18, dlrm]
     cpsnark:
-      $FACTOR$: [no_com, cp_link+, poseidon, poly, cp_link, pedersen]
+      $FACTOR$: [pedersen] #, cp_link] TODO [nku] BRING BACK ONCE DONE
     pc_type: kzg
 
 exp_ipa:
@@ -30,7 +30,7 @@ exp_ipa:
     model:
       $FACTOR$: [mnist, resnet18, dlrm]
     cpsnark:
-      $FACTOR$: [no_com, poseidon, poly, pedersen] # INFO: cp_link, cp_link+ -> not with ipa
+      $FACTOR$: [pedersen] # INFO: cp_link, cp_link+ -> not with ipa
     pc_type: ipa
 
 

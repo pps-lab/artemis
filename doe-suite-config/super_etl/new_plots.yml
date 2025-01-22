@@ -1,0 +1,279 @@
+---
+
+$SUITE_ID$:
+  model-small: "1732267721"
+  model-mobilenet: "1732269605"
+  model-vgg: "1732285281"
+  model-diffusion: "1732401539"
+  model-gpt2: "1732351285"
+#  cplink: "1725423229" # "1725379289"
+#  poly-ipa: "1725483589"   # "1725441369" <- the old one
+
+
+
+$ETL$:
+
+  overview:
+    experiments:
+      model-small: "*"
+      model-mobilenet: "*"
+#      cplink: "*"
+      model-vgg: "*"
+#      poly-ipa: "*"
+      model-diffusion: "*"
+      model-gpt2: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log", "runtime_info.yaml"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}
+
+  memory:
+    experiments:
+      model-small: "*"
+      model-mobilenet: "*"
+      model-vgg: "*"
+      model-diffusion: "*"
+      model-gpt2: "*"
+    extractors:
+      CsvExtractor: { file_regex: [ "output.csv" ] } # with default file_regex
+      YamlExtractor: {file_regex: ["runtime_info.yaml"]}
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log" ]}
+    transformers:
+      - name: MergeRowsTransformer
+      - name: OsirisPreprocessTransformer
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}
+      OsirisFactorLoader: {}
+      FactorPerModelLoader: {}
+      MyCustomColumnCrossPlotLoader:
+        data_filter:
+          allowed:
+            model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
+            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link, poseidon]
+            pc_type: [kzg, ipa]
+
+        fig_foreach:
+          cols: [$metrics$]
+
+        metrics:
+#          wall_time:
+#            value_cols: [wall_time]
+#            value_divider: 60.0
+#            unit_label: min
+          memory:
+            value_cols: [max_rss]
+            value_divider: 976563 # kibibytes to GB
+            unit_label: GB
+
+        cum_plot_config:
+          - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 5, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}}
+            subplot_grid:
+              rows: [pc_type]
+              cols: [model]
+              share_y: col
+              share_x: all
+              kwargs:
+                constrained_layout: True
+
+        ########## Configure each Subplot:
+        cum_subplot_config:
+          - jp_query: (subplot_col_idx == `0`)
+            yaxis:
+              label: {template: "{pc_type} {$metrics$} [{$metric_unit$}]"}
+              major_formatter: round_short
+          - jp_query: (subplot_row_idx == `0`)
+            ax_title: {template: "{model}"}
+
+          - xaxis:
+              tick_params:
+                - {axis: x, which: both, labelsize: 8}
+                - {axis: x, which: major, pad: 10}
+            chart:
+              bar_foreach:
+                cols: [cpsnark]
+                label: {template: ""}
+                #jp_except: "(cpsnark == 'cp_link+') || (cpsnark == 'cp_link')"
+
+            ###### Configure each element (artist) in subfigure (ax)
+          - cum_artist_config:
+              # colors from: https://davidmathlogic.com/colorblind/#%23000000-%23E69F00-%2356B4E9-%23009E73-%23F0E442-%230072B2-%23D55E00-%23CC79A7
+              - color: "#D8D7D2" # "#000000"
+                jp_query: starts_with(cpsnark, 'no_com')
+              - color: "#009E73" #"#D55E00"
+                jp_query: starts_with(cpsnark, 'cp_link+')
+              - color: "#99d8c7" # "#F0E442" #E69F00" # "#E69F00"
+                jp_query: starts_with(cpsnark, 'cp_link')
+              - color: "#0072B2" # "#009E73"
+                jp_query: starts_with(cpsnark, 'poly')
+              - color: "#0072B2" # "#009E73"
+                jp_query: starts_with(cpsnark, 'pedersen')
+              - color: "#D55E00" # "#56B4E9" #
+                jp_query: starts_with(cpsnark, 'poseidon')
+              - edgecolor: black
+                linewidth: 2
+                zorder: 10000
+                jp_query: starts_with(cpsnark, 'cp_link+') || starts_with(cpsnark, 'poly')
+            label_map:
+              no_com: No Commitment
+              cp_link: Lunar
+              cp_link+: Apollo (Ours)
+              poly: Artemis (Ours)
+              pedersen: Artemis (Ped)
+              poseidon: Poseidon
+
+              mnist: MNIST ~8k
+              snet: SNET ~100k
+              resnet18: ResNet-18 ~280k
+              dlrm: DLRM ~764k
+              mobilenet: MobileNet ~3.5m
+              vgg: VGG-16 ~15m
+              gpt2: GPT-2 ~81m
+              diffusion: Diffusion ~19.5m
+
+              kzg: KZG
+              ipa: IPA
+
+              prover_time: Prover
+              verifier_time: Verifier
+
+              proof_size: Proof Size
+
+
+
+#
+  grid:
+    experiments:
+      model-small: "*"
+      model-mobilenet: "*"
+      model-vgg: "*"
+#      cplink: "*"
+#      poly-ipa: "*"
+      model-diffusion: "*"
+      model-gpt2: "*"
+    extractors:
+      CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
+      YamlExtractor: {file_regex: ["runtime_info.yaml"]}
+    transformers:
+    - name: MergeRowsTransformer
+    - name: OsirisPreprocessTransformer
+    - name: ResultFilterTransformer
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}
+      OsirisFactorLoader: {}
+      ProofSizeTableLoader: {}
+      MyCustomColumnCrossPlotLoader:
+        data_filter:
+          allowed:
+            model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
+            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link, poseidon]
+            pc_type: [kzg, ipa]
+
+        fig_foreach:
+          cols: [$metrics$]
+          # jp_except...
+
+        # define metrics (select the data columns)
+        metrics:
+          prover_time:
+            value_cols: [prover_time_sec]
+            value_divider: 60.0
+            unit_label: min
+
+          verifier_time:
+            value_cols: [mean(verifier_time_sec)]
+            error_cols: [stddev(verifier_time_sec)]
+            value_divider: 1.0
+            unit_label: sec
+
+          proof_size:
+            value_cols: [proof_size_bytes]
+            value_divider: 1000.0
+            unit_label: kB
+
+        ########## Configure each plot:
+        cum_plot_config:
+        - legend_fig: {label: {template: "{cpsnark}"}, kwargs: {loc: "lower left", ncol: 6, bbox_to_anchor: [0.07, -0.07], columnspacing: 3.5,  fancybox: True}}
+        - jp_query: ("$metrics$" != 'verifier_time')
+          subplot_grid:
+            rows: [pc_type]
+            cols: [model]
+            share_y: col
+            share_x: all
+            kwargs:
+              constrained_layout: True
+
+        - jp_query: ("$metrics$" == 'verifier_time')
+          subplot_grid:
+            rows: [pc_type]
+            cols: [model]
+            share_y: none
+            share_x: all
+            kwargs:
+              constrained_layout: True
+
+        ########## Configure each Subplot:
+        cum_subplot_config:
+        - jp_query: (subplot_col_idx == `0`)
+          yaxis:
+            label: {template: "{pc_type} {$metrics$} [{$metric_unit$}]"}
+            major_formatter: round_short
+        - jp_query: (subplot_row_idx == `0`)
+          ax_title: {template: "{model}"}
+
+        - xaxis:
+            tick_params:
+            - {axis: x, which: both, labelsize: 8}
+            - {axis: x, which: major, pad: 10}
+          chart:
+            bar_foreach:
+              cols: [cpsnark]
+              label: {template: ""}
+              #jp_except: "(cpsnark == 'cp_link+') || (cpsnark == 'cp_link')"
+
+          ###### Configure each element (artist) in subfigure (ax)
+        - cum_artist_config:
+          # colors from: https://davidmathlogic.com/colorblind/#%23000000-%23E69F00-%2356B4E9-%23009E73-%23F0E442-%230072B2-%23D55E00-%23CC79A7
+          - color: "#D8D7D2" # "#000000"
+            jp_query: starts_with(cpsnark, 'no_com')
+          - color: "#009E73" #"#D55E00"
+            jp_query: starts_with(cpsnark, 'cp_link+')
+          - color: "#99d8c7" # "#F0E442" #E69F00" # "#E69F00"
+            jp_query: starts_with(cpsnark, 'cp_link')
+          - color: "#0072B2" # "#009E73"
+            jp_query: starts_with(cpsnark, 'poly')
+          - color: "#0072B2" # "#009E73"
+            jp_query: starts_with(cpsnark, 'pedersen')
+          - color: "#D55E00" # "#56B4E9" #
+            jp_query: starts_with(cpsnark, 'poseidon')
+          - edgecolor: black
+            linewidth: 2
+            zorder: 10000
+            jp_query: starts_with(cpsnark, 'cp_link+') || starts_with(cpsnark, 'poly')
+          label_map:
+            no_com: No Commitment
+            cp_link: Lunar
+            cp_link+: Apollo (Ours)
+            poly: Artemis (Ours)
+            pedersen: Artemis (Ped)
+            poseidon: Poseidon
+
+            mnist: MNIST ~8k
+            snet: SNET ~100k
+            resnet18: ResNet-18 ~280k
+            dlrm: DLRM ~764k
+            mobilenet: MobileNet ~3.5m
+            vgg: VGG-16 ~15m
+            gpt2: GPT-2 ~81m
+            diffusion: Diffusion ~19.5m
+
+            kzg: KZG
+            ipa: IPA
+
+            prover_time: Prover
+            verifier_time: Verifier
+
+            proof_size: Proof Size

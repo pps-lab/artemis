@@ -25,7 +25,7 @@ exp_kzg_vgg_others:
   base_experiment:
     model: vgg
     cpsnark:
-      $FACTOR$: [no_com, poly, cp_link+] # cp_link] # all except poseidon TODO [nku] BRING THIS BACK
+      $FACTOR$: [no_com, poly, cp_link+, cp_link, pedersen] # all except poseidon
     pc_type: kzg
 
 
@@ -35,7 +35,7 @@ exp_ipa_vgg_others:
   base_experiment:
     model: vgg
     cpsnark:
-      $FACTOR$: [no_com, poly] # all except poseidon
+      $FACTOR$: [no_com, poly, pedersen] # all except poseidon
     pc_type: ipa
 
 

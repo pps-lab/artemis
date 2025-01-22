@@ -52,7 +52,7 @@ $ETL$:
       MyCustomColumnCrossPlotLoader:
         data_filter:
           allowed:
-            model: [vgg, diffusion, gpt2]
+            model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
             cpsnark: [no_com, poly, cp_link+, cp_link, poseidon]
             pc_type: [kzg, ipa]
 

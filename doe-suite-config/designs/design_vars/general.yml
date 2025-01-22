@@ -2,8 +2,11 @@
 
 num_verifier_reps: 5
 
-cmd: "[% 'exp_code_dir' | at_runtime(exp_host_lst) %]/src/bin/test.zsh [% my_run.model %] [% my_run.pc_type %] [% my_run.cpsnark %] [% my_run.num_verifier_reps %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]"
 
+cmd_time: >-
+  /usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml
+
+cmd: "[% my_run.cmd_time %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]/src/bin/test.zsh [% my_run.model %] [% my_run.pc_type %] [% my_run.cpsnark %] [% my_run.num_verifier_reps %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]"
 
 
 # TODO [nku] can delete this later
