@@ -16,7 +16,7 @@ cp_snark="$3"
 num_runs="$4"
 dir="$5"
 
-cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
+cargo build --release --manifest-path $dir'/Cargo.toml'
 mkdir -p results
 cols=0
 rows=0
@@ -33,7 +33,7 @@ case "$name" in
             poly_cols=0
         elif [ "$cp_snark" = "pedersen" ]; then
             cols=10
-            rows=18
+            rows=23
         else
             cols=10
             rows=15

@@ -709,6 +709,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       };
     }
 
+    println!("commit_before: {:?}", gadget_config.commit_before);
     let hasher = if gadget_config.commit_before.len() + gadget_config.commit_after.len() > 0 {
       let packer_config =
         PackerChip::<C::ScalarExt>::construct(gadget_config.num_bits_per_elem as usize, &gadget_config);
@@ -727,13 +728,17 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     } else {
       None
     };
+
     let mut main_gate_config= MainGateConfig::default();
     let mut range_config= RangeConfig::default();
+
     if gadget_config.pedersen {
-      let rns = Rns::<C::Base, C::ScalarExt, 4, 68>::construct();
+      let rns = Rns::<C::Base, C::ScalarExt, 3, 88>::construct();
+      //let rns = Rns::<C::Base, C::ScalarExt, 4, 64>::construct();
       main_gate_config = MainGate::<C::ScalarExt>::configure_reuse(meta, gadget_config.columns_poly.clone(), gadget_config.columns_public[0]);
       let overflow_bit_lens = rns.overflow_lengths();
       let composition_bit_lens = vec![17];
+      println!("Overflow bit lens: {:?}", overflow_bit_lens);
 
       range_config = RangeChip::<C::ScalarExt>::configure(
           meta,
@@ -861,6 +866,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       //println!("commit to the tensors :)))");
       let mut tensor_map = BTreeMap::new();
       let mut ignore_idxes: Vec<i64> = vec![];
+      println!("commit_before: {:?}", self.commit_before.iter());
       for commit_idxes in self.commit_before.iter() {
         //println!("Indexes:{:?})))", commit_idxes);
         let to_commit = BTreeMap::from_iter(
@@ -868,6 +874,10 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
             .iter()
             .map(|idx| (*idx, self.tensors.get(idx).unwrap().clone())),
         );
+        println!("num tensors: {:?}", self.tensors.iter().size_hint());
+        // for idx in commit_idxes.iter() {
+        //   println!("Tensor: {:?}", self.tensors.get(idx).unwrap().clone());
+        // }
         let (mut committed_tensors, commitment) = self.assign_and_commit(
           layouter.namespace(|| "commit"),
           &constants,
@@ -941,22 +951,23 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     if config.gadget_config.pedersen {
       let ecc_chip_config = config.ecc_chip_config();
       let mut ecc_chip =
-          BaseFieldEccChip::<C, 4, 68>::new(ecc_chip_config);
+          BaseFieldEccChip::<C, 3, 88>::new(ecc_chip_config);
+      // let mut ecc_chip =
+      //     BaseFieldEccChip::<C, 4, 64>::new(ecc_chip_config);
       let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
-
       let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
       layouter.assign_region(
           || "assign aux values",
           |region| {
               let offset = 0;
               let ctx = &mut RegionCtx::new(region, offset);
+              //println!("ONE");
               ecc_chip.assign_aux_generator(ctx, Value::known(aux_generator))?;
               ecc_chip.assign_aux(ctx, 2, 1)?;
               ecc_chip.get_mul_aux(2, 1)?;
               Ok(())
           },
       )?;
-
       layouter.assign_region(
           || "region 0",
           |region| {
@@ -977,7 +988,6 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
               Ok(())
           },
       )?;
-
       config.config_range(&mut layouter)?;
     }
 
