@@ -1,31 +1,34 @@
 use core::num;
 use std::{
-  fs::File, io::{BufReader, Write}, path, path::Path, time::{Duration, Instant}
+  fmt::Debug, fs::File, io::{BufReader, Write}, path::{self, Path}, time::{Duration, Instant}
 };
 use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanishing_on_set, verify1, verify1_lite};
-use bitvec::order::verify;
-use ff::{Field, WithSmallOrderMulGroup};
-use group::cofactor::CofactorCurveAffine;
+use bitvec::{domain::Domain, order::verify};
+use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
+use group::{Group, prime::PrimeCurveAffine};
 use halo2_proofs::{
-  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, halo2curves::bn256::{Bn256, Fr, G1Affine}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
+  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }, SerdeFormat
 };
-use halo2curves::{bn256::pairing, pairing::Engine, group::Curve};
+use halo2curves::{bls12381::Bls12, bn256::pairing, group::Curve, pairing::{Engine, MultiMillerLoop}, serde::SerdeObject};
 use rand::thread_rng;
 use rand_core::OsRng;
 
 use csv::Writer;
 use rmp_serde::config;
 use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_values, poly_divmod}};
+//use halo2curves::{bn256, ::{EpAffine, Eq}};
 
-pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
+pub fn get_kzg_params<E: Engine<G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug>(params_dir: &str, degree: u32) -> ParamsKZG<E> {
   let rng = rand::thread_rng();
-  let path = format!("{}/{}.params", params_dir, degree);
+  let curve_type = E::type_of();
+  let path = format!("{}_{curve_type}/{}.params", params_dir, degree);
   println!("Path: {}", path);
   let params_path = Path::new(&path);
+  //let params = ParamsKZG::<E>::setup(degree, rng);
   if File::open(&params_path).is_err() {
-    let params = ParamsKZG::<Bn256>::setup(degree, rng);
+    let params = ParamsKZG::<E>::setup(degree, rng);
     let mut buf = Vec::new();
 
     params.write(&mut buf).expect("Failed to write params");
@@ -36,7 +39,7 @@ pub fn get_kzg_params(params_dir: &str, degree: u32) -> ParamsKZG<Bn256> {
   }
 
   let mut params_fs = File::open(&params_path).expect("couldn't load params");
-  let params = ParamsKZG::<Bn256>::read(&mut params_fs).expect("Failed to read params");
+  let params = ParamsKZG::<E>::read(&mut params_fs).expect("Failed to read params");
   params
 }
 
@@ -46,27 +49,41 @@ pub fn serialize(data: &Vec<u8>, path: &str) -> u64 {
   file.metadata().unwrap().len()
 }
 
-pub fn verify_kzg(
-  params: &ParamsKZG<Bn256>,
-  vk: &VerifyingKey<G1Affine>,
-  strategy: SingleStrategy<Bn256>,
-  public_vals: &[&[Fr]],
-  mut transcript: Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+pub fn verify_kzg<
+    E: Engine<
+      G1Affine: SerdeCurveAffine,
+      G2Affine: SerdeCurveAffine,
+      Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3>,
+    > + Debug + MultiMillerLoop
+  >(
+  params: &ParamsKZG<E>,
+  vk: &VerifyingKey<E::G1Affine>,
+  strategy: SingleStrategy<E>,
+  public_vals: &[&[E::Scalar]],
+  mut transcript: Blake2bRead<&[u8], E::G1Affine, Challenge255<E::G1Affine>>,
 ) {
   assert!(
     verify_proof::<
-      KZGCommitmentScheme<Bn256>,
-      VerifierSHPLONK<'_, Bn256>,
-      Challenge255<G1Affine>,
-      Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
-      halo2_proofs::poly::kzg::strategy::SingleStrategy<'_, Bn256>,
+      KZGCommitmentScheme<E>,
+      VerifierSHPLONK<'_, E>,
+      Challenge255<E::G1Affine>,
+      Blake2bRead<&[u8], E::G1Affine, Challenge255<E::G1Affine>>,
+      halo2_proofs::poly::kzg::strategy::SingleStrategy<'_, E>,
     >(&params, &vk, strategy, &[&public_vals], &mut transcript)
     .is_ok(),
     "proof did not verify"
   );
 }
 
-pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
+pub fn time_circuit_kzg<
+  E: Engine<
+    G1Affine: SerdeCurveAffine,
+    G2Affine: SerdeCurveAffine,
+    Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3>,
+  > + Debug + MultiMillerLoop
+>(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
+  println!("Type of Engine: {:?}", E::type_of());
+  let sigma = true;
   let rng = rand::thread_rng();
   //println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
   let start = Instant::now();
@@ -86,11 +103,8 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
   );
   let mut circuit = circuit.clone();
 
-  //let alpha = Fr::random(rand::thread_rng());
-  let alpha = Fr::ONE;
-  let beta = Fr::random(rand::thread_rng());
-  //let beta = Fr::from(2);
-  //let beta = Fr::one();
+  let alpha = E::Scalar::ONE;
+  let beta = E::Scalar::random(rand::thread_rng());
 
   let mut tensor_len = 0usize;
   let mut poly_coeff = Vec::with_capacity(2usize.pow((circuit.k + poly_col_len) as u32));
@@ -104,12 +118,11 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
     }
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
-  println!("Poly coeff 0: {:?}", poly_coeff[0]);
-  let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
+  let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![];
   if poly_col_len > 0 {
     polys = (0..poly_col_len).map(|x| {
-      let poly: Polynomial<Fr, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
+      let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
       poly
     }).collect::<Vec<_>>();
   }
@@ -119,10 +132,10 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
 
     // while beta_pows.len() % poly_col_len != 0 {
     //   //inputs.push(&zero);
-    //   beta_pows.push(Fr::ZERO);
+    //   beta_pows.push(E::Scalar::ZERO);
     // }
     while poly_coeff.len() % poly_col_len != 0  {
-      poly_coeff.push(Fr::ZERO);
+      poly_coeff.push(E::Scalar::ZERO);
     }
   
     circuit.beta_pows = beta_pows.clone();
@@ -171,37 +184,39 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
 
   let proof_duration_start = start.elapsed();
-  let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-
+  let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
+  // Extract advice polys from proof generation
+  let mut advice_lagrange: Vec<Polynomial<E::Scalar, LagrangeCoeff>> = vec![];
+  let mut advice_blind: Vec<E::Scalar> = vec![];
   create_proof::<
-    KZGCommitmentScheme<Bn256>,
-    ProverSHPLONK<'_, Bn256>,
-    Challenge255<G1Affine>,
+    KZGCommitmentScheme<E>,
+    ProverSHPLONK<'_, E>,
+    Challenge255<E::G1Affine>,
     _,
-    Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-    ModelCircuit<G1Affine>,
+    Blake2bWrite<Vec<u8>, E::G1Affine, Challenge255<E::G1Affine>>,
+    ModelCircuit<E::G1Affine>,
   >(
     &params,
     &pk,
     &[proof_circuit.clone()],
     &[public_vals_slice.as_slice()],
-    rng,
+    rng.clone(),
     &mut transcript,
+    // &mut advice_lagrange,
+    // &mut advice_blind,
   )
   .unwrap();
 
-  // DRAW Circ
-  println!("Draw circuit");
-  let k = proof_circuit.k;
-  use plotters::prelude::*;
-  let root = BitMapBackend::new("circ.png", (1000, 3000)).into_drawing_area();
-  root.fill(&WHITE).unwrap();
-  let root = root
-      .titled("Example Circuit Layout", ("sans-serif", 60))
-      .unwrap();
-  halo2_proofs::dev::CircuitLayout::default().render(k as u32, &proof_circuit, &root).unwrap();
-
-
+  // // DRAW Circ
+  // println!("Draw circuit");
+  // let k = proof_circuit.k;
+  // use plotters::prelude::*;
+  // let root = BitMapBackend::new("circ.png", (1000, 3000)).into_drawing_area();
+  // root.fill(&WHITE).unwrap();
+  // let root = root
+  //     .titled("Example Circuit Layout", ("sans-serif", 60))
+  //     .unwrap();
+  // halo2_proofs::dev::CircuitLayout::default().render(k as u32, &proof_circuit, &root).unwrap();
 
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
@@ -228,6 +243,84 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
     verifying_time.push(verify_duration);
   }
 
+  // /// test some commitment stuff
+  // println!("Advice lagrange: {:?}", advice_lagrange.len());
+  // println!("C: {:?}", c);
+  // println!("Advice blind: {:?}", advice_blind);
+
+  // let mut advice_mu = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![E::Scalar::ZERO]);//advice_lagrange[0].clone();
+  // let blind1 = E::Scalar::ZERO;
+  // println!("Advice 1 coeff 0: {:?}", E::Scalar::ZERO);
+  // let mu_poly = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![E::Scalar::ZERO]);
+  // let mu_commit = params.commit_lagrange(&mu_poly, Blind(E::Scalar::ZERO));
+  // println!("Mu 1 poly: {:?}", mu_poly);
+  // advice_mu[0] = E::Scalar::ZERO;
+  // let no_mu_commit = params.commit_lagrange(&advice_mu, Blind(E::Scalar::ZERO));
+  // let mut proof_transcript = transcript_read.clone();
+  // let mut advice_com = vec![];
+  // for _ in 0..advice_lagrange.len() {
+  //   advice_com.push(proof_transcript.read_point().unwrap().to_curve());
+  // }
+  // //assert!(mu_commit + no_mu_commit == E::Scalar::ZERO);
+
+
+  // let g_lagrange = E::G1Affine::identity();//params.g_lagrange();
+  // let g_lag_mu = g_lagrange;//[0];
+
+  // // external com
+  // let mu = mu_poly[0];
+  // let b = E::Scalar::random(rng.clone());
+  // let G = E::G1::random(rng.clone());
+  // let H = E::G1::random(rng.clone());
+  // let C_hat = G * mu + H * b;
+
+  // //internal com
+  // let mu_circ = mu.clone();
+  // let a = E::Scalar::ZERO;
+  // let g = g_lag_mu.clone();
+  // let h = E::G1::random(rng.clone());
+  // let C = mu_commit;
+  // println!("g : {:?}, mu_circ: {:?}", g, mu_circ);
+  // //assert!(C == g * mu_circ, "C: {:?}, g * mu_circ: {:?}", C, g * mu_circ);
+  // //Sigma protocol (https://eprint.iacr.org/2021/934.pdf Fig.2): 
+  // if sigma {
+  //   let timer = Instant::now();
+  //   //1 
+  //   let G_tilde  = G.clone(); 
+  //   //2 
+  //   let r = E::Scalar::random(rng.clone());
+  //   let delta = E::Scalar::random(rng.clone());
+  //   let gamma = E::Scalar::random(rng.clone());
+  //   let A = g * r + h * delta; 
+  //   let A_hat = G_tilde * r + H * gamma;
+  //   //3 
+  //   let e = E::Scalar::random(rng.clone());
+  //   //4
+  //   let z = r + e * mu; 
+  //   let omega = delta + e * a;
+  //   let Omega = gamma + e * b; 
+  //   //5 
+  //   let lhs1 = g * z + h * omega; // = g * (r + e * mu) + h * (delta)
+  //   let rhs1 = A + C * e; // = g * (r + (mu * e)) + h * delta 
+  //   assert!(lhs1 == rhs1);
+    
+  //   let lhs2 = G_tilde * z + H * Omega;
+  //   let rhs2 = A_hat + C_hat * e;
+  //   assert!(lhs2 == rhs2);
+
+  // // Vanishing proof 
+  //   let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
+  //   let v_h_com = Polynomial::<E::Scalar, Coeff>::from_coefficients_vec(vec![-E::Scalar::ONE, E::Scalar::ONE]);
+  //   println!("v_h Poly: {:?}, eval: {:?}", v_h_com, v_h_com.evaluate(E::Scalar::ZERO));
+  //   let com_poly = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![mu]);
+  //   let mid_poly = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![vec![E::Scalar::ZERO], vec![E::Scalar::ONE; circuit.k - 1]].concat());
+  //   let com_poly_coeff = domain.lagrange_to_coeff(com_poly);
+  //   let mid_poly_coeff = domain.lagrange_to_coeff(mid_poly);
+  //   let (q, r) = mid_poly_coeff.divide_with_q_and_r(&v_h_com).unwrap();
+  //   println!("R: {:?}", r);
+  //   println!("Sigma proof time: {:?}", timer.elapsed());
+  // }
+
   //CPLink proof: 
   if cp_link {
     if poly_col_len < 1  {
@@ -240,7 +333,8 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
       let vals = (0..l).map(|y| poly_coeff[y*size..(y+1)*size].to_vec()).collect::<Vec<_>>();
       let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
       let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
-      let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
+      //let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
+      let u_coms = vec![E::G1::identity(); c];
       let z_v_com = params.commit_g1(&z_v);
       let poly = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
       let (uprimes, cp2_prove, cp2_vfy) = cplink2(thetas, HH.clone(), us, z_v, z_v_com, u_coms, params.clone());
@@ -253,21 +347,22 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
       }
     } else {
       //fast
-      let domain = EvaluationDomain::<Fr>::new(1, params.k());
+      let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
       let domain_vals = (0..poly_coeff.len() / poly_col_len).map(|i| domain.get_omega().pow([i as u64])).collect::<Vec<_>>();
       // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
       let z = vanishing_on_set(&domain_vals);
-      //let z = Polynomial::from_coefficients_vec(vec![Fr::one()]);
+      //let z = Polynomial::from_coefficients_vec(vec![E::Scalar::one()]);
       let z_com = params.commit_g2(&z);
       //println!("poly sum: {:?}", poly_sum);
       //println!("z: {:?}", z);
-      for poly in &polys {
+      for i in 0..polys.len() {
         //let (q, mut uhat) = poly_divmod(poly, &z);   
-        let uhat = poly.clone();
-        let chat = params.commit_g1(&uhat);
-        let polycom = params.commit_g1(&poly);
+        let uhat = polys[i].clone();
+        //let chat = params.commit_g1(&uhat);
+        let chat = E::G1::identity();///advice_com[i];
+        let polycom = params.commit_g1(&polys[i]);
         println!("Three");
-        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&poly, &chat, &polycom, &z, &poly, &params, &domain);
+        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&polys[i], &chat, &polycom, &z, &poly, &params, &domain);
         proving_time += cplink_time;
         for i in 0..num_runs {
           verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
@@ -282,10 +377,10 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
     let kzg_proof_timer = Instant::now();
     println!("Tensor len: {}", tensor_len);
   
-    let mut transcript_kzg_proof = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+    let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
     let poly_com = poly_params.commit(&poly, blind).to_affine();
-    // let poly_coms: Vec<G1Affine> = polys.iter().map(|poly| params.commit(poly, blind).to_affine()).collect::<Vec<_>>();
-    // let poly_com_sum = poly_coms.iter().fold(G1Affine::identity(), |a, b| (a + b).into());
+    // let poly_coms: Vec<E::G1Affine> = polys.iter().map(|poly| params.commit(poly, blind).to_affine()).collect::<Vec<_>>();
+    // let poly_com_sum = poly_coms.iter().fold(E::G1Affine::identity(), |a, b| (a + b).into());
     let queries = [
       ProverQuery {
           point: beta,
@@ -293,8 +388,8 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
           blind,
       }
     ].to_vec();
-    //let (q, r) = poly_divmod::<Fr>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, Fr::one()]));
-    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, Fr::ONE])).unwrap();
+    //let (q, r) = poly_divmod::<E::Scalar>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, E::Scalar::one()]));
+    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, E::Scalar::ONE])).unwrap();
     //assert!(r.is_zero());
     let prover = ProverSHPLONK::new(&poly_params);
     prover
@@ -348,18 +443,24 @@ pub fn time_circuit_kzg(circuit: ModelCircuit<G1Affine>, commit_poly: bool, poly
   println!("CSV file created successfully.");
 }
 
-// Standalone verification
-pub fn verify_circuit_kzg(
-  circuit: ModelCircuit<G1Affine>,
+//Standalone verification
+pub fn verify_circuit_kzg<
+  E: Engine<
+    G1Affine: SerdeCurveAffine,
+    G2Affine: SerdeCurveAffine,
+    Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3> + SerdeObject,
+  > + Debug + MultiMillerLoop
+>(
+  circuit: ModelCircuit<E::G1Affine>,
   vkey_fname: &str,
   proof_fname: &str,
   public_vals_fname: &str,
 ) {
   let degree = circuit.k as u32;
-  let params = get_kzg_params("~/params_kzg", degree);
+  let params = get_kzg_params::<E>("~/params_kzg", degree);
   println!("Loaded the parameters");
 
-  let vk = VerifyingKey::read::<BufReader<File>, ModelCircuit<G1Affine>>(
+  let vk = VerifyingKey::read::<BufReader<File>, ModelCircuit<E::G1Affine>>(
     &mut BufReader::new(File::open(vkey_fname).unwrap()),
     SerdeFormat::RawBytes,
     (),
@@ -370,9 +471,9 @@ pub fn verify_circuit_kzg(
   let proof = std::fs::read(proof_fname).unwrap();
 
   let public_vals_u8 = std::fs::read(&public_vals_fname).unwrap();
-  let public_vals: Vec<Fr> = public_vals_u8
+  let public_vals: Vec<E::Scalar> = public_vals_u8
     .chunks(32)
-    .map(|chunk| Fr::from_bytes(chunk.try_into().expect("conversion failed")).unwrap())
+    .map(|chunk| E::Scalar::from_uniform_bytes(chunk.try_into().expect("conversion failed")))
     .collect();
 
   let strategy = SingleStrategy::new(&params);

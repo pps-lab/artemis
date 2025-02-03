@@ -369,9 +369,20 @@ mod test {
     }
 
     #[test]
+    fn test_zeta() {
+        let zeta = Fq::ZETA;
+        println!("Modulus: {:?}", MODULUS);
+        println!("One: {:?}", R);
+        println!("TWO : {:?}, TWO_INV : {:?}", TWO_INV.invert().unwrap(), TWO_INV);
+        println!("Zeta: {:?}", ZETA);
+        println!("-1: {:?}, \n -2: {:?}", -Fq::from(1), -Fq::from(2));
+        assert_eq!(-Fq::one(), zeta * zeta * zeta);
+    }
+
+    #[test]
     fn test_serialization() {
         crate::tests::field::random_serialization_test::<Fq>("fq".to_string());
-        #[cfg(feature = "derive_serde")]
+        //#[cfg(feature = "derive_serde")]
         crate::tests::field::random_serde_test::<Fq>("fq".to_string());
     }
 }

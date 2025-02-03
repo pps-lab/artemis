@@ -643,6 +643,9 @@ impl Engine for Bn256 {
     fn pairing(p: &Self::G1Affine, q: &Self::G2Affine) -> Self::Gt {
         pairing(p, q)
     }
+    fn type_of() -> &'static str {
+        "Bn256"
+    }
 }
 
 impl MultiMillerLoop for Bn256 {

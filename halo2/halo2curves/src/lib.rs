@@ -4,6 +4,7 @@ mod arithmetic;
 mod bernsteinyang;
 
 pub mod bn256;
+pub mod bls12381;
 pub mod grumpkin;
 pub mod pairing;
 pub mod pasta;
