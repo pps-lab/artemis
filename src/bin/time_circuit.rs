@@ -2,7 +2,7 @@ use halo2_proofs::halo2curves::{pasta::{Fp, EqAffine}};
 use halo2curves::{bls12381::Bls12, bn256::Bn256, pairing::Engine};
 use zkml::{
   model::ModelCircuit,
-  utils::{proving_ipa::time_circuit_ipa, proving_kzg_bls::time_circuit_kzg},
+  utils::{proving_ipa::time_circuit_ipa, proving_kzg::time_circuit_kzg},
 };
 fn main() {
   let config_fname = std::env::args().nth(1).expect("config file path");
