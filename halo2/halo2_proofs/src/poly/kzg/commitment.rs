@@ -404,12 +404,12 @@ where
 
     /// Writes params to a buffer.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.write_custom(writer, SerdeFormat::RawBytes)
+        self.write_custom(writer, SerdeFormat::Processed)
     } 
 
     /// Reads params from a buffer.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Self::read_custom(reader, SerdeFormat::RawBytesUnchecked)
+        Self::read_custom(reader, SerdeFormat::Processed)
     }
 }
 
