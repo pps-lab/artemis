@@ -216,7 +216,6 @@ where
         }
         self.g2.write(writer, format)?;
         self.s_g2.write(writer, format)?;
-        
         for el in self.g2_pows.iter() {
             el.write(writer, format)?;
         }
@@ -229,34 +228,53 @@ where
         E::G1Affine: SerdeCurveAffine,
         E::G2Affine: SerdeCurveAffine,
     {
+        use group::GroupEncoding;
         let mut k = [0u8; 4];
         reader.read_exact(&mut k[..])?;
         let k = u32::from_le_bytes(k);
         let n = 1 << k;
 
-        let (g, g_lagrange) = match format {
+        let load_g1_points_from_file_parallelly =
+        |reader: &mut R| -> io::Result<Vec<Option<E::G1Affine>>> {
+            let mut points_compressed =
+                vec![<<E as Engine>::G1Affine as GroupEncoding>::Repr::default(); n];
+            for points_compressed in points_compressed.iter_mut() {
+                reader.read_exact((*points_compressed).as_mut())?;
+            }
+
+            let mut points = vec![Option::<E::G1Affine>::None; n];
+            parallelize(&mut points, |points, chunks| {
+                for (i, point) in points.iter_mut().enumerate() {
+                    *point = Option::from(E::G1Affine::from_bytes(
+                        &points_compressed[chunks + i],
+                    ));
+                }
+            });
+            Ok(points)
+        };
+
+        let load_g2_points_from_file_parallelly =
+        |reader: &mut R| -> io::Result<Vec<Option<E::G2Affine>>> {
+            let mut points_compressed =
+                vec![<<E as Engine>::G2Affine as GroupEncoding>::Repr::default(); n];
+            for points_compressed in points_compressed.iter_mut() {
+                reader.read_exact((*points_compressed).as_mut())?;
+            }
+
+            let mut points = vec![Option::<E::G2Affine>::None; n];
+            parallelize(&mut points, |points, chunks| {
+                for (i, point) in points.iter_mut().enumerate() {
+                    *point = Option::from(E::G2Affine::from_bytes(
+                        &points_compressed[chunks + i],
+                    ));
+                }
+            });
+            Ok(points)
+        };
+
+        let (g, g_lagrange, g2, s_g2, g2_pows) = match format {
             SerdeFormat::Processed => {
-                use group::GroupEncoding;
-                let load_points_from_file_parallelly =
-                    |reader: &mut R| -> io::Result<Vec<Option<E::G1Affine>>> {
-                        let mut points_compressed =
-                            vec![<<E as Engine>::G1Affine as GroupEncoding>::Repr::default(); n];
-                        for points_compressed in points_compressed.iter_mut() {
-                            reader.read_exact((*points_compressed).as_mut())?;
-                        }
-
-                        let mut points = vec![Option::<E::G1Affine>::None; n];
-                        parallelize(&mut points, |points, chunks| {
-                            for (i, point) in points.iter_mut().enumerate() {
-                                *point = Option::from(E::G1Affine::from_bytes(
-                                    &points_compressed[chunks + i],
-                                ));
-                            }
-                        });
-                        Ok(points)
-                    };
-
-                let g = load_points_from_file_parallelly(reader)?;
+                let g = load_g1_points_from_file_parallelly(reader)?;
                 let g: Vec<<E as Engine>::G1Affine> = g
                     .iter()
                     .map(|point| {
@@ -265,7 +283,7 @@ where
                         })
                     })
                     .collect::<Result<_, _>>()?;
-                let g_lagrange = load_points_from_file_parallelly(reader)?;
+                let g_lagrange = load_g1_points_from_file_parallelly(reader)?;
                 let g_lagrange: Vec<<E as Engine>::G1Affine> = g_lagrange
                     .iter()
                     .map(|point| {
@@ -274,7 +292,20 @@ where
                         })
                     })
                     .collect::<Result<_, _>>()?;
-                (g, g_lagrange)
+
+                let g2 = E::G2Affine::read(reader, format)?;
+                let s_g2 = E::G2Affine::read(reader, format)?;
+
+                let g2_pows: Vec<Option<<E as Engine>::G2Affine>> = load_g2_points_from_file_parallelly(reader)?;
+                let g2_pows = g2_pows
+                    .iter()
+                    .map(|point| {
+                        point.ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::Other, "invalid point encoding")
+                        })
+                    })
+                    .collect::<Result<_, _>>()?;
+                (g, g_lagrange, g2, s_g2, g2_pows)
             }
             SerdeFormat::RawBytes => {
                 let g = (0..n)
@@ -283,7 +314,14 @@ where
                 let g_lagrange = (0..n)
                     .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format))
                     .collect::<Result<Vec<_>, _>>()?;
-                (g, g_lagrange)
+
+                let g2 = E::G2Affine::read(reader, format)?;
+                let s_g2 = E::G2Affine::read(reader, format)?;
+
+                let g2_pows = (0..n)
+                    .map(|_| <E::G2Affine as SerdeCurveAffine>::read(reader, format))
+                    .collect::<Result<Vec<_>, _>>()?;
+                (g, g_lagrange, g2, s_g2, g2_pows)
             }
             SerdeFormat::RawBytesUnchecked => {
                 // avoid try branching for performance
@@ -293,15 +331,16 @@ where
                 let g_lagrange = (0..n)
                     .map(|_| <E::G1Affine as SerdeCurveAffine>::read(reader, format).unwrap())
                     .collect::<Vec<_>>();
-                (g, g_lagrange)
+
+                let g2 = E::G2Affine::read(reader, format).unwrap();
+                let s_g2 = E::G2Affine::read(reader, format).unwrap();
+
+                let g2_pows = (0..n)
+                    .map(|_| <E::G2Affine as SerdeCurveAffine>::read(reader, format).unwrap())
+                    .collect::<Vec<_>>();
+                (g, g_lagrange, g2, s_g2, g2_pows)
             }
         };
-
-        let g2 = E::G2Affine::read(reader, format)?;
-        let s_g2 = E::G2Affine::read(reader, format)?;
-        let g2_pows = (0..n)
-            .map(|_| <E::G2Affine as SerdeCurveAffine>::read(reader, format))
-            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             k,
@@ -366,11 +405,11 @@ where
     /// Writes params to a buffer.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         self.write_custom(writer, SerdeFormat::RawBytes)
-    }
+    } 
 
     /// Reads params from a buffer.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Self::read_custom(reader, SerdeFormat::RawBytes)
+        Self::read_custom(reader, SerdeFormat::RawBytesUnchecked)
     }
 }
 
@@ -471,6 +510,60 @@ mod test {
         let mut data = vec![];
         <ParamsKZG<_> as Params<_>>::write(&params0, &mut data).unwrap();
         let params1: ParamsKZG<Bn256> = Params::read::<_>(&mut &data[..]).unwrap();
+
+        assert_eq!(params0.k, params1.k);
+        assert_eq!(params0.n, params1.n);
+        assert_eq!(params0.g.len(), params1.g.len());
+        assert_eq!(params0.g_lagrange.len(), params1.g_lagrange.len());
+
+        assert_eq!(params0.g, params1.g);
+        assert_eq!(params0.g_lagrange, params1.g_lagrange);
+        assert_eq!(params0.g2, params1.g2);
+        assert_eq!(params0.s_g2, params1.s_g2);
+    }
+
+
+    #[test]
+    fn test_commit_lagrange_bls() {
+        const K: u32 = 6;
+
+        use rand_core::OsRng;
+
+        use crate::poly::EvaluationDomain;
+        use halo2curves::bls12381::{Bls12, Scalar as Fr};
+
+        let params = ParamsKZG::<Bls12>::new(K);
+        let domain = EvaluationDomain::new(1, K);
+
+        let mut a = domain.empty_lagrange();
+
+        for (i, a) in a.iter_mut().enumerate() {
+            *a = Fr::from(i as u64);
+        }
+
+        let b = domain.lagrange_to_coeff(a.clone());
+
+        let alpha = Blind(Fr::random(OsRng));
+
+        assert_eq!(params.commit(&b, alpha), params.commit_lagrange(&a, alpha));
+    }
+
+    #[test]
+    fn test_parameter_serialisation_roundtrip_bls() {
+        const K: u32 = 4;
+
+        use ff::Field;
+        use rand_core::OsRng;
+
+        use super::super::commitment::{Blind, Params};
+        use crate::arithmetic::eval_polynomial;
+        use halo2curves::bls12381::{Bls12, Scalar as Fr};
+        use crate::poly::EvaluationDomain;
+
+        let params0 = ParamsKZG::<Bls12>::new(K);
+        let mut data = vec![];
+        <ParamsKZG<_> as Params<_>>::write(&params0, &mut data).unwrap();
+        let params1: ParamsKZG<Bls12> = Params::read::<_>(&mut &data[..]).unwrap();
 
         assert_eq!(params0.k, params1.k);
         assert_eq!(params0.n, params1.n);
