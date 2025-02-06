@@ -62,6 +62,7 @@ pub type ParamsVerifierIPA<C> = ParamsIPA<C>;
 
 impl<'params, C: CurveAffine> ParamsVerifier<'params, C> for ParamsIPA<C> {}
 
+
 impl<'params, C: CurveAffine> Params<'params, C> for ParamsIPA<C> {
     type MSM = MSMIPA<'params, C>;
 
@@ -102,7 +103,7 @@ impl<'params, C: CurveAffine> Params<'params, C> for ParamsIPA<C> {
 
         tmp_bases.extend(self.g_lagrange.iter());
         tmp_bases.push(self.w);
-        println!("{:?}\n{:?}", tmp_scalars[0], tmp_bases[0]);
+        //println!("{:?}\n{:?}", tmp_scalars[0], tmp_bases[0]);
         best_multiexp::<C>(&tmp_scalars, &tmp_bases)
     }
 
@@ -120,28 +121,62 @@ impl<'params, C: CurveAffine> Params<'params, C> for ParamsIPA<C> {
 
         Ok(())
     }
-
     /// Reads params from a buffer.
     fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        use group::GroupEncoding;
         let mut k = [0u8; 4];
         reader.read_exact(&mut k[..])?;
         let k = u32::from_le_bytes(k);
+        let n = 1 << k;
 
-        let n: u64 = 1 << k;
+        let load_points_from_file_parallelly =
+        |reader: &mut R| -> io::Result<Vec<Option<C>>> {
+            let mut points_compressed =
+                vec![<C as GroupEncoding>::Repr::default(); n];
+            for points_compressed in points_compressed.iter_mut() {
+                reader.read_exact((*points_compressed).as_mut())?;
+            }
 
-        let g: Vec<_> = (0..n).map(|_| C::read(reader)).collect::<Result<_, _>>()?;
-        let g_lagrange: Vec<_> = (0..n).map(|_| C::read(reader)).collect::<Result<_, _>>()?;
+            let mut points = vec![Option::<C>::None; n];
+            parallelize(&mut points, |points, chunks| {
+                for (i, point) in points.iter_mut().enumerate() {
+                    *point = Option::from(C::from_bytes(
+                        &points_compressed[chunks + i],
+                    ));
+                }
+            });
+            Ok(points)
+        };
+
+        let g = load_points_from_file_parallelly(reader)?;
+        let g: Vec<C> = g
+            .iter()
+            .map(|point| {
+                point.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::Other, "invalid point encoding")
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        let g_lagrange = load_points_from_file_parallelly(reader)?;
+        let g_lagrange: Vec<C> = g_lagrange
+            .iter()
+            .map(|point| {
+                point.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::Other, "invalid point encoding")
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
         let w = C::read(reader)?;
         let u = C::read(reader)?;
 
         Ok(Self {
             k,
-            n,
+            n: n as u64,
             g,
             g_lagrange,
             w,
-            u,
+            u
         })
     }
 }
