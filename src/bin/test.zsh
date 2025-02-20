@@ -16,7 +16,7 @@ cp_snark="$3"
 num_runs="$4"
 dir="$5"
 
-cargo build --release --manifest-path $dir'/Cargo.toml'
+cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
 mkdir -p results
 mkdir -p params_ipa
 mkdir -p params_kzg_Bls12
