@@ -18,9 +18,9 @@ dir="$5"
 
 cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
 mkdir -p results
-mkdir -p params_ipa
-mkdir -p params_kzg_Bls12
-mkdir -p params_kzg_Bn256
+mkdir -p $dir'/params_ipa'
+mkdir -p $dir'/params_kzg_Bls12'
+mkdir -p $dir'/params_kzg_Bn256'
 
 cols=0
 rows=0
