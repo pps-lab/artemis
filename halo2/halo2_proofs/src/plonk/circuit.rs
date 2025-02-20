@@ -584,7 +584,7 @@ impl TableColumn {
 }
 
 /// A challenge squeezed from transcript after advice columns at the phase have been committed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default)]
 pub struct Challenge {
     index: usize,
     pub(crate) phase: sealed::Phase,
