@@ -87,7 +87,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     "Time elapsed in params construction: {:?}",
     circuit_duration
   );
-
+  
   let vk = keygen_vk(&params, &circuit).unwrap();
   let vk_duration = start.elapsed();
   println!(
@@ -133,14 +133,6 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     }).collect::<Vec<_>>();
   }
 
-  //let mut beta_pows = (0..poly_coeff.len()).map(|i| beta.pow([i as u64])).collect::<Vec<_>>();
-
-
-  //println!("Poly coeff len: {}", poly_coeff.len());
-
-  
-  //println!("Circ beta pows: {:?}", circuit.beta_pows);
-  // Evaluate the polynomial
   let rho = eval_polynomial(&poly, beta);
 
   let mut public_vals = vec![vec![]];
@@ -155,6 +147,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
   let proof_duration_start = start.elapsed();
   let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+  let mut advice_lagrange = vec![];
+  let mut advice_blind = vec![];
   create_proof::<IPACommitmentScheme<EqAffine>, ProverIPA<EqAffine>, _, _, _, _>(
     &params,
     &pk,
@@ -162,6 +156,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     &[&public_vals_slice.as_slice()],
     &mut rand::thread_rng(),
     &mut transcript,
+    &mut advice_lagrange,
+    &mut advice_blind,
   )
   .unwrap();
   let proof = transcript.finalize();
@@ -229,12 +225,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
       let ipa_vfy_timer = Instant::now();
       let mut transcript =
           Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(&proof[..]);
-      // let beta_prime = transcript.squeeze_challenge_scalar::<()>();
-      // assert_eq!(*beta, *beta_prime);
-      // let p_prime = transcript.read_point().unwrap();
-      // assert_eq!(poly_com, p_prime);
-      // let rho_prime = transcript.read_scalar().unwrap();
-      // assert_eq!(rho, rho_prime);
+          
       let mut commitment_msm = MSMIPA::new(&poly_params);
       commitment_msm.append_term(Fp::one(), poly_com.into());
 

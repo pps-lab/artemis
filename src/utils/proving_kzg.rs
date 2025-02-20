@@ -7,7 +7,7 @@ use bitvec::{domain::Domain, order::verify};
 use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
 use group::{Group, prime::PrimeCurveAffine};
 use halo2_proofs::{
-  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery}, transcript::{
+  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }, SerdeFormat
 };
@@ -83,6 +83,8 @@ pub fn time_circuit_kzg<
   > + Debug + MultiMillerLoop
 >(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
   println!("Type of Engine: {:?}", E::type_of());
+  println!("Usize size: {:?}", std::mem::size_of::<usize>());
+
   let sigma = true;
   let rng = rand::thread_rng();
   //println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
@@ -118,6 +120,7 @@ pub fn time_circuit_kzg<
     }
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
+  let poly_coeff_len = poly_coeff.len();
   let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![];
   if poly_col_len > 0 {
@@ -177,9 +180,9 @@ pub fn time_circuit_kzg<
   //let mut betas = vec![vec![]; poly_col_len];
 
   public_vals[0] = get_public_values();
-  if commit_poly {
-    public_vals[0][0] = rho;
-  }
+  // if commit_poly {
+  //   public_vals[0][0] = rho;
+  // }
 
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
 
@@ -202,35 +205,27 @@ pub fn time_circuit_kzg<
     &[public_vals_slice.as_slice()],
     rng.clone(),
     &mut transcript,
-    // &mut advice_lagrange,
-    // &mut advice_blind,
+    &mut advice_lagrange,
+    &mut advice_blind,
   )
   .unwrap();
-
-  // // DRAW Circ
-  // println!("Draw circuit");
-  // let k = proof_circuit.k;
-  // use plotters::prelude::*;
-  // let root = BitMapBackend::new("circ.png", (1000, 3000)).into_drawing_area();
-  // root.fill(&WHITE).unwrap();
-  // let root = root
-  //     .titled("Example Circuit Layout", ("sans-serif", 60))
-  //     .unwrap();
-  // halo2_proofs::dev::CircuitLayout::default().render(k as u32, &proof_circuit, &root).unwrap();
 
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
   let mut proving_time = proof_duration - proof_duration_start;
-  //println!("Proving time: {:?}", proof_duration - proof_duration_start);
+  println!("Proving time: {:?}", proving_time);
   let mut proof_size = proof.len();
   println!("Proof size: {}", proof.len());
   let strategy = SingleStrategy::new(&params);
   let transcript_read = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+  let mut proof_transcript = transcript_read.clone();
   let mut verifying_time = vec![];
-  for i in 0..num_runs {
+  let public_valss: Vec<E::Scalar> = get_public_values();
+  // if commit_poly {
+  //   public_vals[0][0] = rho;
+  // }
+  for _ in 0..num_runs {
     let vfy_timer = Instant::now();
-    println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
-    println!("Rho: {:?}", rho);
     verify_kzg(
       &params,
       &pk.get_vk(),
@@ -243,6 +238,10 @@ pub fn time_circuit_kzg<
     verifying_time.push(verify_duration);
   }
 
+  let mut advice_com = vec![];
+  for _ in 0..advice_lagrange.len() {
+    advice_com.push(proof_transcript.read_point().unwrap().to_curve());
+  }
   // /// test some commitment stuff
   // println!("Advice lagrange: {:?}", advice_lagrange.len());
   // println!("C: {:?}", c);
@@ -374,6 +373,15 @@ pub fn time_circuit_kzg<
   // KZG Commit proof
 
   if commit_poly {
+    let idx = poly_coeff_len / poly_col_len;
+    let beta = public_valss[0];
+    let rho_advice = advice_lagrange[poly_col_len + 1][idx];
+    let rho = poly.evaluate(beta);
+    println!("(Rho, Beta): {:?}", (rho, beta));
+    println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
+    
+    assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
+
     let kzg_proof_timer = Instant::now();
     println!("Tensor len: {}", tensor_len);
   
@@ -401,7 +409,38 @@ pub fn time_circuit_kzg<
     //let pi = params.commit(&q, blind);
     println!("KZG proof time: {:?}", kzg_proof_timer.elapsed());
     proving_time += kzg_proof_timer.elapsed();
+
+    let kzg_proof_timer = Instant::now();
+    println!("Tensor len: {}", tensor_len);
+    
+    // Advice rho proof
+    let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
+    let domain = pk.get_vk().get_domain();
+    let poly_com_advice = advice_com[poly_col_len + 1].to_affine();
+    let poly_advice = &domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
+
+    let queries = [
+      ProverQuery {
+          point: domain.rotate_omega(E::Scalar::ONE, Rotation((idx) as i32)),
+          poly: &poly_advice,
+          blind: Blind::default(),
+      }
+    ].to_vec();
+    //let (q, r) = poly_divmod::<E::Scalar>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, E::Scalar::one()]));
+    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, E::Scalar::ONE])).unwrap();
+    //assert!(r.is_zero());
+    let prover = ProverSHPLONK::new(&poly_params);
+    prover
+        .create_proof(&mut OsRng, &mut transcript_kzg_proof, queries)
+        .unwrap();
+  
+    let proof_kzg_advice = transcript_kzg_proof.finalize();
+    proof_size += proof_kzg.len();
+    // //let pi = params.commit(&q, blind);
+    println!("KZG proof time: {:?}", kzg_proof_timer.elapsed());
+    proving_time += kzg_proof_timer.elapsed();
     //KZG Commit vfy
+    println!("Proving time: {:?}", proving_time);
     for i in 0..num_runs {
       let kzg_vfy_timer = Instant::now();
       // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
@@ -419,10 +458,26 @@ pub fn time_circuit_kzg<
       let vfy_time = kzg_vfy_timer.elapsed();
       verifying_time[i] += vfy_time;
       println!("KZG vfy time: {:?}", vfy_time);
+      
+      // For advice
+      let kzg_vfy_timer = Instant::now();
+      // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
+      // let rhs = pairing(&pi.into(), &(&params.s_g2() - &params.g2() * beta).into());
+      // assert_eq!(lhs, rhs);
+      let verifier_params = poly_params.verifier_params();
+      let verifier = VerifierSHPLONK::new(&verifier_params);
+      let mut transcript_kzg_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_kzg_advice.as_slice());
+    
+      let queries = std::iter::empty()
+          .chain(Some(VerifierQuery::new_commitment(&poly_com_advice, domain.rotate_omega(E::Scalar::ONE, Rotation((idx) as i32)), rho)));
+    
+      let msm = DualMSM::new(&poly_params);
+      assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());
+      let vfy_time = kzg_vfy_timer.elapsed();
+      verifying_time[i] += vfy_time;
+      println!("KZG vfy time: {:?}", vfy_time);
     }
   }
-
-  println!("Proving time: {:?}", proving_time);
   println!("Verifying time: {:?}", verifying_time);
 
   // Create a file to write the CSV to

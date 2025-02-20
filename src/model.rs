@@ -2,13 +2,14 @@ use std::{
   collections::{BTreeMap, BTreeSet, HashMap},
   marker::PhantomData,
   rc::Rc,
-  sync::{Arc, Mutex},
+  sync::{Arc, Mutex}, time::Instant,
 };
+use bitvec::index::BitIdx;
 use ecc::{integer::rns::Rns, maingate::{AssignedValue, MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx}, AssignedPoint, BaseFieldEccChip, EccConfig};
 use halo2_proofs::{
   circuit::{self, AssignedCell, Layouter, SimpleFloorPlanner, Value},
   halo2curves::ff::{FromUniformBytes, PrimeField},
-  plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance}, poly,
+  plonk::{Advice, Circuit, Column, ConstraintSystem, Error, FirstPhase, Instance, Phase, SecondPhase, ThirdPhase}, poly::{self, Coeff, Polynomial},
 };
 use halo2curves::{bn256::Bn256, pairing::Engine, CurveAffine};
 use lazy_static::lazy_static;
@@ -112,12 +113,10 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
   pub fn assign_tensors_map(
     &self,
     mut layouter: impl Layouter<C::ScalarExt>,
-    witness_column: bool,
-    columns_witness: &Vec<Column<Advice>>,
     columns: &Vec<Column<Advice>>,
     tensors: &BTreeMap<i64, Array<C::ScalarExt, IxDyn>>,
-  ) -> Result<(BTreeMap<i64, AssignedTensor<C::ScalarExt>>, Vec<Rc<AssignedCell<C::ScalarExt, C::ScalarExt>>>), Error> {
-    let (tensors, flat) = layouter.assign_region(
+  ) -> Result<(BTreeMap<i64, AssignedTensor<C::ScalarExt>>, Vec<Rc<AssignedCell<C::ScalarExt, C::ScalarExt>>>, Vec<C::ScalarExt>), Error> {
+    let (tensors, flat, flat_f) = layouter.assign_region(
       || "asssignment",
       |mut region| {
         let mut assigned_tensors = BTreeMap::new();
@@ -145,6 +144,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
           // }
         let mut cell_idx = 0;
         let mut big_flat = vec![];
+        let mut flat_f = vec![];
         for (tensor_idx, tensor) in tensors.iter() {
           let mut flat = vec![];
           for val in tensor.iter() {
@@ -159,6 +159,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
               )
               .unwrap();
             flat.push(Rc::new(cell.clone()));
+            flat_f.push(*val);
             big_flat.push(Rc::new(cell));
             cell_idx += 1;
           }
@@ -166,11 +167,11 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
           assigned_tensors.insert(*tensor_idx, tensor);
         }
 
-        Ok((assigned_tensors, big_flat))
+        Ok((assigned_tensors, big_flat, flat_f))
       },
     )?;
 
-    Ok((tensors, flat))
+    Ok((tensors, flat, flat_f))
   }
 
   pub fn tensor_map_to_vec(
@@ -200,21 +201,18 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
   pub fn assign_tensors_vec(
     &self,
     mut layouter: impl Layouter<C::ScalarExt>,
-    witness_column: bool,
-    columns_witness: &Vec<Column<Advice>>,
     columns: &Vec<Column<Advice>>,
     tensors: &BTreeMap<i64, Array<C::ScalarExt, IxDyn>>,
-  ) -> Result<(Vec<AssignedTensor<C::ScalarExt>>, Vec<Rc<AssignedCell<C::ScalarExt, C::ScalarExt>>>), Error>  {
-    let (tensor_map, flat) = self
+  ) -> Result<(Vec<AssignedTensor<C::ScalarExt>>, Vec<Rc<AssignedCell<C::ScalarExt, C::ScalarExt>>>, Vec<C::ScalarExt>), Error>  {
+    let (tensor_map, flat, flat_f) = self
       .assign_tensors_map(
         layouter.namespace(|| "assign_tensors_map"),
-        witness_column,
-        columns_witness,
         columns,
         tensors,
       )
       .unwrap();
-    Ok((self.tensor_map_to_vec(&tensor_map), flat))
+    //println!("{:?}", flat);
+    Ok((self.tensor_map_to_vec(&tensor_map), flat, flat_f))
   }
 
   pub fn assign_constants(
@@ -339,7 +337,6 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
       let x_pos = x + bias;
       C::ScalarExt::from(x_pos as u64) - C::ScalarExt::from(bias as u64)
     };
-
     let match_layer = |x: &str| match x {
       "AveragePool2D" => LayerType::AvgPool2D,
       "Add" => LayerType::Add,
@@ -528,7 +525,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
       poly_ell: chunks,
       ..cloned_gadget
     };
-
+    println!("!Tensors: {:?}", tensors.keys());
+    println!("!commit_before: {:?}", config.commit_before);
     ModelCircuit {
       tensors,
       dag_config,
@@ -632,17 +630,33 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
   fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
     gadget_config.columns_poly = (0..(gadget_config.poly_ell))
-    .map(|_| meta.advice_column())
+    .map(|_| {
+      let col = meta.advice_column();
+      println!("Assigned column: {:?}", col);
+      col
+    })
     .collect::<Vec<_>>();
+
+    let columns: Vec<Column<Advice>>;
+    //let beta_pows = (0..gadget_config.poly_ell + 1).map(|i| beta.pow([i as u64])).rev().collect::<Vec<_>>();
     if gadget_config.poly_commit {
-      gadget_config.columns_poly.push(meta.advice_column());
-      gadget_config.columns_poly.push(meta.advice_column());
+      let beta = meta.challenge_usable_after(FirstPhase);
+      gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
+      gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
+      gadget_config.beta = beta;
       //gadget_config.columns_poly.push(meta.advice_column());
       
       // gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
       // .map(|_| meta.instance_column())
       // .collect::<Vec<_>>();
       gadget_config = Poly4Chip::configure(meta, gadget_config);
+      columns = (0..gadget_config.num_cols)
+      .map(|_| meta.advice_column_in(SecondPhase))
+      .collect::<Vec<_>>();
+    } else {
+      columns = (0..gadget_config.num_cols)
+      .map(|_| meta.advice_column_in(FirstPhase))
+      .collect::<Vec<_>>();
     }
     for col in gadget_config.columns_witness.iter() {
       meta.enable_equality(*col);
@@ -652,9 +666,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     }
 
     //println!("num columns: {}", gadget_config.num_cols);
-    let columns = (0..gadget_config.num_cols)
-      .map(|_| meta.advice_column())
-      .collect::<Vec<_>>();
+
     let maingate_cols = columns[0..5].to_vec();
     for col in columns.iter() {
       meta.enable_equality(*col);
@@ -708,7 +720,6 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         //GadgetType::Poly2 => Poly2Chip::configure(meta, gadget_config),
       };
     }
-
     println!("commit_before: {:?}", gadget_config.commit_before);
     let hasher = if gadget_config.commit_before.len() + gadget_config.commit_after.len() > 0 {
       let packer_config =
@@ -733,9 +744,10 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let mut range_config= RangeConfig::default();
 
     if gadget_config.pedersen {
-      let rns = Rns::<C::Base, C::ScalarExt, 3, 88>::construct();
+      let rns = Rns::<C::Base, C::ScalarExt, 4, 68>::construct();
       //let rns = Rns::<C::Base, C::ScalarExt, 4, 64>::construct();
       main_gate_config = MainGate::<C::ScalarExt>::configure_reuse(meta, gadget_config.columns_poly.clone(), gadget_config.columns_public[0]);
+      //main_gate_config = MainGate::<C::ScalarExt>::configure(meta, gadget_config.columns_public[0]);
       let overflow_bit_lens = rns.overflow_lengths();
       let composition_bit_lens = vec![17];
       println!("Overflow bit lens: {:?}", overflow_bit_lens);
@@ -747,6 +759,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
           overflow_bit_lens,
       );
     }
+    println!("Phases: {:?}", meta.advice_column_phase());
 
     ModelConfig {
       gadget_config: gadget_config.into(),
@@ -759,6 +772,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
   }
 
   fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
+    let timer = Instant::now();
     // Assign tables
     let gadget_rc: Rc<GadgetConfig> = config.gadget_config.clone().into();
     for gadget in self.used_gadgets.iter() {
@@ -861,19 +875,19 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       .unwrap();
 
     let mut commitments = vec![];
-    let (tensors, flat) = if self.commit_before.len() > 0 {
+    let (tensors, flat, mut flat_f) = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
       //println!("commit to the tensors :)))");
       let mut tensor_map = BTreeMap::new();
       let mut ignore_idxes: Vec<i64> = vec![];
-      println!("commit_before: {:?}", self.commit_before.iter());
-      for commit_idxes in self.commit_before.iter() {
+      // for commit_idxes in self.commit_before.iter() {
         //println!("Indexes:{:?})))", commit_idxes);
         let to_commit = BTreeMap::from_iter(
-          commit_idxes
+          self.commit_before[0]
             .iter()
-            .map(|idx| (*idx, self.tensors.get(idx).unwrap().clone())),
+            .map(|idx| (*idx, self.tensors.get(idx).expect(&format!("Idx: {:?}", idx)).clone())),
         );
+        
         println!("num tensors: {:?}", self.tensors.iter().size_hint());
         // for idx in commit_idxes.iter() {
         //   println!("Tensor: {:?}", self.tensors.get(idx).unwrap().clone());
@@ -886,8 +900,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         );
         commitments.push(commitment);
         tensor_map.append(&mut committed_tensors);
-        ignore_idxes.extend(commit_idxes.iter());
-      }
+        ignore_idxes.extend(self.commit_before[0].iter());
+      // }
 
       // Assign the remainder of the tensors
       let mut assign_map = BTreeMap::new();
@@ -897,11 +911,9 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         }
         assign_map.insert(*idx, tensor.clone());
       }
-      let (mut remainder_tensor_map, flat) = self
+      let (mut remainder_tensor_map, flat, flat_f) = self
         .assign_tensors_map(
           layouter.namespace(|| "assignment"),
-          config.gadget_config.poly_commit,
-          &config.gadget_config.columns_witness,
           &config.gadget_config.columns,
           &assign_map,
         )
@@ -911,47 +923,60 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       tensor_map.append(&mut remainder_tensor_map);
 
       // Return the tensors
-      (self.tensor_map_to_vec(&tensor_map), vec![])
+      (self.tensor_map_to_vec(&tensor_map), vec![], vec![])
+    } else if config.gadget_config.poly_commit {
+      println!("Called once");
+      self
+      .assign_tensors_vec(
+        layouter.namespace(|| "assignment"),
+        &config.gadget_config.columns,
+        &self.tensors,
+      )
+      .unwrap()
     } else {
       self
         .assign_tensors_vec(
           layouter.namespace(|| "assignment"),
-          config.gadget_config.poly_commit,
-          &config.gadget_config.columns_witness,
           &config.gadget_config.columns,
           &self.tensors,
         )
         .unwrap()
-    };
+    };  
 
     let mut rho = vec![];
     let mut poly_coeffs = vec![];
     for val in flat {
       poly_coeffs.push(val.clone());
     }
-    println!("Poly commit: {:?}", config.gadget_config.poly_commit);
+
+    let mut new_public_vals = vec![];
+
     if config.gadget_config.poly_commit {
       //poly_vals = vec![poly_betas, poly_coeffs];
       //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
       let zero = constants.get(&0).unwrap();
       let mut new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
+      let beta = layouter.get_challenge(config.gadget_config.beta);
+      new_public_vals.push(convert_to_bigint(beta.map(|x| x.to_owned())));
+      //let poly: Polynomial<C::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeffs.clone());
+      let beta_pows = (0..config.gadget_config.poly_ell + 1).map(|i| beta.map(|x| x.pow([i as u64]))).rev().collect::<Vec<_>>();
       while new_coeffs.len() % (self.beta_pows.len() - 1) != 0 {
         new_coeffs.push(&zero);
+        flat_f.push(C::ScalarExt::ZERO)
       }
 
       new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
-      let poly_com_chip = Poly4Chip::<C::ScalarExt>::construct(gadget_rc.clone(), self.beta_pows.clone(), vec![C::ScalarExt::ONE; config.gadget_config.poly_ell]);
-
-      //println!("coeffs len: {}", new_coeffs.len());
+      flat_f = flat_f.clone().into_iter().rev().collect::<Vec<_>>();
+      let poly_com_chip = Poly4Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta_pows.clone(), vec![C::ScalarExt::ONE; config.gadget_config.poly_ell], flat_f);
+      //new_public_vals.push(beta);
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
-      println!("Poly coeffs len: {}", new_coeffs.len());
-      println!("Rho: {:?}", rho);
+      println!("RHO Circ: {:?}", rho);
     }
 
     if config.gadget_config.pedersen {
       let ecc_chip_config = config.ecc_chip_config();
       let mut ecc_chip =
-          BaseFieldEccChip::<C, 3, 88>::new(ecc_chip_config);
+          BaseFieldEccChip::<C, 4, 68>::new(ecc_chip_config);
       // let mut ecc_chip =
       //     BaseFieldEccChip::<C, 4, 64>::new(ecc_chip_config);
       let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
@@ -1021,19 +1046,20 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
 
     let mut pub_layouter = layouter.namespace(|| "public");
     let mut total_idx = 0;
-    let mut new_public_vals = vec![];
-
     if config.gadget_config.poly_commit {
-      for poly_res in rho {
-        pub_layouter
-        .constrain_instance(poly_res.cell(), config.public_col, total_idx)
-        .unwrap();
-        let val = convert_to_bigint(poly_res.value().map(|x| x.to_owned()));
-        new_public_vals.push(val);
-        total_idx += 1;
-      }
-      println!("Poly vals len: {}", poly_coeffs.len());
+      total_idx += 1;
     }
+    // if config.gadget_config.poly_commit {
+    //   for poly_res in rho {
+    //     pub_layouter
+    //     .constrain_instance(poly_res.cell(), config.public_col, total_idx)
+    //     .unwrap();
+    //     let val = convert_to_bigint(poly_res.value().map(|x| x.to_owned()));
+    //     new_public_vals.push(val);
+    //     total_idx += 1;
+    //   }
+    //   println!("Poly vals len: {}", poly_coeffs.len());
+    // }
 
     for cell in commitments.iter() {
       pub_layouter
@@ -1054,9 +1080,9 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         total_idx += 1;
       }
     }
-    println!("Res size: {}", total_idx - curr_idx);
+   //println!("Res size: {}", total_idx - curr_idx);
     *PUBLIC_VALS.lock().unwrap() = new_public_vals;
-
+    println!("Synthesis time: {:?}", timer.elapsed());
     Ok(())
   }
 }
