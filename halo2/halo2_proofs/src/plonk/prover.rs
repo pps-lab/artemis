@@ -56,6 +56,8 @@ pub fn create_proof<
     instances: &[&[&[Scheme::Scalar]]],
     mut rng: R,
     transcript: &mut T,
+    advice_lagrange: &mut Vec<Polynomial<Scheme::Scalar, LagrangeCoeff>>,
+    advice_blind: &mut Vec<Scheme::Scalar>,
 ) -> Result<(), Error>
 where
     Scheme::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
@@ -321,7 +323,7 @@ where
                     }
                 })
                 .collect::<BTreeSet<_>>();
-
+            println!("Columns advice: {:?}", column_indices);
             for ((circuit, advice), instances) in
                 circuits.iter().zip(advice.iter_mut()).zip(instances)
             {
@@ -348,7 +350,7 @@ where
                     meta.constants.clone(),
                 )?;
                 stop_measure(start);
-
+ 
                 let start = start_measure("batch invert", false);
                 let mut advice_values = batch_invert_assigned::<Scheme::Scalar>(
                     witness
@@ -390,9 +392,10 @@ where
                     &advice_commitments_projective,
                     &mut advice_commitments,
                 );
+
                 let advice_commitments = advice_commitments;
                 drop(advice_commitments_projective);
-
+ 
                 for commitment in &advice_commitments {
                     transcript.write_point(*commitment)?;
                 }
@@ -417,11 +420,13 @@ where
         let challenges = (0..meta.num_challenges)
             .map(|index| challenges.remove(&index).unwrap())
             .collect::<Vec<_>>();
-
         (advice, challenges)
     };
+    for (poly, blind) in advice[0].advice_polys.clone().iter().zip(advice[0].advice_blinds.clone()) {
+        advice_lagrange.push(poly.clone());
+        advice_blind.push(blind.0);
+    }
     stop_measure(start);
-
     // Sample theta challenge for keeping lookup columns linearly independent
     let theta: ChallengeTheta<_> = transcript.squeeze_challenge_scalar();
     let start = start_measure("lookups", false);
@@ -454,7 +459,6 @@ where
     stop_measure(start);
     // Sample beta challenge
     let beta: ChallengeBeta<_> = transcript.squeeze_challenge_scalar();
-
     // Sample gamma challenge
     let gamma: ChallengeGamma<_> = transcript.squeeze_challenge_scalar();
 
@@ -479,7 +483,7 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
     stop_measure(start);
-    
+    println!("Test 3");
     let start = start_measure("lookups.commit_product", false);
     let lookups: Vec<Vec<lookup::prover::Committed<Scheme::Curve>>> = lookups
         .into_iter()
