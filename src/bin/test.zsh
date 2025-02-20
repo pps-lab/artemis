@@ -16,8 +16,12 @@ cp_snark="$3"
 num_runs="$4"
 dir="$5"
 
-cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
+cargo build --release --manifest-path $dir'/Cargo.toml'
 mkdir -p results
+mkdir -p params_ipa
+mkdir -p params_kzg_Bls12
+mkdir -p params_kzg_Bn256
+
 cols=0
 rows=0
 poly_cols=0
@@ -33,11 +37,11 @@ case "$name" in
             poly_cols=0
         elif [ "$cp_snark" = "pedersen" ]; then
             cols=10
-            rows=23
+            rows=19
         else
             cols=10
             rows=15
-            poly_cols=1
+            poly_cols=3
         fi
         # Add MNIST-specific commands here
         # e.g., python mnist_script.py
