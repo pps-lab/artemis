@@ -373,7 +373,7 @@ pub fn time_circuit_kzg<
   // KZG Commit proof
 
   if commit_poly {
-    let idx = poly_coeff_len / poly_col_len;
+    let idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len - 1;
     let beta = public_valss[0];
     let rho_advice = advice_lagrange[poly_col_len + 1][idx];
     let rho = poly.evaluate(beta);
