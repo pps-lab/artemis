@@ -6,7 +6,7 @@ use std::{
 use halo2_proofs::{
   circuit::{AssignedCell, Layouter, Region},
   halo2curves::group::ff::PrimeField,
-  plonk::{Advice, Column, Error, Fixed, Instance, Selector, TableColumn},
+  plonk::{Advice, Challenge, Column, Error, Fixed, Instance, Selector, TableColumn},
 };
 use num_bigint::{BigUint, ToBigUint};
 use num_traits::cast::ToPrimitive;
@@ -60,6 +60,7 @@ pub struct GadgetConfig {
   pub tables: HashMap<GadgetType, Vec<TableColumn>>,
   pub maps: HashMap<GadgetType, Vec<HashMap<i64, i64>>>,
   pub scale_factor: u64,
+  pub beta: Challenge,
   pub shift_min_val: i64, // MUST be divisible by 2 * scale_factor
   pub num_rows: usize,
   pub num_cols: usize,
@@ -88,7 +89,8 @@ pub fn convert_to_u64<F: PrimeField>(x: &F) -> u64 {
   } else if big_digits.len() == 0 {
     0
   } else {
-    println!("Problem val: {:?}", x);
+    println!("Problem val: {:?}, Big digits: {:?}", x, big_digits);
+    //big_digits[0] as u64;
     panic!();
   }
 }
