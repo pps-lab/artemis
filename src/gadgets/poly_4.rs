@@ -205,9 +205,11 @@ impl<F: PrimeField> Gadget<F> for Poly4Chip<F> {
     single_inputs: &Vec<&AssignedCell<F, F>>,
   ) -> Result<Vec<AssignedCell<F, F>>, Error> {
     assert!(single_inputs.len() <= 2);
-    let zero = single_inputs[0];
+    let cols = &self.config.columns_poly;
+    let zero = layouter.assign_region(|| " ", |mut region| {
+      region.assign_advice(|| "", cols[cols.len() - 2], 0, || Value::known(F::ZERO))
+    }).unwrap();
     let bias = zero;
-
     let coeffs = vec_inputs[0].clone();
 
     let output = layouter
