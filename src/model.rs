@@ -651,7 +651,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       // .collect::<Vec<_>>();
       gadget_config = Poly4Chip::configure(meta, gadget_config);
       columns = (0..gadget_config.num_cols)
-      .map(|_| meta.advice_column_in(SecondPhase))
+      .map(|_| meta.advice_column_in(FirstPhase))
       .collect::<Vec<_>>();
     } else {
       columns = (0..gadget_config.num_cols)
@@ -775,6 +775,17 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let timer = Instant::now();
     // Assign tables
     let gadget_rc: Rc<GadgetConfig> = config.gadget_config.clone().into();
+    let test_assign = layouter.assign_region(|| " ", |mut region| {
+      region.assign_advice(|| "", config.gadget_config.columns_poly[0], 0, || Value::known(C::Scalar::ZERO))
+    }).unwrap();
+
+    let random = C::Scalar::random(& mut OsRng);
+    let mut phase_1 = random;
+    test_assign.value().map(|x| phase_1 = *x);
+    let first_phase = phase_1 != random;
+    println!("First phase: {:?}", first_phase);
+    // let timer1 = timer.elapsed();
+    // println!("Time1 : {:?}", timer1);
     for gadget in self.used_gadgets.iter() {
       match gadget {
         GadgetType::AddPairs => {
@@ -857,7 +868,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         _ => panic!("unsupported gadget {:?}", gadget),
       }
     }
-
+    // let timer2 = timer.elapsed();
+    // println!("Time2 : {:?}", timer2 - timer1);
     // Assign weights and constants
     let constants_base = self
       .assign_constants(
@@ -873,7 +885,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         &constants_base,
       )
       .unwrap();
-
+    // let timer3 = timer.elapsed();
+    // println!("Time3 : {:?}", timer3 - timer2);
     let mut commitments = vec![];
     let (tensors, flat, mut flat_f) = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
@@ -942,7 +955,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         )
         .unwrap()
     };  
-
+    // let timer4 = timer.elapsed();
+    // println!("Time4 : {:?}", timer4 - timer3);
     let mut rho = vec![];
     let mut poly_coeffs = vec![];
     for val in flat {
@@ -972,7 +986,8 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
       println!("RHO Circ: {:?}", rho);
     }
-
+    // let timer5 = timer.elapsed();
+    // println!("Time5 : {:?}", timer5 - timer4);
     if config.gadget_config.pedersen {
       let ecc_chip_config = config.ecc_chip_config();
       let mut ecc_chip =
@@ -1015,35 +1030,40 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       )?;
       config.config_range(&mut layouter)?;
     }
-
+    // let timer6 = timer.elapsed();
+    // println!("Time6 : {:?}", timer6 - timer5);
     // Perform the dag
-    let dag_chip = DAGLayerChip::<C::ScalarExt>::construct(self.dag_config.clone());
-    let (final_tensor_map, result) = dag_chip.forward(
-      layouter.namespace(|| "dag"),
-      &tensors,
-      &constants,
-      config.gadget_config.clone(),
-      &LayerConfig::default(),
-    )?;
-
-    if self.commit_after.len() > 0 {
-      for commit_idxes in self.commit_after.iter() {
-        let to_commit = BTreeMap::from_iter(commit_idxes.iter().map(|idx| {
-          (
-            *idx,
-            final_tensor_map.get(&(*idx as usize)).unwrap().clone(),
-          )
-        }));
-        let commitment = self.copy_and_commit(
-          layouter.namespace(|| "commit"),
-          &constants,
-          &config,
-          &to_commit,
-        );
-        commitments.push(commitment);
+    if first_phase || !config.gadget_config.poly_commit {
+      let dag_chip = DAGLayerChip::<C::ScalarExt>::construct(self.dag_config.clone());
+      let (final_tensor_map, result) = dag_chip.forward(
+        layouter.namespace(|| "dag"),
+        &tensors,
+        &constants,
+        config.gadget_config.clone(),
+        &LayerConfig::default(),
+      )?;
+  
+      if self.commit_after.len() > 0 {
+        for commit_idxes in self.commit_after.iter() {
+          let to_commit = BTreeMap::from_iter(commit_idxes.iter().map(|idx| {
+            (
+              *idx,
+              final_tensor_map.get(&(*idx as usize)).unwrap().clone(),
+            )
+          }));
+          let commitment = self.copy_and_commit(
+            layouter.namespace(|| "commit"),
+            &constants,
+            &config,
+            &to_commit,
+          );
+          commitments.push(commitment);
+        }
       }
     }
 
+    // let timer7 = timer.elapsed();
+    // println!("Time7 : {:?}", timer7 - timer6);
     let mut pub_layouter = layouter.namespace(|| "public");
     let mut total_idx = 0;
     if config.gadget_config.poly_commit {
@@ -1069,17 +1089,19 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       new_public_vals.push(val);
       total_idx += 1;
     }
-    let curr_idx = total_idx;
-    for tensor in result {
-      for cell in tensor.iter() {
-        pub_layouter
-          .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
-          .unwrap();
-        let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
-        new_public_vals.push(val);
-        total_idx += 1;
-      }
-    }
+    // if first_phase {
+    //   let curr_idx = total_idx;
+    //   for tensor in result {
+    //     for cell in tensor.iter() {
+    //       pub_layouter
+    //         .constrain_instance(cell.as_ref().cell(), config.public_col, total_idx)
+    //         .unwrap();
+    //       let val = convert_to_bigint(cell.value().map(|x| x.to_owned()));
+    //       new_public_vals.push(val);
+    //       total_idx += 1;
+    //     }
+    //   }
+    // }
    //println!("Res size: {}", total_idx - curr_idx);
     *PUBLIC_VALS.lock().unwrap() = new_public_vals;
     println!("Synthesis time: {:?}", timer.elapsed());

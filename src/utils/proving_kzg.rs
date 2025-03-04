@@ -242,83 +242,6 @@ pub fn time_circuit_kzg<
   for _ in 0..advice_lagrange.len() {
     advice_com.push(proof_transcript.read_point().unwrap().to_curve());
   }
-  // /// test some commitment stuff
-  // println!("Advice lagrange: {:?}", advice_lagrange.len());
-  // println!("C: {:?}", c);
-  // println!("Advice blind: {:?}", advice_blind);
-
-  // let mut advice_mu = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![E::Scalar::ZERO]);//advice_lagrange[0].clone();
-  // let blind1 = E::Scalar::ZERO;
-  // println!("Advice 1 coeff 0: {:?}", E::Scalar::ZERO);
-  // let mu_poly = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![E::Scalar::ZERO]);
-  // let mu_commit = params.commit_lagrange(&mu_poly, Blind(E::Scalar::ZERO));
-  // println!("Mu 1 poly: {:?}", mu_poly);
-  // advice_mu[0] = E::Scalar::ZERO;
-  // let no_mu_commit = params.commit_lagrange(&advice_mu, Blind(E::Scalar::ZERO));
-  // let mut proof_transcript = transcript_read.clone();
-  // let mut advice_com = vec![];
-  // for _ in 0..advice_lagrange.len() {
-  //   advice_com.push(proof_transcript.read_point().unwrap().to_curve());
-  // }
-  // //assert!(mu_commit + no_mu_commit == E::Scalar::ZERO);
-
-
-  // let g_lagrange = E::G1Affine::identity();//params.g_lagrange();
-  // let g_lag_mu = g_lagrange;//[0];
-
-  // // external com
-  // let mu = mu_poly[0];
-  // let b = E::Scalar::random(rng.clone());
-  // let G = E::G1::random(rng.clone());
-  // let H = E::G1::random(rng.clone());
-  // let C_hat = G * mu + H * b;
-
-  // //internal com
-  // let mu_circ = mu.clone();
-  // let a = E::Scalar::ZERO;
-  // let g = g_lag_mu.clone();
-  // let h = E::G1::random(rng.clone());
-  // let C = mu_commit;
-  // println!("g : {:?}, mu_circ: {:?}", g, mu_circ);
-  // //assert!(C == g * mu_circ, "C: {:?}, g * mu_circ: {:?}", C, g * mu_circ);
-  // //Sigma protocol (https://eprint.iacr.org/2021/934.pdf Fig.2): 
-  // if sigma {
-  //   let timer = Instant::now();
-  //   //1 
-  //   let G_tilde  = G.clone(); 
-  //   //2 
-  //   let r = E::Scalar::random(rng.clone());
-  //   let delta = E::Scalar::random(rng.clone());
-  //   let gamma = E::Scalar::random(rng.clone());
-  //   let A = g * r + h * delta; 
-  //   let A_hat = G_tilde * r + H * gamma;
-  //   //3 
-  //   let e = E::Scalar::random(rng.clone());
-  //   //4
-  //   let z = r + e * mu; 
-  //   let omega = delta + e * a;
-  //   let Omega = gamma + e * b; 
-  //   //5 
-  //   let lhs1 = g * z + h * omega; // = g * (r + e * mu) + h * (delta)
-  //   let rhs1 = A + C * e; // = g * (r + (mu * e)) + h * delta 
-  //   assert!(lhs1 == rhs1);
-    
-  //   let lhs2 = G_tilde * z + H * Omega;
-  //   let rhs2 = A_hat + C_hat * e;
-  //   assert!(lhs2 == rhs2);
-
-  // // Vanishing proof 
-  //   let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
-  //   let v_h_com = Polynomial::<E::Scalar, Coeff>::from_coefficients_vec(vec![-E::Scalar::ONE, E::Scalar::ONE]);
-  //   println!("v_h Poly: {:?}, eval: {:?}", v_h_com, v_h_com.evaluate(E::Scalar::ZERO));
-  //   let com_poly = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![mu]);
-  //   let mid_poly = Polynomial::<E::Scalar, LagrangeCoeff>::from_coefficients_vec(vec![vec![E::Scalar::ZERO], vec![E::Scalar::ONE; circuit.k - 1]].concat());
-  //   let com_poly_coeff = domain.lagrange_to_coeff(com_poly);
-  //   let mid_poly_coeff = domain.lagrange_to_coeff(mid_poly);
-  //   let (q, r) = mid_poly_coeff.divide_with_q_and_r(&v_h_com).unwrap();
-  //   println!("R: {:?}", r);
-  //   println!("Sigma proof time: {:?}", timer.elapsed());
-  // }
 
   //CPLink proof: 
   if cp_link {
@@ -373,7 +296,7 @@ pub fn time_circuit_kzg<
   // KZG Commit proof
 
   if commit_poly {
-    let idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len - 1;
+    let idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len;
     let beta = public_valss[0];
     let rho_advice = advice_lagrange[poly_col_len + 1][idx];
     let rho = poly.evaluate(beta);
