@@ -640,16 +640,27 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let columns: Vec<Column<Advice>>;
     //let beta_pows = (0..gadget_config.poly_ell + 1).map(|i| beta.pow([i as u64])).rev().collect::<Vec<_>>();
     if gadget_config.poly_commit {
+      if gadget_config.pedersen {
+        for _ in 0..(gadget_config.poly_ell) {
+          gadget_config.columns_poly.push(meta.advice_column_in(FirstPhase));
+        }
+      }
       let beta = meta.challenge_usable_after(FirstPhase);
       gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
       gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
+
       gadget_config.beta = beta;
       //gadget_config.columns_poly.push(meta.advice_column());
       
       // gadget_config.columns_poly_public = (0..gadget_config.poly_ell)
       // .map(|_| meta.instance_column())
       // .collect::<Vec<_>>();
-      gadget_config = Poly4Chip::configure(meta, gadget_config);
+      if gadget_config.pedersen {
+        gadget_config = Poly2Chip::configure(meta, gadget_config);
+      } else {
+        gadget_config = Poly4Chip::configure(meta, gadget_config);
+      }
+
       columns = (0..gadget_config.num_cols)
       .map(|_| meta.advice_column_in(FirstPhase))
       .collect::<Vec<_>>();
@@ -743,22 +754,22 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let mut main_gate_config= MainGateConfig::default();
     let mut range_config= RangeConfig::default();
 
-    if gadget_config.pedersen {
-      let rns = Rns::<C::Base, C::ScalarExt, 4, 68>::construct();
-      //let rns = Rns::<C::Base, C::ScalarExt, 4, 64>::construct();
-      main_gate_config = MainGate::<C::ScalarExt>::configure_reuse(meta, gadget_config.columns_poly.clone(), gadget_config.columns_public[0]);
-      //main_gate_config = MainGate::<C::ScalarExt>::configure(meta, gadget_config.columns_public[0]);
-      let overflow_bit_lens = rns.overflow_lengths();
-      let composition_bit_lens = vec![17];
-      println!("Overflow bit lens: {:?}", overflow_bit_lens);
+    // if gadget_config.pedersen {
+    //   let rns = Rns::<C::Base, C::ScalarExt, 4, 68>::construct();
+    //   //let rns = Rns::<C::Base, C::ScalarExt, 4, 64>::construct();
+    //   main_gate_config = MainGate::<C::ScalarExt>::configure_reuse(meta, gadget_config.columns_poly.clone(), gadget_config.columns_public[0]);
+    //   //main_gate_config = MainGate::<C::ScalarExt>::configure(meta, gadget_config.columns_public[0]);
+    //   let overflow_bit_lens = rns.overflow_lengths();
+    //   let composition_bit_lens = vec![17];
+    //   println!("Overflow bit lens: {:?}", overflow_bit_lens);
 
-      range_config = RangeChip::<C::ScalarExt>::configure(
-          meta,
-          &main_gate_config,
-          composition_bit_lens,
-          overflow_bit_lens,
-      );
-    }
+    //   range_config = RangeChip::<C::ScalarExt>::configure(
+    //       meta,
+    //       &main_gate_config,
+    //       composition_bit_lens,
+    //       overflow_bit_lens,
+    //   );
+    // }
     println!("Phases: {:?}", meta.advice_column_phase());
 
     ModelConfig {
@@ -779,6 +790,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       region.assign_advice(|| "", config.gadget_config.columns_poly[0], 0, || Value::known(C::Scalar::ZERO))
     }).unwrap();
 
+    // very ugly way of testing first phase, need to fix
     let random = C::Scalar::random(& mut OsRng);
     let mut phase_1 = random;
     test_assign.value().map(|x| phase_1 = *x);
@@ -957,7 +969,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     };  
     // let timer4 = timer.elapsed();
     // println!("Time4 : {:?}", timer4 - timer3);
-    let mut rho = vec![];
+    let rho;
     let mut poly_coeffs = vec![];
     for val in flat {
       poly_coeffs.push(val.clone());
@@ -968,99 +980,111 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     if config.gadget_config.poly_commit {
       //poly_vals = vec![poly_betas, poly_coeffs];
       //let new_betas = poly_vals[0].iter().map(|x| x.as_ref()).collect();
-      let zero = constants.get(&0).unwrap();
+      let zero = constants_base.get(&0).unwrap();
+      println!("Zero: {:?}", zero);
       let mut new_coeffs = poly_coeffs.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
       let beta = layouter.get_challenge(config.gadget_config.beta);
+      println!("Beta chall: {:?}", beta);
       new_public_vals.push(convert_to_bigint(beta.map(|x| x.to_owned())));
       //let poly: Polynomial<C::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeffs.clone());
-      let beta_pows = (0..config.gadget_config.poly_ell + 1).map(|i| beta.map(|x| x.pow([i as u64]))).rev().collect::<Vec<_>>();
+
       while new_coeffs.len() % (self.beta_pows.len() - 1) != 0 {
         new_coeffs.push(&zero);
         flat_f.push(C::ScalarExt::ZERO)
       }
 
-      new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
-      flat_f = flat_f.clone().into_iter().rev().collect::<Vec<_>>();
-      let poly_com_chip = Poly4Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta_pows.clone(), vec![C::ScalarExt::ONE; config.gadget_config.poly_ell], flat_f);
-      //new_public_vals.push(beta);
-      rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+      if config.gadget_config.pedersen {
+        let beta_pows = (0..flat_f.len()).map(|i| beta.map(|x| x.pow([i as u64]))).collect::<Vec<_>>();
+        let poly_com_chip = Poly2Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta_pows.clone(), flat_f);
+        //new_public_vals.push(beta);
+        rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+      } else {
+        new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
+        flat_f = flat_f.clone().into_iter().rev().collect::<Vec<_>>();
+        let beta_pows = (0..config.gadget_config.poly_ell + 1).map(|i| beta.map(|x| x.pow([i as u64]))).rev().collect::<Vec<_>>();
+        let poly_com_chip = Poly4Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta_pows.clone(), vec![C::ScalarExt::ONE; config.gadget_config.poly_ell], flat_f);
+        //new_public_vals.push(beta);
+        rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
+      }
+
       println!("RHO Circ: {:?}", rho);
     }
+
     // let timer5 = timer.elapsed();
     // println!("Time5 : {:?}", timer5 - timer4);
-    if config.gadget_config.pedersen {
-      let ecc_chip_config = config.ecc_chip_config();
-      let mut ecc_chip =
-          BaseFieldEccChip::<C, 4, 68>::new(ecc_chip_config);
-      // let mut ecc_chip =
-      //     BaseFieldEccChip::<C, 4, 64>::new(ecc_chip_config);
-      let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
-      let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
-      layouter.assign_region(
-          || "assign aux values",
-          |region| {
-              let offset = 0;
-              let ctx = &mut RegionCtx::new(region, offset);
-              //println!("ONE");
-              ecc_chip.assign_aux_generator(ctx, Value::known(aux_generator))?;
-              ecc_chip.assign_aux(ctx, 2, 1)?;
-              ecc_chip.get_mul_aux(2, 1)?;
-              Ok(())
-          },
-      )?;
-      layouter.assign_region(
-          || "region 0",
-          |region| {
-              let offset = 0;
-              let ctx = &mut RegionCtx::new(region, offset);
+    // if config.gadget_config.pedersen {
+    //   let ecc_chip_config = config.ecc_chip_config();
+    //   let mut ecc_chip =
+    //       BaseFieldEccChip::<C, 4, 68>::new(ecc_chip_config);
+    //   // let mut ecc_chip =
+    //   //     BaseFieldEccChip::<C, 4, 64>::new(ecc_chip_config);
+    //   let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
+    //   let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
+    //   layouter.assign_region(
+    //       || "assign aux values",
+    //       |region| {
+    //           let offset = 0;
+    //           let ctx = &mut RegionCtx::new(region, offset);
+    //           //println!("ONE");
+    //           ecc_chip.assign_aux_generator(ctx, Value::known(aux_generator))?;
+    //           ecc_chip.assign_aux(ctx, 2, 1)?;
+    //           ecc_chip.get_mul_aux(2, 1)?;
+    //           Ok(())
+    //       },
+    //   )?;
+    //   layouter.assign_region(
+    //       || "region 0",
+    //       |region| {
+    //           let offset = 0;
+    //           let ctx = &mut RegionCtx::new(region, offset);
 
-              let base = C::CurveExt::random(OsRng);
-              let s = C::Scalar::random(OsRng);
-              let result = base * s;
+    //           let base = C::CurveExt::random(OsRng);
+    //           let s = C::Scalar::random(OsRng);
+    //           let result = base * s;
 
-              let base = ecc_chip.assign_point(ctx, Value::known(base.into()))?;
-              let s = main_gate.assign_value(ctx, Value::known(s))?;
-              let result_0 = ecc_chip.assign_point(ctx, Value::known(result.into()))?;
+    //           let base = ecc_chip.assign_point(ctx, Value::known(base.into()))?;
+    //           let s = main_gate.assign_value(ctx, Value::known(s))?;
+    //           let result_0 = ecc_chip.assign_point(ctx, Value::known(result.into()))?;
 
-              let result_1 = ecc_chip.mul(ctx, &base, &s, 2)?;
-              ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
+    //           let result_1 = ecc_chip.mul(ctx, &base, &s, 2)?;
+    //           ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
 
-              Ok(())
-          },
-      )?;
-      config.config_range(&mut layouter)?;
-    }
-    // let timer6 = timer.elapsed();
-    // println!("Time6 : {:?}", timer6 - timer5);
-    // Perform the dag
-    if first_phase || !config.gadget_config.poly_commit {
-      let dag_chip = DAGLayerChip::<C::ScalarExt>::construct(self.dag_config.clone());
-      let (final_tensor_map, result) = dag_chip.forward(
-        layouter.namespace(|| "dag"),
-        &tensors,
-        &constants,
-        config.gadget_config.clone(),
-        &LayerConfig::default(),
-      )?;
+    //           Ok(())
+    //       },
+    //   )?;
+    //   config.config_range(&mut layouter)?;
+    // }
+    // // let timer6 = timer.elapsed();
+    // // println!("Time6 : {:?}", timer6 - timer5);
+    // // Perform the dag
+    // if first_phase || !config.gadget_config.poly_commit {
+    //   let dag_chip = DAGLayerChip::<C::ScalarExt>::construct(self.dag_config.clone());
+    //   let (final_tensor_map, result) = dag_chip.forward(
+    //     layouter.namespace(|| "dag"),
+    //     &tensors,
+    //     &constants,
+    //     config.gadget_config.clone(),
+    //     &LayerConfig::default(),
+    //   )?;
   
-      if self.commit_after.len() > 0 {
-        for commit_idxes in self.commit_after.iter() {
-          let to_commit = BTreeMap::from_iter(commit_idxes.iter().map(|idx| {
-            (
-              *idx,
-              final_tensor_map.get(&(*idx as usize)).unwrap().clone(),
-            )
-          }));
-          let commitment = self.copy_and_commit(
-            layouter.namespace(|| "commit"),
-            &constants,
-            &config,
-            &to_commit,
-          );
-          commitments.push(commitment);
-        }
-      }
-    }
+    //   if self.commit_after.len() > 0 {
+    //     for commit_idxes in self.commit_after.iter() {
+    //       let to_commit = BTreeMap::from_iter(commit_idxes.iter().map(|idx| {
+    //         (
+    //           *idx,
+    //           final_tensor_map.get(&(*idx as usize)).unwrap().clone(),
+    //         )
+    //       }));
+    //       let commitment = self.copy_and_commit(
+    //         layouter.namespace(|| "commit"),
+    //         &constants,
+    //         &config,
+    //         &to_commit,
+    //       );
+    //       commitments.push(commitment);
+    //     }
+    //   }
+    // }
 
     // let timer7 = timer.elapsed();
     // println!("Time7 : {:?}", timer7 - timer6);

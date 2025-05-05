@@ -35,16 +35,15 @@ case "$name" in
             cols=10
             rows=19
             poly_cols=0
-        elif [ "$cp_snark" = "pedersen" ]; then
-            cols=10
-            rows=19
+        # elif [ "$cp_snark" = "pedersen" ]; then
+        #     cols=10
+        #     rows=19
         else
             cols=10
             rows=15
             poly_cols=3
         fi
-        # Add MNIST-specific commands here
-        # e.g., python mnist_script.py
+
         ;;
     
     resnet18)
@@ -59,8 +58,6 @@ case "$name" in
         fi
         name='cifar10'
         echo "Running ResNet task..."
-        # Add ResNet-specific commands here
-        # e.g., python resnet_script.py
         ;;
     
     dlrm)
@@ -77,8 +74,6 @@ case "$name" in
             poly_cols=2
         fi
         echo "Running DLRM task..."
-        # Add DLRM-specific commands here
-        # e.g., python dlrm_script.py
         ;;
     
     mobilenet)
@@ -92,8 +87,6 @@ case "$name" in
             poly_cols=1
         fi 
         echo "Running MobileNet task..."
-        # Add MobileNet-specific commands here
-        # e.g., python mobilenet_script.py
         ;;
     
     vgg)
@@ -110,8 +103,6 @@ case "$name" in
             poly_cols=4
         fi 
         echo "Running VGG task..."
-        # Add VGG-specific commands here
-        # e.g., python vgg_script.py
         ;;
     
     gpt2)
@@ -128,8 +119,6 @@ case "$name" in
             poly_cols=3
         fi 
         echo "Running GPT-2 task..."
-        # Add GPT-2-specific commands here
-        # e.g., python gpt2_script.py
         ;;
     
     diffusion)
@@ -146,8 +135,6 @@ case "$name" in
             poly_cols=2
         fi 
         echo "Running Diffusion task..."
-        # Add Diffusion-specific commands here
-        # e.g., python diffusion_script.py
         ;;
     
     *)
@@ -192,9 +179,9 @@ case "$cp_snark" in
         cp_link=false
         poly_com=true
         pedersen=true
-        if [ "$poly_cols" -lt 3 ]; then
-            poly_cols=3
-        fi
+        # if [ "$poly_cols" -lt 3 ]; then
+        #     poly_cols=3
+        # fi
         ;;
     *)
         echo "Error: Unknown case '$case'"

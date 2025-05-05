@@ -81,11 +81,7 @@ pub fn time_circuit_kzg<
     G2Affine: SerdeCurveAffine,
     Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3>,
   > + Debug + MultiMillerLoop
->(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
-  println!("Type of Engine: {:?}", E::type_of());
-  println!("Usize size: {:?}", std::mem::size_of::<usize>());
-
-  let sigma = true;
+>(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, pedersen: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize) {
   let rng = rand::thread_rng();
   //println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
   let start = Instant::now();
@@ -110,6 +106,7 @@ pub fn time_circuit_kzg<
 
   let mut tensor_len = 0usize;
   let mut poly_coeff = Vec::with_capacity(2usize.pow((circuit.k + poly_col_len) as u32));
+
   for (tensor_idx, tensor) in circuit.tensors.clone() {
     for val in tensor.clone() {
       poly_coeff.push(val);
@@ -120,6 +117,7 @@ pub fn time_circuit_kzg<
     }
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
+
   let poly_coeff_len = poly_coeff.len();
   let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![];
@@ -217,26 +215,13 @@ pub fn time_circuit_kzg<
   let mut proof_size = proof.len();
   println!("Proof size: {}", proof.len());
   let strategy = SingleStrategy::new(&params);
-  let transcript_read = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+  let transcript_read: Blake2bRead<&[u8], <E as Engine>::G1Affine, Challenge255<<E as Engine>::G1Affine>> = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
   let mut proof_transcript = transcript_read.clone();
-  let mut verifying_time = vec![];
+  let mut verifying_time = vec![Duration::new(0, 0); num_runs];
   let public_valss: Vec<E::Scalar> = get_public_values();
   // if commit_poly {
   //   public_vals[0][0] = rho;
   // }
-  for _ in 0..num_runs {
-    let vfy_timer = Instant::now();
-    verify_kzg(
-      &params,
-      &pk.get_vk(),
-      strategy.clone(),
-      &public_vals_slice,
-      transcript_read.clone(),
-    );
-    let verify_duration = vfy_timer.elapsed();
-    //println!("Verifying time: {:?}", verify_duration - proof_duration);
-    verifying_time.push(verify_duration);
-  }
 
   let mut advice_com = vec![];
   for _ in 0..advice_lagrange.len() {
@@ -283,7 +268,6 @@ pub fn time_circuit_kzg<
         //let chat = params.commit_g1(&uhat);
         let chat = E::G1::identity();///advice_com[i];
         let polycom = params.commit_g1(&polys[i]);
-        println!("Three");
         let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&polys[i], &chat, &polycom, &z, &poly, &params, &domain);
         proving_time += cplink_time;
         for i in 0..num_runs {
@@ -296,9 +280,10 @@ pub fn time_circuit_kzg<
   // KZG Commit proof
 
   if commit_poly {
-    let idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len;
+    let col_idx = if pedersen {poly_col_len * 2 + 1} else {poly_col_len + 1};
+    let row_idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len;
     let beta = public_valss[0];
-    let rho_advice = advice_lagrange[poly_col_len + 1][idx];
+    let rho_advice = advice_lagrange[col_idx][row_idx];
     let rho = poly.evaluate(beta);
     println!("(Rho, Beta): {:?}", (rho, beta));
     println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
@@ -344,7 +329,7 @@ pub fn time_circuit_kzg<
 
     let queries = [
       ProverQuery {
-          point: domain.rotate_omega(E::Scalar::ONE, Rotation((idx) as i32)),
+          point: domain.rotate_omega(E::Scalar::ONE, Rotation((row_idx) as i32)),
           poly: &poly_advice,
           blind: Blind::default(),
       }
@@ -392,7 +377,7 @@ pub fn time_circuit_kzg<
       let mut transcript_kzg_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_kzg_advice.as_slice());
     
       let queries = std::iter::empty()
-          .chain(Some(VerifierQuery::new_commitment(&poly_com_advice, domain.rotate_omega(E::Scalar::ONE, Rotation((idx) as i32)), rho)));
+          .chain(Some(VerifierQuery::new_commitment(&poly_com_advice, domain.rotate_omega(E::Scalar::ONE, Rotation((row_idx) as i32)), rho)));
     
       let msm = DualMSM::new(&poly_params);
       assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());
@@ -401,6 +386,21 @@ pub fn time_circuit_kzg<
       println!("KZG vfy time: {:?}", vfy_time);
     }
   }
+
+  for i in 0..num_runs {
+    let vfy_timer = Instant::now();
+    verify_kzg(
+      &params,
+      &pk.get_vk(),
+      strategy.clone(),
+      &public_vals_slice,
+      transcript_read.clone(),
+    );
+    let verify_duration = vfy_timer.elapsed();
+    //println!("Verifying time: {:?}", verify_duration - proof_duration);
+    verifying_time[i] += verify_duration;
+  }
+
   println!("Verifying time: {:?}", verifying_time);
 
   // Create a file to write the CSV to

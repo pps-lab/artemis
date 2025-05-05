@@ -20,10 +20,10 @@ fn main() {
   if kzg_or_ipa.get(..3) == Some("kzg") {
     if kzg_or_ipa.get(4..) == Some("bls") {
       let circuit = ModelCircuit::<<Bls12 as Engine>::G1Affine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, pedersen);
-      time_circuit_kzg::<Bls12>(circuit, commit, chunks, cp_link, num_runs, directory, c_ipt);
+      time_circuit_kzg::<Bls12>(circuit, commit, pedersen, chunks, cp_link, num_runs, directory, c_ipt);
     } else {
       let circuit = ModelCircuit::<<Bn256 as Engine>::G1Affine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, pedersen);
-      time_circuit_kzg::<Bn256>(circuit, commit, chunks, cp_link, num_runs, directory, c_ipt);
+      time_circuit_kzg::<Bn256>(circuit, commit, pedersen,chunks, cp_link, num_runs, directory, c_ipt);
     }
   } else {
     let circuit = ModelCircuit::<EqAffine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, pedersen);
