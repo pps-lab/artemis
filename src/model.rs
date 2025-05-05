@@ -786,16 +786,18 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let timer = Instant::now();
     // Assign tables
     let gadget_rc: Rc<GadgetConfig> = config.gadget_config.clone().into();
-    let test_assign = layouter.assign_region(|| " ", |mut region| {
-      region.assign_advice(|| "", config.gadget_config.columns_poly[0], 0, || Value::known(C::Scalar::ZERO))
-    }).unwrap();
+    if config.gadget_config.poly_commit {
+      let test_assign = layouter.assign_region(|| " ", |mut region| {
+        region.assign_advice(|| "", config.gadget_config.columns_poly[0], 0, || Value::known(C::Scalar::ZERO))
+      }).unwrap();
 
-    // very ugly way of testing first phase, need to fix
-    let random = C::Scalar::random(& mut OsRng);
-    let mut phase_1 = random;
-    test_assign.value().map(|x| phase_1 = *x);
-    let first_phase = phase_1 != random;
-    println!("First phase: {:?}", first_phase);
+      // very ugly way of testing first phase, need to fix
+      let random = C::Scalar::random(& mut OsRng);
+      let mut phase_1 = random;
+      test_assign.value().map(|x| phase_1 = *x);
+      let first_phase = phase_1 != random;
+      println!("First phase: {:?}", first_phase);
+    }
     // let timer1 = timer.elapsed();
     // println!("Time1 : {:?}", timer1);
     for gadget in self.used_gadgets.iter() {
