@@ -786,6 +786,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let timer = Instant::now();
     // Assign tables
     let gadget_rc: Rc<GadgetConfig> = config.gadget_config.clone().into();
+    let mut first_phase = true;
     if config.gadget_config.poly_commit {
       let test_assign = layouter.assign_region(|| " ", |mut region| {
         region.assign_advice(|| "", config.gadget_config.columns_poly[0], 0, || Value::known(C::Scalar::ZERO))
@@ -795,7 +796,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       let random = C::Scalar::random(& mut OsRng);
       let mut phase_1 = random;
       test_assign.value().map(|x| phase_1 = *x);
-      let first_phase = phase_1 != random;
+      first_phase = phase_1 != random;
       println!("First phase: {:?}", first_phase);
     }
     // let timer1 = timer.elapsed();
@@ -1059,34 +1060,34 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     // // let timer6 = timer.elapsed();
     // // println!("Time6 : {:?}", timer6 - timer5);
     // // Perform the dag
-    // if first_phase || !config.gadget_config.poly_commit {
-    //   let dag_chip = DAGLayerChip::<C::ScalarExt>::construct(self.dag_config.clone());
-    //   let (final_tensor_map, result) = dag_chip.forward(
-    //     layouter.namespace(|| "dag"),
-    //     &tensors,
-    //     &constants,
-    //     config.gadget_config.clone(),
-    //     &LayerConfig::default(),
-    //   )?;
+    if first_phase || !config.gadget_config.poly_commit {
+      let dag_chip = DAGLayerChip::<C::ScalarExt>::construct(self.dag_config.clone());
+      let (final_tensor_map, result) = dag_chip.forward(
+        layouter.namespace(|| "dag"),
+        &tensors,
+        &constants,
+        config.gadget_config.clone(),
+        &LayerConfig::default(),
+      )?;
   
-    //   if self.commit_after.len() > 0 {
-    //     for commit_idxes in self.commit_after.iter() {
-    //       let to_commit = BTreeMap::from_iter(commit_idxes.iter().map(|idx| {
-    //         (
-    //           *idx,
-    //           final_tensor_map.get(&(*idx as usize)).unwrap().clone(),
-    //         )
-    //       }));
-    //       let commitment = self.copy_and_commit(
-    //         layouter.namespace(|| "commit"),
-    //         &constants,
-    //         &config,
-    //         &to_commit,
-    //       );
-    //       commitments.push(commitment);
-    //     }
-    //   }
-    // }
+      if self.commit_after.len() > 0 {
+        for commit_idxes in self.commit_after.iter() {
+          let to_commit = BTreeMap::from_iter(commit_idxes.iter().map(|idx| {
+            (
+              *idx,
+              final_tensor_map.get(&(*idx as usize)).unwrap().clone(),
+            )
+          }));
+          let commitment = self.copy_and_commit(
+            layouter.namespace(|| "commit"),
+            &constants,
+            &config,
+            &to_commit,
+          );
+          commitments.push(commitment);
+        }
+      }
+    }
 
     // let timer7 = timer.elapsed();
     // println!("Time7 : {:?}", timer7 - timer6);
