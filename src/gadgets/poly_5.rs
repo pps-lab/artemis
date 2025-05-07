@@ -58,7 +58,7 @@ impl<F: PrimeField> Poly5Chip<F> {
       let one = Expression::Constant(F::ONE);
       let mut betas = vec![];
       let mut curr = one;
-      for column in 0..gadget_config.columns_poly.len() - 2 {
+      for column in 0..gadget_config.columns_poly.len() - 1 {
         betas.push(curr.clone());
         curr = curr * beta.clone();
       }
