@@ -27,7 +27,7 @@ use crate::{
     poseidon_commit::{PoseidonCommitChip, L, RATE, WIDTH},
   },
   gadgets::{
-    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, poly_3::Poly3Chip, poly_4::Poly4Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
+    add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, poly_5::Poly5Chip, poly_4::Poly4Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
   },
   layers::{
     arithmetic::{add::AddChip, div_var::DivVarChip, mul::MulChip, sub::SubChip},
@@ -647,7 +647,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       }
       let beta = meta.challenge_usable_after(FirstPhase);
       gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
-      gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
+      //gadget_config.columns_poly.push(meta.advice_column_in(SecondPhase));
 
       gadget_config.beta = beta;
       //gadget_config.columns_poly.push(meta.advice_column());
@@ -658,7 +658,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       if gadget_config.pedersen {
         gadget_config = Poly2Chip::configure(meta, gadget_config);
       } else {
-        gadget_config = Poly4Chip::configure(meta, gadget_config);
+        gadget_config = Poly5Chip::configure(meta, gadget_config);
       }
 
       columns = (0..gadget_config.num_cols)
@@ -1005,7 +1005,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         new_coeffs = new_coeffs.clone().into_iter().rev().collect::<Vec<_>>();
         flat_f = flat_f.clone().into_iter().rev().collect::<Vec<_>>();
         let beta_pows = (0..config.gadget_config.poly_ell + 1).map(|i| beta.map(|x| x.pow([i as u64]))).rev().collect::<Vec<_>>();
-        let poly_com_chip = Poly4Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta_pows.clone(), vec![C::ScalarExt::ONE; config.gadget_config.poly_ell], flat_f);
+        let poly_com_chip = Poly5Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta_pows.clone(), vec![C::ScalarExt::ONE; config.gadget_config.poly_ell], flat_f);
         //new_public_vals.push(beta);
         rho = poly_com_chip.forward(layouter.namespace(|| "poly commit"), vec![new_coeffs.clone()].as_ref(), vec![zero.as_ref()].as_ref()).unwrap();
       }

@@ -280,7 +280,7 @@ pub fn time_circuit_kzg<
   // KZG Commit proof
 
   if commit_poly {
-    let col_idx = if pedersen {poly_col_len * 2 + 1} else {poly_col_len + 1};
+    let col_idx = if pedersen {poly_col_len * 2 + 1} else {poly_col_len};
     let row_idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len;
     let beta = public_valss[0];
     let rho_advice = advice_lagrange[col_idx][row_idx];
