@@ -42,6 +42,9 @@ pub enum GadgetType {
   InputLookup, // Dummy placeholder for the input lookup
   Update,
   Poly,
+  Poly2,
+  Poly4,
+  Poly5
 }
 
 #[derive(Clone, Debug, Default)]

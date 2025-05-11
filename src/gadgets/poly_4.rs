@@ -9,6 +9,8 @@ use halo2_proofs::{
 use rmp_serde::config;
 use serde_json::map::VacantEntry;
 
+use crate::gadgets::nonlinear::sin;
+
 use super::gadget::{Gadget, GadgetConfig, GadgetType};
 
 type PolyConfig = GadgetConfig;
@@ -97,7 +99,7 @@ impl<F: PrimeField> Poly4Chip<F> {
       vec![s * (res.clone() - res)]
     });
     let mut selectors = gadget_config.selectors;
-    selectors.insert(GadgetType::DotProductBias, vec![selector]);
+    selectors.insert(GadgetType::Poly4, vec![selector]);
     //println!("Selectors: {:?}", selectors);
 
     GadgetConfig {
@@ -149,7 +151,7 @@ impl<F: PrimeField> Gadget<F> for Poly4Chip<F> {
       let selector = self
         .config
         .selectors
-        .get(&GadgetType::DotProductBias)
+        .get(&GadgetType::Poly4)
         .unwrap()[0];
       selector.enable(region, row_offset).unwrap();
     }
@@ -206,9 +208,10 @@ impl<F: PrimeField> Gadget<F> for Poly4Chip<F> {
   ) -> Result<Vec<AssignedCell<F, F>>, Error> {
     assert!(single_inputs.len() <= 2);
     let cols = &self.config.columns_poly;
-    let zero = layouter.assign_region(|| " ", |mut region| {
-      region.assign_advice(|| "", cols[cols.len() - 2], 0, || Value::known(F::ZERO))
-    }).unwrap();
+    let zero = single_inputs[0];
+    // let zero = layouter.assign_region(|| " ", |mut region| {
+    //   region.assign_advice(|| "", cols[cols.len() - 2], 0, || Value::known(F::ZERO))
+    // }).unwrap();
     let bias = zero;
     let coeffs = vec_inputs[0].clone();
 

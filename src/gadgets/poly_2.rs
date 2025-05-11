@@ -30,13 +30,13 @@ impl<F: PrimeField> Poly2Chip<F> {
     }
   }
 
-  pub fn get_input_columns(columns: &Vec<Column<Advice>>) -> Vec<Column<Advice>> {
-    let num_inputs = (columns.len() - 2) / 2;
+  pub fn get_coeff_columns(columns: &Vec<Column<Advice>>) -> Vec<Column<Advice>> {
+    let num_inputs = (columns.len() - 1) / 2;
     columns[0..num_inputs].to_vec()
   }
 
-  pub fn get_coeff_columns(columns: &Vec<Column<Advice>>) -> Vec<Column<Advice>> {
-    let num_inputs = (columns.len() - 2) / 2;
+  pub fn get_input_columns(columns: &Vec<Column<Advice>>) -> Vec<Column<Advice>> {
+    let num_inputs = (columns.len() - 1) / 2;
     columns[num_inputs..num_inputs * 2].to_vec()
   }
 
@@ -60,17 +60,17 @@ impl<F: PrimeField> Poly2Chip<F> {
         .map(|col| meta.query_advice(*col, Rotation::cur()))
         .collect::<Vec<_>>();
 
-      let bias = meta.query_advice(columns[columns.len() - 2], Rotation::cur());
+      let bias = meta.query_advice(columns[columns.len() - 1], Rotation::prev());
       let gate_output = meta.query_advice(columns[columns.len() - 1], Rotation::cur());
 
       let res = gate_inp
         .iter()
         .zip(gate_coeffs)
-        .map(|(a, b)| a.clone() * b.clone())
+        .map(|(a, b)| a.clone() * b)
         .reduce(|a, b| a + b).unwrap();
       let res = res + bias;
 
-      vec![s * (res.clone() - res)]
+      vec![s * (gate_output - res)]
     });
 
     let beta_cols = Poly2Chip::<F>::get_input_columns(columns);
@@ -105,7 +105,7 @@ impl<F: PrimeField> Poly2Chip<F> {
     }
 
     let mut selectors = gadget_config.selectors;
-    selectors.insert(GadgetType::DotProductBias, vec![selector]);
+    selectors.insert(GadgetType::Poly2, vec![selector]);
     //println!("Selectors: {:?}", selectors);
 
     GadgetConfig {
@@ -126,7 +126,7 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
   }
 
   fn num_inputs_per_row(&self) -> usize {
-    (self.config.columns_poly.len() - 2) / 2
+    (self.config.columns_poly.len() - 1) / 2
   }
 
   fn num_outputs_per_row(&self) -> usize {
@@ -145,28 +145,16 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
     let cols = &self.config.columns_poly;
     //assert_eq!(vec_inputs.len(), 2);
 
-    //let inp = &vec_inputs[0];
-    let coeffs = &vec_inputs[0];
-
     let mut coeffs = vec![];
     for j in 0..self.num_inputs_per_row() {
-      //coeffs.push(self.coeffs[row_offset + (coeffs.len() / self.num_inputs_per_row()) * j]);
       coeffs.push(self.coeffs[row_offset * self.num_inputs_per_row() + j]);
     }
 
     //assert_eq!(inp.len(), coeffs.len());
     assert_eq!(coeffs.len(), self.num_inputs_per_row());
-
-    let bias = single_inputs[1];
-
-    if self.config.use_selectors {
-      let selector = self
-        .config
-        .selectors
-        .get(&GadgetType::DotProductBias)
-        .unwrap()[0];
-      selector.enable(region, row_offset).unwrap();
-    }
+    let bias = single_inputs[0];
+    let zero = F::ZERO;
+    let bias_val = if row_offset > 0 {bias.value()} else {Value::known(&zero)};
 
     let mut beta_vec = vec![];
     for j in 0..self.num_inputs_per_row() {
@@ -174,50 +162,12 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
       beta_vec.push(self.betas[row_offset * self.num_inputs_per_row() + j]);
     }
 
-    //let inp_cols =   //Poly2Chip::<F>::get_input_columns(&cols);
-    // inp
-    //   .iter()
-    //   .enumerate()
-    //   .map(|(i, cell)| cell.copy_advice(|| "", region, inp_cols[i], row_offset))
-    //   .collect::<Result<Vec<_>, _>>()
-    //   .unwrap();
-
-    //let coeff_cols = Poly2Chip::<F>::get_coeff_columns(&cols);
-    // coeffs
-    //   .iter()
-    //   .enumerate()
-    //   .map(|(i, cell)| cell.copy_advice(|| "", region, coeff_cols[i], row_offset))
-    //   .collect::<Result<Vec<_>, _>>()
-    //   .unwrap();
-
-    bias.copy_advice(
-      || "",
-      region,
-      cols[cols.len() - 2],
-      row_offset,
-    )?;
-    let cols_inp = Poly2Chip::<F>::get_input_columns(cols);
-
-    let _betas: Vec<_> = beta_vec.iter().enumerate().map(|(idx, x)| {
-      region
-      .assign_advice(
-        || "",
-        cols_inp[idx],
-        row_offset,
-        || *x,
-      )
-    }).collect();
-
     let e = beta_vec.iter()
       .zip(coeffs.iter())
-      .map(|(a, b)|  *a * Value::known(b))
+      .map(|(a, b)|  *a * Value::known(b)/*b.value()*/)
       .reduce(|a, b| a + b)
       .unwrap();
-    let e = e + bias.value().map(|x: &F| *x);
-
-    if row_offset == 0 || row_offset == 1 {
-      println!("coeffs: {:?}, {:?}, e: {:?}, bias: {:?}, beta_vec: {:?}", coeffs, vec_inputs[0], e, bias, beta_vec);
-    }
+    let e = e + bias_val.map(|x: &F| *x);
 
     let res = region
       .assign_advice(
@@ -227,6 +177,15 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
         || e,
       )
       .unwrap();
+
+    if self.config.use_selectors {
+      let selector = self
+        .config
+        .selectors
+        .get(&GadgetType::Poly2)
+        .unwrap()[0];
+      selector.enable(region, row_offset).unwrap();
+    }  
     //println!("beta vec val: {:?}", beta_vec);
     Ok(vec![res])
   }
@@ -242,10 +201,8 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
     //let zero = single_inputs[0];
     //let mut inputs = vec_inputs;
     let cols = &self.config.columns_poly;
-    let zero = layouter.assign_region(|| " ", |mut region| {
-      region.assign_advice(|| "", cols[cols.len() - 2], 0, || Value::known(F::ZERO))
-    }).unwrap();
-    let bias = &zero;
+    let zero = single_inputs[0];
+    let bias = zero;
     let output = layouter
       .assign_region(
         || "Poly rows",
@@ -266,7 +223,7 @@ impl<F: PrimeField> Gadget<F> for Poly2Chip<F> {
             //coeffs[i * self.num_inputs_per_row()..(i + 1) * self.num_inputs_per_row()].to_vec();
             
             cur_bias = self
-              .op_row_region(&mut region, i, &vec![weights], &vec![&zero, &cur_bias])
+              .op_row_region(&mut region, i, &vec![weights], &vec![&cur_bias])
               .unwrap()[0]
               .clone();
           }

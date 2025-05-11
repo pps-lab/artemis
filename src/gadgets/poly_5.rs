@@ -32,20 +32,10 @@ impl<F: PrimeField> Poly5Chip<F> {
     }
   }
 
-  // pub fn get_beta_columns(columns: &Vec<Column<Advice>>) -> Column<Advice> {
-  //   //let num_inputs = (columns.len() - 2) / 2;
-  //   columns[columns.len() - 3]
-  // }
-
   pub fn get_coeff_columns(columns: &Vec<Column<Advice>>) -> Vec<Column<Advice>> {
     let num_inputs = columns.len() - 1;
     columns[0..num_inputs].to_vec()
   }
-
-  // pub fn get_alpha_columns(columns: &Vec<Column<Advice>>) -> Vec<Column<Advice>> {
-  //   let num_inputs = (columns.len() - 3) / 2;
-  //   columns[num_inputs..num_inputs * 2].to_vec()
-  // }
 
   pub fn configure(meta: &mut ConstraintSystem<F>, gadget_config: GadgetConfig) -> GadgetConfig {
     let selector = meta.selector();
@@ -57,8 +47,8 @@ impl<F: PrimeField> Poly5Chip<F> {
       let beta: Expression<F> = gadget_config.beta.expr();
       let one = Expression::Constant(F::ONE);
       let mut betas = vec![];
-      let mut curr = one;
-      for column in 0..gadget_config.columns_poly.len() - 1 {
+      let mut curr = one.clone();
+      for _ in 0..gadget_config.columns_poly.len() - 1 {
         betas.push(curr.clone());
         curr = curr * beta.clone();
       }
@@ -71,14 +61,6 @@ impl<F: PrimeField> Poly5Chip<F> {
         .map(|col| meta.query_advice(*col, Rotation::cur()))
         .collect::<Vec<_>>();
 
-      // let gate_alphas =  Poly3Chip::<F>::get_alpha_columns(columns)
-      //   .iter()
-      //   .map(|col| meta.query_advice(*col, Rotation::cur()))
-      //   .collect::<Vec<_>>();
-        // .iter()
-        // .map(|col| meta.query_advice(*col, Rotation::cur()))
-        // .collect::<Vec<_>>();
-
       let bias = meta.query_advice(columns[columns.len() - 1], Rotation::prev());
       let gate_output = meta.query_advice(columns[columns.len() - 1], Rotation::cur());
       let res = gate_coeffs
@@ -86,18 +68,13 @@ impl<F: PrimeField> Poly5Chip<F> {
         .zip(betas)
         .map(|(a, b)| a.clone() * b.clone())
         .fold(Expression::Constant(F::ZERO), |a, b| a + b.clone());
-      //let res = res + bias;
-      // let res = gate_inp
-      //   .iter()
-      //   .zip(gate_coeffs)
-      //   .map(|(a, b)| a.clone() * b.clone())
-      //   .fold(Expression::Constant(F::ZERO), |a, b| a + b);
+
       let res = res + bias * last_beta;
 
-      vec![s * (res.clone() - res)]
+      vec![s * (gate_output - res)]
     });
     let mut selectors = gadget_config.selectors;
-    selectors.insert(GadgetType::DotProductBias, vec![selector]);
+    selectors.insert(GadgetType::Poly5, vec![selector]);
     //println!("Selectors: {:?}", selectors);
 
     GadgetConfig {
@@ -134,7 +111,6 @@ impl<F: PrimeField> Gadget<F> for Poly5Chip<F> {
     single_inputs: &Vec<&AssignedCell<F, F>>,
   ) -> Result<Vec<AssignedCell<F, F>>, Error> {
     let cols = &self.config.columns_poly;
-    let coeffs_vec = &vec_inputs[0];
     let mut coeffs = vec![];
     for j in 0..self.num_inputs_per_row() {
       coeffs.push(self.coeffs[row_offset * self.num_inputs_per_row() + j]);
@@ -142,52 +118,27 @@ impl<F: PrimeField> Gadget<F> for Poly5Chip<F> {
 
     assert_eq!(coeffs.len(), self.num_inputs_per_row());
 
-    //let zero = &single_inputs[0];
-    let bias = &single_inputs[0];
-
     if self.config.use_selectors {
       let selector = self
         .config
         .selectors
-        .get(&GadgetType::DotProductBias)
+        .get(&GadgetType::Poly5)
         .unwrap()[0];
       selector.enable(region, row_offset).unwrap();
     }
 
-    let coeff_cols = Poly5Chip::<F>::get_coeff_columns(&cols);
-
     let last_beta = self.betas[0];
-
-    // bias.copy_advice(
-    //   || "",
-    //   region,
-    //   cols[cols.len() - 2],
-    //   row_offset,
-    // )?;
-
-    let coeff_cells: Vec<_> = (0..coeffs_vec.len())
-      .map(|i | {
-        region.assign_advice(|| "" , coeff_cols[i], row_offset, || Value::known(coeffs[i])).unwrap()
-      })
-      .collect();
-
+    let bias = single_inputs[0];
+    let zero = F::ZERO;
+    let bias_val = if row_offset > 0 {bias.value()} else {Value::known(&zero)};
 
     let mut e = coeffs.clone().into_iter().zip(self.betas[1..self.betas.len()].to_vec()) 
       // .zip(alphas.iter())
       .map(| (a , b)| Value::known(a) * b)
       .reduce(|a, b| a + b)
       .unwrap();
-    if row_offset == 0 {
-      println!("e: {e:?}, last_beta: {last_beta:?}, bias: {bias:?}")
-    }
-    e = e + last_beta * bias.value().map(|x| *x); //beta_vec.iter()
 
-      // .zip(coeffs.iter())
-      // .map(|(a, b)|  Value::known(*a) * b.value())
-      // .reduce(|a, b| a + b)
-      // .unwrap();
-    //let e = e + bias.value().map(|x: &F| *x);
-    //println!("res {:?}", e);
+    e = e + last_beta * bias_val.map(|x| *x); //beta_vec.iter()
 
     let res = region
       .assign_advice(
@@ -208,10 +159,7 @@ impl<F: PrimeField> Gadget<F> for Poly5Chip<F> {
     single_inputs: &Vec<&AssignedCell<F, F>>,
   ) -> Result<Vec<AssignedCell<F, F>>, Error> {
     assert!(single_inputs.len() <= 2);
-    let cols = &self.config.columns_poly;
-    let zero = layouter.assign_region(|| " ", |mut region| {
-      region.assign_advice(|| "", cols[cols.len() - 1], 0, || Value::known(F::ZERO))
-    }).unwrap();
+    let zero = single_inputs[0];
     let bias = zero;
     let coeffs = vec_inputs[0].clone();
 
@@ -219,9 +167,7 @@ impl<F: PrimeField> Gadget<F> for Poly5Chip<F> {
       .assign_region(
         || "Poly rows",
         |mut region| {
-          println!("Called once");
           let mut cur_bias = bias.clone();
-          println!("Last idx: {:?}", coeffs.len() / self.num_inputs_per_row());
           for i in 0..coeffs.len() / self.num_inputs_per_row() {
             let mut weight_vec = vec![];
             for j in 0..self.num_inputs_per_row() {

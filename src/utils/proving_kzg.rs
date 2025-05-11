@@ -280,12 +280,13 @@ pub fn time_circuit_kzg<
   // KZG Commit proof
 
   if commit_poly {
-    let col_idx = if pedersen {poly_col_len * 2 + 1} else {poly_col_len};
-    let row_idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len;
+    let col_idx = if pedersen {poly_col_len * 2} else {poly_col_len};
+    let row_idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len - 1;
     let beta = public_valss[0];
+    
     let rho_advice = advice_lagrange[col_idx][row_idx];
     let rho = poly.evaluate(beta);
-    println!("(Rho, Beta): {:?}", (rho, beta));
+    println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
     println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
     
     assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
