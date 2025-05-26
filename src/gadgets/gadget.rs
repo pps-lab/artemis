@@ -49,6 +49,7 @@ pub enum GadgetType {
 
 #[derive(Clone, Debug, Default)]
 pub struct GadgetConfig {
+  pub cp_link: bool,
   pub poly_commit: bool,
   pub pedersen: bool,
   pub used_gadgets: Arc<BTreeSet<GadgetType>>,

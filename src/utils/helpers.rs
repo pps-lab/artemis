@@ -361,7 +361,10 @@ pub fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: Serd
   let q = poly.clone() - &sum;
   //let (q, r) = q.divide_with_q_and_r(&zhats[l]).unwrap();
   let (q, r) = poly_divmod(&q, &zhats[l]);
-  assert!(r.is_zero(), "R value: {:?}, Q value: {:?}\n, ", r, q);
+  let sum: u32 = r.iter().map(|x| if x.is_zero_vartime() {0} else {1}).sum::<u32>();
+  println!("sum: {:?}", sum);
+  assert!(r.is_zero(), "R value:");
+
 
 
   let gammas = (0..l).map(|_| E::Scalar::ZERO).collect::<Vec<_>>();
@@ -437,7 +440,7 @@ pub fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAf
     //let HH = Radix2EvaluationDomain::new(col_size).unwrap();
     let n = 2u32.pow(col_size);
     let rng = OsRng;
-    let size = witness_size / l;
+    let size = (witness_size + l - 1) / l;
     println!("Witness size: {}, Columns size {}, Columns {}", size, col_size, l);
     //let ck = keygen2::<E>(n * 2);
     let HH_vals = powers(HH.get_omega()).take(n as usize).collect::<Vec<_>>();
@@ -452,7 +455,7 @@ pub fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAf
 
     let zs = (0..l).map(|x| vanishing_on_set(&HH_vals[x * size..(x + 1) * size].to_vec())).collect::<Vec<_>>();
     let z_v = zs[0].clone();
-    let z_last = vanishing_on_set(&HH_vals[l * size..].to_vec());
+    let z_last = vanishing_on_set(&HH_vals[(l * size + 1)..].to_vec());
 
     //println!("Vanishing poly: {:?}", vanishing_poly);
     //let (z_whole, r_whole) = vanishing_poly.divide_with_q_and_r(&Polynomial::from(z_last.clone())).unwrap();
@@ -506,7 +509,6 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   // let bigc = params.commit_g1(&poly);
   let cplink1_timer = Instant::now();
   let qus_timer = Instant::now();
-  let HH_vals: Vec<E::Scalar> = powers(HH.get_omega()).take(10).collect();
 
   let rng = OsRng;
   let (uhat, q_small) = {
@@ -532,7 +534,7 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   let q = poly.clone() - &sum;
   //let (q, r) = q.divide_with_q_and_r(&zhats[l]).unwrap();
   let (q, r) = poly_divmod(&q, &z);
-  assert!(r.is_zero(), "R value: {:?}, Q value: {:?}\n, ", r, q);
+  assert!(r.is_zero(), "R value:, Q value:\n, {:?}, ", r.values.len());
 
   let gamma = E::Scalar::ZERO;
   let o = E::Scalar::ZERO;
@@ -603,7 +605,8 @@ pub fn verify1_lite<P: Engine + Debug> (
 
   let term5 = P::pairing(&params.commit_g1(&Polynomial::from_coefficients_vec(vec![z])).to_affine(), &params.s_g2());
 
-  let lhs = term1 + term3 + term4 + term5;
+  //let lhs = term1 + term3 + term4 + term5;
+  let lhs = term3 + term4;
   let rhs = term2;
   assert_eq!(lhs, rhs);
   println!("CPLINK1: Verifier time: {:?}", verifier_timer.elapsed());

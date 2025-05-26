@@ -109,6 +109,7 @@ pub fn time_circuit_kzg<
 
   for (tensor_idx, tensor) in circuit.tensors.clone() {
     for val in tensor.clone() {
+      if tensor_len > 100 && tensor_len < 150 {println!("val: {:?}", val)}
       poly_coeff.push(val);
       if tensor_len == 0 {
         println!("Value: {:?}", val);
@@ -235,13 +236,18 @@ pub fn time_circuit_kzg<
       let col_size = circuit.k;
       let witness_size =  poly_coeff.len();
       let l = c;
-      let size = witness_size / l;
+      let size = (witness_size + l - 1) / l;
       let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, &params);
-      let vals = (0..l).map(|y| poly_coeff[y*size..(y+1)*size].to_vec()).collect::<Vec<_>>();
+      let vals = (0..l-1).map(|y| if y < l - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
+      //let vals = (0..l).map(|y| (0..size).map(|x| poly_coeff[y + l * x]).collect::<Vec<_>>()).collect::<Vec<_>>();
       let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
-      let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
+      //let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
+      //let us = advice_lagrange.clone();
+      let us: Vec<_> = advice_lagrange.iter().map(|poly |HH.lagrange_to_coeff(poly.clone())).collect();
+      //println!("Sum: {:?}", sum);
       //let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
-      let u_coms = vec![E::G1::identity(); c];
+      let u_coms = advice_com.clone();
+      //let u_coms = vec![E::G1::identity(); c];
       let z_v_com = params.commit_g1(&z_v);
       let poly = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
       let (uprimes, cp2_prove, cp2_vfy) = cplink2(thetas, HH.clone(), us, z_v, z_v_com, u_coms, params.clone());
@@ -255,20 +261,32 @@ pub fn time_circuit_kzg<
     } else {
       //fast
       let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
-      let domain_vals = (0..poly_coeff.len() / poly_col_len).map(|i| domain.get_omega().pow([i as u64])).collect::<Vec<_>>();
+      let size = (poly_coeff.len() + poly_col_len - 1) / poly_col_len;
+      let domain_vals = powers(domain.get_omega()).take(size as usize).collect::<Vec<_>>();
       // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
       let z = vanishing_on_set(&domain_vals);
       //let z = Polynomial::from_coefficients_vec(vec![E::Scalar::one()]);
       let z_com = params.commit_g2(&z);
       //println!("poly sum: {:?}", poly_sum);
       //println!("z: {:?}", z);
-      for i in 0..polys.len() {
+      let polys_lagrange = (0..poly_col_len).map(|x| {
+        let poly: Polynomial<E::Scalar, LagrangeCoeff> = if x < poly_col_len - 1 {
+          domain.lagrange_from_vec(poly_coeff[(x * size)..((x + 1) * size)].to_vec())
+        } else {
+          domain.lagrange_from_vec(poly_coeff[(x * size)..].to_vec())
+        };
+        poly
+      }).collect::<Vec<_>>();
+
+      let polys_coeff: Vec<_> = polys_lagrange.iter().map(|poly| domain.lagrange_to_coeff(poly.clone())).collect();
+
+      for i in 0..polys_lagrange.len() {
         //let (q, mut uhat) = poly_divmod(poly, &z);   
-        let uhat = polys[i].clone();
-        //let chat = params.commit_g1(&uhat);
-        let chat = E::G1::identity();///advice_com[i];
-        let polycom = params.commit_g1(&polys[i]);
-        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&polys[i], &chat, &polycom, &z, &poly, &params, &domain);
+        let uhat = domain.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
+        let chat = params.commit_g1(&uhat);
+       //let chat = E::G1::identity();///advice_com[i];
+        let polycom = params.commit_g1(&polys_coeff[i]);
+        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhat, &chat, &polycom, &z, &polys_coeff[i], &params, &domain);
         proving_time += cplink_time;
         for i in 0..num_runs {
           verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);

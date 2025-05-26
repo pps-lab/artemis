@@ -146,11 +146,14 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
         let mut cell_idx = 0;
         let mut big_flat = vec![];
         let mut flat_f = vec![];
+        let num_vals: usize = tensors.iter().map(|(_, tensor)| tensor.len()).sum();
+        let size = (num_vals + columns.len() - 1) / columns.len();
+        println!("Number of values: {:?}", num_vals);
         for (tensor_idx, tensor) in tensors.iter() {
           let mut flat = vec![];
           for val in tensor.iter() {
-            let row_idx = cell_idx / columns.len();
-            let col_idx = cell_idx % columns.len();
+            let row_idx = cell_idx % size;
+            let col_idx = cell_idx / size;
             let cell = region
               .assign_advice(
                 || "assignment",
@@ -167,11 +170,10 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
           let tensor = Array::from_shape_vec(tensor.shape(), flat).unwrap();
           assigned_tensors.insert(*tensor_idx, tensor);
         }
-
+        println!("Cell IDX: {:?}", cell_idx);
         Ok((assigned_tensors, big_flat, flat_f))
       },
     )?;
-
     Ok((tensors, flat, flat_f))
   }
 
@@ -327,12 +329,12 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
     Ok(constants)
   }
 
-  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize, pedersen: bool) -> ModelCircuit<C> {
+  pub fn generate_from_file(config_file: &str, inp_file: &str, witness_column: bool, chunks: usize, k_ipt: usize, c_ipt: usize, pedersen: bool, cp_link: bool) -> ModelCircuit<C> {
     let config = load_model_msgpack(config_file, inp_file, witness_column);
-    Self::generate_from_msgpack(config, true, witness_column, chunks, k_ipt, c_ipt, pedersen)
+    Self::generate_from_msgpack(config, true, witness_column, chunks, k_ipt, c_ipt, pedersen, cp_link)
   }
 
-  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, poly_commit: bool, chunks: usize, k_ipt: usize, c_ipt: usize, pedersen: bool) -> ModelCircuit<C> {
+  pub fn generate_from_msgpack(config: ModelMsgpack, panic_empty_tensor: bool, poly_commit: bool, chunks: usize, k_ipt: usize, c_ipt: usize, pedersen: bool, cp_link: bool) -> ModelCircuit<C> {
     let to_field = |x: i64| {
       let bias = 1 << 31;
       let x_pos = x + bias;
@@ -508,6 +510,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
     let cloned_gadget = gadget.lock().unwrap().clone();
 
     *gadget.lock().unwrap() = GadgetConfig {
+      cp_link,
       poly_commit,
       pedersen,
       scale_factor: config.global_sf as u64,
@@ -861,14 +864,6 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       config.gadget_config.clone(),
     )
     .unwrap();
-    // Some halo2 cancer
-    let constants = self
-      .assign_constants2(
-        layouter.namespace(|| "constants 2"),
-        config.gadget_config.clone(),
-        &constants_base,
-      )
-      .unwrap();
     // let timer3 = timer.elapsed();
     // println!("Time3 : {:?}", timer3 - timer2);
     let mut commitments = vec![];
@@ -891,7 +886,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         // }
         let (mut committed_tensors, commitment) = self.assign_and_commit(
           layouter.namespace(|| "commit"),
-          &constants,
+          &constants_base,
           &config,
           &to_commit,
         );
@@ -939,7 +934,28 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         .unwrap()
     };
 
+    if (config.gadget_config.poly_ell > 0) && config.gadget_config.cp_link {
+      let size = (flat.len() + config.gadget_config.poly_ell - 1) / config.gadget_config.poly_ell;
+      let vals = layouter.assign_region(|| "", |mut region| {
+        let mut vals = vec![];
+        for (idx, val) in flat.iter().enumerate() {
+          let col_offset = idx / size;
+          let row_offset = idx % size;
+          vals.push(val.copy_advice(|| "", &mut region, config.gadget_config.columns_poly[col_offset], row_offset)?);
+        }
+        //region.copy_advice(annotation, column, offset, to)
+        Ok(vals)
+      });
+    }
 
+    // Some halo2 cancer
+    let constants = self
+      .assign_constants2(
+        layouter.namespace(|| "constants 2"),
+        config.gadget_config.clone(),
+        &constants_base,
+      )
+      .unwrap();
     
     // let timer4 = timer.elapsed();
     // println!("Time4 : {:?}", timer4 - timer3);

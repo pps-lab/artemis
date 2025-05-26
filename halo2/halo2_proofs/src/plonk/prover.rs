@@ -483,7 +483,6 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
     stop_measure(start);
-    println!("Test 3");
     let start = start_measure("lookups.commit_product", false);
     let lookups: Vec<Vec<lookup::prover::Committed<Scheme::Curve>>> = lookups
         .into_iter()

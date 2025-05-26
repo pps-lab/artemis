@@ -20,7 +20,7 @@ fn main() {
   }
 
   if kzg_or_ipa == "kzg" {
-    let circuit = ModelCircuit::<G1Affine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, false);
+    let circuit = ModelCircuit::<G1Affine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, false, false);
     let k = circuit.k;
     let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
     use plotters::prelude::*;
@@ -32,7 +32,7 @@ fn main() {
 
     halo2_proofs::dev::CircuitLayout::default().render(k as u32, &circuit, &root).unwrap();
   } else {
-    let circuit = ModelCircuit::<EqAffine>::generate_from_file(&config_fname, &inp_fname, false, 0, 17, 10, false);
+    let circuit = ModelCircuit::<EqAffine>::generate_from_file(&config_fname, &inp_fname, false, 0, 17, 10, false, false);
     //time_circuit_ipa(circuit, );
   }
 }
