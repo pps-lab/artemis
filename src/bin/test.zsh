@@ -16,7 +16,7 @@ cp_snark="$3"
 num_runs="$4"
 dir="$5"
 
-cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
+cargo  build --release --manifest-path $dir'/Cargo.toml'
 mkdir -p results
 mkdir -p $dir'/params_ipa'
 mkdir -p $dir'/params_kzg_Bls12'
@@ -28,6 +28,7 @@ poly_cols=0
 cplink=false
 poly_com=false
 pedersen=false
+slow=true
 
 case "$name" in
     mnist)
@@ -152,7 +153,14 @@ case "$cp_snark" in
         poly_com=false
         poly_cols=0
         ;;
-    
+
+    cp_link_fast)
+        cp_link=true
+        poly_com=false
+        slow=false
+        poly_cols=0
+        ;; 
+
     poly)
         cp_link=false
         poly_com=true
@@ -190,4 +198,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow

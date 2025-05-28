@@ -508,33 +508,40 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   // let chat = params.commit_g1(&u);
   // let bigc = params.commit_g1(&poly);
   let cplink1_timer = Instant::now();
-  let qus_timer = Instant::now();
-
+  let second_timer = Instant::now();
   let rng = OsRng;
   let (uhat, q_small) = {
       //let (q, r) = uprimes[i].clone().divide_with_q_and_r(&zs[i].clone()).unwrap();
+      println!("U size: {:?}, Poly size {:?}", u.len(), poly.len());
+      //let zeros: usize = u.iter().map(|x| if x.is_zero_vartime() {1} else {0}).sum();
+      //println!("zeros: {:?}", zeros);
       let (q, r) = poly_divmod(&u, &z);  
       // u = q * z + r
       // chat = d_small * z_com + cprime
-      println!("Diff: {:?}", (q.clone() *z + &r - u).is_zero() );
+      //println!("Diff: {:?}", (q.clone() *z + &r - u).is_zero() );
       (r, q)
   };
+  let uhats = second_timer.elapsed();
+  println!("Uhats: {:?}", uhats);
 
   //println!("Uhat: {:?}", uhat);
-  println!("Diff: {:?}", poly_divmod(&(uhat.clone() - poly), &z).1.is_zero());
+  //println!("Diff: {:?}", poly_divmod(&(uhat.clone() - poly), &z).1.is_zero());
 
   //let bigqu_timer = Instant::now();
-  let sum = uhat.clone();
+  //let sum = uhat.clone();
 
-  let mut vanishing = vec![E::Scalar::ZERO; HH.get_n() as usize + 1];
-  vanishing[0] = -E::Scalar::ONE;
-  vanishing[HH.get_n() as usize] = E::Scalar::ONE;
+  // let mut vanishing = vec![E::Scalar::ZERO; HH.get_n() as usize + 1];
+  // vanishing[0] = -E::Scalar::ONE;
+  // vanishing[HH.get_n() as usize] = E::Scalar::ONE;
   //let vanishing_poly = HH.coeff_from_vec(vanishing);
 
-  let q = poly.clone() - &sum;
+  let q = poly.clone() - &uhat;
   //let (q, r) = q.divide_with_q_and_r(&zhats[l]).unwrap();
   let (q, r) = poly_divmod(&q, &z);
   assert!(r.is_zero(), "R value:, Q value:\n, {:?}, ", r.values.len());
+
+  let large_q = second_timer.elapsed();
+  println!("Large q: {:?}", large_q - uhats);
 
   let gamma = E::Scalar::ZERO;
   let o = E::Scalar::ZERO;
@@ -547,6 +554,9 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
       let oprimecom = params.commit_g1(&oprime);
       uhatcom + oprimecom
   };
+  
+  let cprimetime = second_timer.elapsed();
+  println!("CPrimetime: {:?}", cprimetime - large_q);
 
   let d_small = {
       //let qcom = eval_on_pnt_in_grp::<E::G1, E>(&qs[i], &ck.pws_g1);
@@ -570,6 +580,9 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   let (w, rem) = (otilde - &Polynomial::from_coefficients_vec(vec![zz])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-x, E::Scalar::ONE])).unwrap();
   //let wcom = eval_on_pnt_in_grp::<E::G1, E>(&w, &ck.pws_rando);
   let wcom = params.commit_g1(&w);
+
+  let rest_time = second_timer.elapsed();
+  println!("Rest time: {:?}", rest_time - cprimetime);
   let proving_time = cplink1_timer.elapsed();
   println!("CPLINK1: Prover time: {:?}", cplink1_timer.elapsed());
   (*chat, d_small, cprime, wcom, *bigc, d, x, zz, proving_time)
