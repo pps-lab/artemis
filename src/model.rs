@@ -1046,7 +1046,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       let (final_tensor_map, result) = dag_chip.forward(
         layouter.namespace(|| "dag"),
         &tensors,
-        &constants_base,
+        &constants,
         config.gadget_config.clone(),
         &LayerConfig::default(),
       )?;
@@ -1061,7 +1061,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
           }));
           let commitment = self.copy_and_commit(
             layouter.namespace(|| "commit"),
-            &constants_base,
+            &constants,
             &config,
             &to_commit,
           );
