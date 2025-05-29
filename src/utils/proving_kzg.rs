@@ -233,12 +233,13 @@ pub fn time_circuit_kzg<
   if cp_link {
     if poly_col_len < 1 && slow {
       // slow
+      println!("Slow CPLINK");
       let col_size = circuit.k;
       let witness_size =  poly_coeff.len();
       let l = c;
       let size = (witness_size + l - 1) / l;
       let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, &params);
-      let vals = (0..l-1).map(|y| if y < l - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
+      let vals = (0..l).map(|y| if y < l - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
       //let vals = (0..l).map(|y| (0..size).map(|x| poly_coeff[y + l * x]).collect::<Vec<_>>()).collect::<Vec<_>>();
       let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
       //let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
@@ -258,10 +259,12 @@ pub fn time_circuit_kzg<
         let vfy_total = cp1_vfy + cp2_vfy;
         verifying_time[i] += vfy_total;
       }
-    } else if poly_col_len > 1 {
+    } else if poly_col_len >= 1 {
+      println!("Apollo, cols: {:?}, rows: {:?}", c, circuit.k);
       //fast
       let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
       let size = (poly_coeff.len() + poly_col_len - 1) / poly_col_len;
+      println!("Size: {:?}", size);
       let domain_vals = powers(domain.get_omega()).take(size as usize).collect::<Vec<_>>();
       // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
       let z = vanishing_on_set(&domain_vals);
@@ -278,7 +281,7 @@ pub fn time_circuit_kzg<
         poly
       }).collect::<Vec<_>>();
 
-      let uhats: Vec<_> = polys_lagrange.iter().map(|poly| domain.lagrange_to_coeff(poly.clone())).collect();
+      let uhats: Vec<_> = polys_lagrange.iter().map(|poly| poly_divmod(&domain.lagrange_to_coeff(poly.clone()), &z).1).collect();
       let chats: Vec<_> = uhats.iter().map(|uhat| params.commit_g1(&uhat)).collect();
       for i in 0..polys_lagrange.len() {
         //let (q, mut uhat) = poly_divmod(poly, &z);   
@@ -294,6 +297,7 @@ pub fn time_circuit_kzg<
       }
     } else {
       //fast
+      println!("Fast CPLink");
       let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
       let size = (poly_coeff.len() + c - 1) / c;
       let domain_vals = powers(domain.get_omega()).take(size as usize).collect::<Vec<_>>();

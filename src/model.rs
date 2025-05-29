@@ -864,12 +864,22 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       config.gadget_config.clone(),
     )
     .unwrap();
+
     // let timer3 = timer.elapsed();
     // println!("Time3 : {:?}", timer3 - timer2);
     let mut commitments = vec![];
-    let (tensors, flat, mut flat_f) = if self.commit_before.len() > 0 {
+    let (tensors, flat, mut flat_f, constants) = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
       //println!("commit to the tensors :)))");
+          // Some halo2 cancer
+      let constants = self
+      .assign_constants2(
+        layouter.namespace(|| "constants 2"),
+        config.gadget_config.clone(),
+        &constants_base,
+      )
+      .unwrap();
+
       let mut tensor_map = BTreeMap::new();
       let mut ignore_idxes: Vec<i64> = vec![];
       // for commit_idxes in self.commit_before.iter() {
@@ -886,7 +896,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         // }
         let (mut committed_tensors, commitment) = self.assign_and_commit(
           layouter.namespace(|| "commit"),
-          &constants_base,
+          &constants,
           &config,
           &to_commit,
         );
@@ -915,23 +925,41 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       tensor_map.append(&mut remainder_tensor_map);
 
       // Return the tensors
-      (self.tensor_map_to_vec(&tensor_map), vec![], vec![])
+      (self.tensor_map_to_vec(&tensor_map), vec![], vec![], constants)
     } else if config.gadget_config.poly_commit {
-      self
+      let (tensors, flat, flat_f) = self
       .assign_tensors_vec(
         layouter.namespace(|| "assignment"),
         &config.gadget_config.columns_poly[0..config.gadget_config.poly_ell].to_vec(),
         &self.tensors,
       )
-      .unwrap()
+      .unwrap();
+        // Some halo2 cancer
+      let constants = self
+      .assign_constants2(
+        layouter.namespace(|| "constants 2"),
+        config.gadget_config.clone(),
+        &constants_base,
+      )
+      .unwrap();
+      (tensors, flat, flat_f, constants)
+
     } else {
-      self
+      let (tensors, flat, flat_f) = self
         .assign_tensors_vec(
           layouter.namespace(|| "assignment"),
           &config.gadget_config.columns,
           &self.tensors,
         )
-        .unwrap()
+        .unwrap();
+        let constants = self
+        .assign_constants2(
+          layouter.namespace(|| "constants 2"),
+          config.gadget_config.clone(),
+          &constants_base,
+        )
+        .unwrap();
+        (tensors, flat, flat_f, constants)
     };
 
     if (config.gadget_config.poly_ell > 0) && config.gadget_config.cp_link {
@@ -947,15 +975,6 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         Ok(vals)
       });
     }
-
-    // Some halo2 cancer
-    let constants = self
-      .assign_constants2(
-        layouter.namespace(|| "constants 2"),
-        config.gadget_config.clone(),
-        &constants_base,
-      )
-      .unwrap();
     
     // let timer4 = timer.elapsed();
     // println!("Time4 : {:?}", timer4 - timer3);
@@ -1027,7 +1046,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       let (final_tensor_map, result) = dag_chip.forward(
         layouter.namespace(|| "dag"),
         &tensors,
-        &constants,
+        &constants_base,
         config.gadget_config.clone(),
         &LayerConfig::default(),
       )?;
@@ -1042,7 +1061,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
           }));
           let commitment = self.copy_and_commit(
             layouter.namespace(|| "commit"),
-            &constants,
+            &constants_base,
             &config,
             &to_commit,
           );

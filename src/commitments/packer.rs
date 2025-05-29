@@ -254,6 +254,7 @@ impl<F: PrimeField> PackerChip<F> {
             .collect::<Vec<_>>();
           assigned.extend(vals);
 
+          //println!("ZERO: {:?}", zero);
           let zero_vals = (values.len()..self.config.num_elem_per_packed)
             .map(|i| {
               zero
