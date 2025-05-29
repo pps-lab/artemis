@@ -79,7 +79,7 @@ pub fn time_circuit_kzg<
   E: Engine<
     G1Affine: SerdeCurveAffine,
     G2Affine: SerdeCurveAffine,
-    Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3>,
+    Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3> + SerdeObject,
   > + Debug + MultiMillerLoop
 >(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, pedersen: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize, slow: bool) {
   let rng = rand::thread_rng();
@@ -252,8 +252,8 @@ pub fn time_circuit_kzg<
       let z_v_com = params.commit_g2(&z_v);
       let u = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
       let u_com = params.commit_g1(&u);
-      let (uprimes, uprime_coms, cp2_prove, cp2_vfy) = cplink2(thetas, HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
-
+      let (uprimes, uprime_coms, cp2_prove, cp2_vfy, cp2_proof_size) = cplink2(thetas, HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
+      proof_size += cp2_proof_size;
       for i in 0..uprimes.len() {
         //let (q, mut uhat) = poly_divmod(poly, &z);   
         let poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
@@ -262,6 +262,9 @@ pub fn time_circuit_kzg<
         let polycom = params.commit_g1(&poly_coeff);
         let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &poly_coeff, &params, &HH);
         proving_time += cplink_time;
+        proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
+        proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
+        proof_size += zz.to_raw_bytes().len();  
         for i in 0..num_runs {
           verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_v_com, wcom, bigc, d, x, zz);
         }
@@ -305,6 +308,9 @@ pub fn time_circuit_kzg<
         let polycom = params.commit_g1(&poly_coeff);
         let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z, &poly_coeff, &params, &domain);
         proving_time += cplink_time;
+        proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
+        proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
+        proof_size += zz.to_raw_bytes().len();  
         for i in 0..num_runs {
           verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
         }
@@ -340,6 +346,9 @@ pub fn time_circuit_kzg<
         let polycom = params.commit_g1(&poly_coeff);
         let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z, &poly_coeff, &params, &domain);
         proving_time += cplink_time;
+        proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
+        proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
+        proof_size += zz.to_raw_bytes().len();  
         for i in 0..num_runs {
           verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
         }

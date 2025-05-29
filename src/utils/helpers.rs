@@ -3,9 +3,10 @@ use std::{marker::PhantomData, time::Instant};
 use std::fmt::Debug;
 use commitment::Prover;
 use ff::{Field, WithSmallOrderMulGroup, FromUniformBytes};
+use halo2_proofs::helpers::SerdePrimeField;
 use halo2_proofs::plonk::Error;
 use halo2_proofs::poly::commitment::Blind;
-use group::Curve;
+use group::{Curve, GroupEncoding};
 use halo2_proofs::poly::kzg::strategy::AccumulatorStrategy;
 use halo2_proofs::poly::*;
 use halo2_proofs::arithmetic::eval_polynomial;
@@ -20,6 +21,7 @@ use halo2_proofs::{
   circuit::{AssignedCell, Value}, halo2curves::ff::PrimeField, helpers::SerdeCurveAffine, poly::{kzg::commitment::ParamsKZG, Coeff, EvaluationDomain, Polynomial}
 };
 use halo2curves::pairing::{Engine, MultiMillerLoop};
+use halo2curves::serde::SerdeObject;
 use kzg::commitment::KZGCommitmentScheme;
 use kzg::multiopen::ProverSHPLONK;
 use ndarray::{Array, IxDyn};
@@ -188,7 +190,7 @@ where
     (transcript.finalize(), evals)
 }
 
-pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBytes<64>, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug + MultiMillerLoop>(
+pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBytes<64> + SerdePrimeField, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug + MultiMillerLoop>(
   thetas: Vec<E::Scalar>, 
   HH: EvaluationDomain<E::Scalar>, 
   u: Polynomial<E::Scalar, Coeff>, 
@@ -197,7 +199,7 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
   u_com: E::G1,
   //ck: CS2_PP<E>,
   params: ParamsKZG<E>,
-) -> (Vec<Polynomial<<E as Engine>::Scalar, Coeff>>, Vec<<E as Engine>::G1>, Duration, Duration) {
+) -> (Vec<Polynomial<<E as Engine>::Scalar, Coeff>>, Vec<<E as Engine>::G1>, Duration, Duration, usize) {
   let cplink2_timer = Instant::now();
   let rng = &mut OsRng;
   let l = thetas.len();
@@ -280,16 +282,18 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
       _,
       Blake2bRead<_, _, Challenge255<_>>,
       AccumulatorStrategy<_>,
-  >(verifier_params, &proof_1[..], poly_coms_affine, vec![rho; polys.len()], rho_evals);
-
-
+  >(verifier_params, &proof_1[..], poly_coms_affine.clone(), vec![rho; polys.len()], rho_evals.clone());
+  let mut proof_size = poly_coms_affine.iter().map(|com| com.to_raw_bytes().len()).sum::<usize>();
+  proof_size += rho_evals.iter().map(|eval| eval.to_raw_bytes().len()).sum::<usize>();
   verify::<
       KZGCommitmentScheme<E>,
       VerifierSHPLONK<_>,
       _,
       Blake2bRead<_, _, Challenge255<_>>,
       AccumulatorStrategy<_>,
-  >(verifier_params, &proof_2[..], uprime_coms.clone(), rho_thetas, uprime_evals);
+  >(verifier_params, &proof_2[..], uprime_coms.clone(), rho_thetas, uprime_evals.clone());
+  proof_size += uprime_coms.iter().map(|eval| eval.to_raw_bytes().len()).sum::<usize>();
+  proof_size += uprime_evals.iter().map(|eval| eval.to_raw_bytes().len()).sum::<usize>();
 
   let uprime_evals = uprimes.iter().zip(thetas).map(|(uprime, theta)| uprime.evaluate(rho*theta)).collect::<Vec<_>>();
   for i in 0..hs.len() {
@@ -303,7 +307,7 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
 
   //println!("CPLINK2: Total time: {:?}", cplink2_timer.elapsed());
   let uprime_coms_projective = uprime_coms.iter().map(|uprime_com| uprime_com.to_curve()).collect(); 
-  (uprimes, uprime_coms_projective, prover_time, verifier_time)
+  (uprimes, uprime_coms_projective, prover_time, verifier_time, proof_size)
 }
 
 pub fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug>(
