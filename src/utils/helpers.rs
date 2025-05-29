@@ -191,18 +191,18 @@ where
 pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBytes<64>, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug + MultiMillerLoop>(
   thetas: Vec<E::Scalar>, 
   HH: EvaluationDomain<E::Scalar>, 
-  us: Vec<Polynomial<E::Scalar, Coeff>>, 
+  u: Polynomial<E::Scalar, Coeff>, 
   z_v: Polynomial<E::Scalar, Coeff>,
-  z_v_com: E::G1,
-  u_coms: Vec<E::G1>,
+  z_v_com: E::G2,
+  u_com: E::G1,
   //ck: CS2_PP<E>,
   params: ParamsKZG<E>,
-) -> (Vec<Polynomial<<E as Engine>::Scalar, Coeff>>, Duration, Duration) {
+) -> (Vec<Polynomial<<E as Engine>::Scalar, Coeff>>, Vec<<E as Engine>::G1>, Duration, Duration) {
   let cplink2_timer = Instant::now();
   let rng = &mut OsRng;
   let l = thetas.len();
   let betas = (0..l).map(|_| Polynomial::<E::Scalar, Coeff>::from_coefficients_vec(vec![E::Scalar::random(rng.clone()); 3])).collect::<Vec<_>>();
-
+  let us = vec![u.clone(); thetas.len()];
   // theta shifts
   let theta_pows = thetas.iter().map(|theta| {
       let mut pows = vec![E::Scalar::ONE];
@@ -213,8 +213,8 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
   }).collect::<Vec<_>>();
   //println!("Theta pows: {:?}", theta_pows);
 
-  let urands: Vec<Polynomial<E::Scalar, Coeff>> = us.iter().zip(betas).map(|(u, beta)| u.clone() + &(beta * &z_v)).collect::<Vec<_>>();
-  let uprimes: Vec<Polynomial<E::Scalar, Coeff>> = urands.iter().zip(theta_pows.clone()).map(|(u, pows)| {
+  //let urands: Vec<Polynomial<E::Scalar, Coeff>> = us.iter().zip(betas).map(|(u, beta)| u.clone() + &(beta * &z_v)).collect::<Vec<_>>();
+  let uprimes: Vec<Polynomial<E::Scalar, Coeff>> = theta_pows.iter().map(|pows| {
       let coeffs = u.clone().values;
       let shifted_coeffs = coeffs.iter().zip(pows.clone()).map(|(coeff, pow)| coeff.mul(pow.invert().unwrap())).collect::<Vec<_>>();
       let uprime = Polynomial::from_coefficients_vec(shifted_coeffs);
@@ -289,7 +289,7 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
       _,
       Blake2bRead<_, _, Challenge255<_>>,
       AccumulatorStrategy<_>,
-  >(verifier_params, &proof_2[..], uprime_coms, rho_thetas, uprime_evals);
+  >(verifier_params, &proof_2[..], uprime_coms.clone(), rho_thetas, uprime_evals);
 
   let uprime_evals = uprimes.iter().zip(thetas).map(|(uprime, theta)| uprime.evaluate(rho*theta)).collect::<Vec<_>>();
   for i in 0..hs.len() {
@@ -302,7 +302,8 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
   println!("CPLINK2: Verifier time: {:?}", verifier_time);
 
   //println!("CPLINK2: Total time: {:?}", cplink2_timer.elapsed());
-  (uprimes, prover_time, verifier_time)
+  let uprime_coms_projective = uprime_coms.iter().map(|uprime_com| uprime_com.to_curve()).collect(); 
+  (uprimes, uprime_coms_projective, prover_time, verifier_time)
 }
 
 pub fn cplink1<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug>(
@@ -444,7 +445,7 @@ pub fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAf
     println!("Witness size: {}, Columns size {}, Columns {}", size, col_size, l);
     //let ck = keygen2::<E>(n * 2);
     let HH_vals = powers(HH.get_omega()).take(n as usize).collect::<Vec<_>>();
-    let thetas = (0..l).map(|x| HH_vals[x * size]).collect::<Vec<_>>();
+    let thetas = (0..l).map(|x| HH_vals[x * size].invert().unwrap()).collect::<Vec<_>>();
     let params_time = setuptimer.elapsed();
     println!("SETUP: Parameters time: {:?}", params_time);
 

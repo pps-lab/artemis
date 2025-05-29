@@ -29,6 +29,6 @@ fn main() {
   } else {
     let circuit = ModelCircuit::<EqAffine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, pedersen, cp_link);
     //let k = circuit.k;
-    time_circuit_ipa(circuit, commit, chunks, num_runs, directory);
+    time_circuit_ipa(circuit, commit, chunks, num_runs, directory, pedersen);
   }
 }

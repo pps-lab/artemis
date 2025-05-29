@@ -228,7 +228,7 @@ pub fn time_circuit_kzg<
   for _ in 0..advice_lagrange.len() {
     advice_com.push(proof_transcript.read_point().unwrap().to_curve());
   }
-  let slow = false;
+  //let slow = false;
   //CPLink proof: 
   if cp_link {
     if poly_col_len < 1 && slow {
@@ -244,21 +244,35 @@ pub fn time_circuit_kzg<
       let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
       //let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
       //let us = advice_lagrange.clone();
-      let us: Vec<_> = advice_lagrange.iter().map(|poly |HH.lagrange_to_coeff(poly.clone())).collect();
+      let polys: Vec<_> = advice_lagrange.iter().map(|poly |HH.lagrange_to_coeff(poly.clone())).collect();
       //println!("Sum: {:?}", sum);
       //let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
-      let u_coms = advice_com.clone();
+      //let u_coms = advice_com.clone();
       //let u_coms = vec![E::G1::identity(); c];
-      let z_v_com = params.commit_g1(&z_v);
-      let poly = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
-      let (uprimes, cp2_prove, cp2_vfy) = cplink2(thetas, HH.clone(), us, z_v, z_v_com, u_coms, params.clone());
-      let (chats, ds, cprimes, wcom, bigc, d, x, zz, cp1_prove) = cplink1(uprimes, zs, zhats, poly, params.clone(), z_last, HH);
-      proving_time += cp1_prove + cp2_prove;
-      for i in 0..num_runs {
-        let cp1_vfy = verify1(&cprimes, &chats, &ds, &params,&z_coms, &zhat_coms, wcom, bigc, d, x, zz);
-        let vfy_total = cp1_vfy + cp2_vfy;
-        verifying_time[i] += vfy_total;
+      let z_v_com = params.commit_g2(&z_v);
+      let u = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
+      let u_com = params.commit_g1(&u);
+      let (uprimes, uprime_coms, cp2_prove, cp2_vfy) = cplink2(thetas, HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
+
+      for i in 0..uprimes.len() {
+        //let (q, mut uhat) = poly_divmod(poly, &z);   
+        let poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
+
+       //let chat = E::G1::identity();///advice_com[i];
+        let polycom = params.commit_g1(&poly_coeff);
+        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &poly_coeff, &params, &HH);
+        proving_time += cplink_time;
+        for i in 0..num_runs {
+          verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_v_com, wcom, bigc, d, x, zz);
+        }
       }
+      // let (chats, ds, cprimes, wcom, bigc, d, x, zz, cp1_prove) = cplink1(uprimes, zs, zhats, u, params.clone(), z_last, HH);
+      // proving_time += cp1_prove + cp2_prove;
+      // for i in 0..num_runs {
+      //   let cp1_vfy = verify1(&cprimes, &chats, &ds, &params,&z_coms, &zhat_coms, wcom, bigc, d, x, zz);
+      //   let vfy_total = cp1_vfy + cp2_vfy;
+      //   verifying_time[i] += vfy_total;
+      // }
     } else if poly_col_len >= 1 {
       println!("Apollo, cols: {:?}, rows: {:?}", c, circuit.k);
       //fast

@@ -66,7 +66,7 @@ case "$name" in
             cols=11
             rows=21
             poly_cols=0
-        elif [ "$cp_snark" = "cp_link" ]; then
+        elif [ "$cp_snark" = "cp_link" ] || [ "$cp_snark" = "apollo_slow" ]; then
             cols=6
             rows=20
         else
@@ -95,7 +95,7 @@ case "$name" in
             cols=12
             rows=25
             poly_cols=0
-        elif [ "$cp_snark" = "cp_link" ]; then
+        elif [ "$cp_snark" = "cp_link" ] || [ "$cp_snark" = "apollo_slow" ]; then
             cols=10
             rows=24
         else 
@@ -111,7 +111,7 @@ case "$name" in
             cols=20
             rows=27
             poly_cols=0
-        elif [ "$cp_snark" = "cp_link" ]; then
+        elif [ "$cp_snark" = "cp_link" ] || [ "$cp_snark" = "apollo_slow" ]; then
             cols=10
             rows=27
         else 
@@ -127,7 +127,7 @@ case "$name" in
             cols=16
             rows=26
             poly_cols=0
-        elif [ "$cp_snark" = "cp_link" ]; then
+        elif [ "$cp_snark" = "cp_link" ] || [ "$cp_snark" = "apollo_slow" ]; then
             cols=15
             rows=25
         else 
@@ -161,6 +161,12 @@ case "$cp_snark" in
         poly_cols=0
         ;; 
 
+    apollo_slow)
+        cp_link=true
+        poly_com=false
+        slow=false
+        poly_cols=1
+        ;; 
     poly)
         cp_link=false
         poly_com=true

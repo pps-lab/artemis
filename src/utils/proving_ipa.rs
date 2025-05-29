@@ -12,13 +12,14 @@ use halo2_proofs::{
   arithmetic::eval_polynomial, circuit, dev::MockProver, halo2curves::pasta::{EqAffine, Fp}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof}, poly::{
     commitment::{Blind, Params, ParamsProver, Prover, Verifier, MSM}, ipa::{
       self, commitment::{IPACommitmentScheme, ParamsIPA}, msm::MSMIPA, multiopen::{ProverIPA, VerifierIPA}, strategy::SingleStrategy
-    }, Coeff, Polynomial, ProverQuery, VerificationStrategy, VerifierQuery
+    }, Coeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery
   }, transcript::{
     Blake2bRead, Blake2bWrite, Challenge255, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }
 };
 use halo2curves::{bn256, pasta::{EpAffine, Eq}};
 use ff::Field;
+use group::Curve;
 use rand::thread_rng;
 use rand_core::OsRng;
 use crate::{model::ModelCircuit, utils::helpers::get_public_values};
@@ -43,7 +44,7 @@ pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   params
 }
 
-pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String) {
+pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool) {
   let mut rng = &mut rand::thread_rng();
   let start = Instant::now();
 
@@ -59,7 +60,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     }
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
-  
+  println!("First poly coeff len: {:?}", poly_coeff.len());
   let mut transcript_proof =
       Blake2bWrite::<Vec<u8>, EqAffine, Challenge255<EqAffine>>::init(vec![]);
   let beta = Fp::random(rng);//transcript_proof.squeeze_challenge_scalar::<()>();
@@ -120,9 +121,10 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     poly_params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
   }
 
-  while poly_coeff.len() < 2usize.pow(poly_params.k() as u32) {
-    poly_coeff.push(Fp::ZERO);
-  }
+  // while poly_coeff.len() < 2usize.pow(poly_params.k() as u32) {
+  //   poly_coeff.push(Fp::ZERO);
+  // }
+  println!("Second poly coeff len: {:?}", poly_coeff.len());
   //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32 + poly_col_len as u32) - poly_coeff.len()]);
   let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![Polynomial::from_coefficients_vec(poly_coeff.clone())];
@@ -160,8 +162,18 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     &mut advice_blind,
   )
   .unwrap();
+
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
+
+  let mut advice_com = vec![];
+  let transcript_read: Blake2bRead<&[u8], EqAffine, Challenge255<EqAffine>> = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+  let mut proof_transcript = transcript_read.clone();
+  for _ in 0..advice_lagrange.len() {
+    advice_com.push(proof_transcript.read_point().unwrap().to_curve());
+  }
+
+  let public_valss: Vec<Fp> = get_public_values();
   println!("Proving time: {:?}", proof_duration - proof_duration_start);
   let mut proving_time = proof_duration - proof_duration_start;
   println!("Proof size: {} bytes", proof.len());
@@ -188,70 +200,112 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   }
 
   if commit_poly {
-      // IPA Commit proof
-    println!("Poly params: {}", poly_params.k());
+    let col_idx = if pedersen {poly_col_len * 2} else {poly_col_len};
+    let row_idx = (poly_coeff.len() + poly_col_len - 1) / poly_col_len - 1;
+    println!("poly coeff len: {:?}, poly col len: {:?}", poly_coeff.len(), poly_col_len);
+    let beta = public_valss[0];
+    
+    let rho_advice = advice_lagrange[col_idx][row_idx];
+    let rho = poly.evaluate(beta);
+    println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
+    println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
+    
+    assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
 
     let ipa_proof_timer = Instant::now();
-    let blind = Blind(Fp::ZERO);
-    let poly_com: EqAffine = poly_params.commit(&poly, blind).into();
-    //let poly_coms_sum = poly_coms.iter().fold(Eq::identity(), |a, b| a + b).into();
+    println!("Tensor len: {}", tensor_len);
   
-    // transcript_proof.write_point(poly_com).unwrap();
-  
-    // transcript_proof.write_scalar(rho).unwrap();
-  
-    let (proof, ch_prover) = {
-        let prover = ProverIPA::new(&poly_params);
-        let queries = [
-          ProverQuery {
-              point: beta,
-              poly: &poly,
-              blind,
-          }
-        ].to_vec();
-        prover
-        .create_proof(&mut OsRng, &mut transcript_proof, queries)
+    let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
+    let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
+    // let poly_coms: Vec<E::G1Affine> = polys.iter().map(|poly| params.commit(poly, blind).to_affine()).collect::<Vec<_>>();
+    // let poly_com_sum = poly_coms.iter().fold(E::G1Affine::identity(), |a, b| (a + b).into());
+    let queries = [
+      ProverQuery {
+          point: beta,
+          poly: &poly,
+          blind: Blind::default(),
+      }
+    ].to_vec();
+    //let (q, r) = poly_divmod::<E::Scalar>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, E::Scalar::one()]));
+    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, E::Scalar::ONE])).unwrap();
+    //assert!(r.is_zero());
+    let prover = ProverIPA::new(&poly_params);
+    prover
+        .create_proof(&mut OsRng, &mut transcript_ipa_proof, queries)
         .unwrap();
-        //ipa::commitment::create_proof(&poly_params, rng, &mut transcript_proof, &poly, blind, *beta).unwrap();
-        let ch_prover = transcript_proof.squeeze_challenge();
-        (transcript_proof.finalize(), ch_prover)
-    };
-
-    println!("IPA commit proof time: {:?}", ipa_proof_timer.elapsed());
+  
+    let proof_ipa = transcript_ipa_proof.finalize();
+    proof_size += proof_ipa.len();
+    //let pi = params.commit(&q, blind);
+    println!("IPA proof time: {:?}", ipa_proof_timer.elapsed());
     proving_time += ipa_proof_timer.elapsed();
-    proof_size += proof.len();
-    // Verify the opening proof
+
+    let ipa_proof_timer = Instant::now();
+    println!("Tensor len: {}", tensor_len);
+    
+    // Advice rho proof
+    let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
+    let domain = pk.get_vk().get_domain();
+    let poly_com_advice = advice_com[poly_col_len + 1].to_affine();
+    let poly_advice = &domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
+
+    let queries = [
+      ProverQuery {
+          point: domain.rotate_omega(Fp::ONE, Rotation((row_idx) as i32)),
+          poly: &poly_advice,
+          blind: Blind::default(),
+      }
+    ].to_vec();
+    //let (q, r) = poly_divmod::<E::Scalar>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, E::Scalar::one()]));
+    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, E::Scalar::ONE])).unwrap();
+    //assert!(r.is_zero());
+    let prover = ProverIPA::new(&poly_params);
+    prover
+        .create_proof(&mut OsRng, &mut transcript_ipa_proof, queries)
+        .unwrap();
+  
+    let proof_ipa_advice = transcript_ipa_proof.finalize();
+    proof_size += proof_ipa.len();
+    // //let pi = params.commit(&q, blind);
+    println!("IPA proof time: {:?}", ipa_proof_timer.elapsed());
+    proving_time += ipa_proof_timer.elapsed();
+    //IPA Commit vfy
+    println!("Proving time: {:?}", proving_time);
     for i in 0..num_runs {
       let ipa_vfy_timer = Instant::now();
-      let mut transcript =
-          Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(&proof[..]);
-          
-      let mut commitment_msm = MSMIPA::new(&poly_params);
-      commitment_msm.append_term(Fp::one(), poly_com.into());
-
+      // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
+      // let rhs = pairing(&pi.into(), &(&params.s_g2() - &params.g2() * beta).into());
+      // assert_eq!(lhs, rhs);
       let verifier_params = poly_params.verifier_params();
       let verifier = VerifierIPA::new(&verifier_params);
-      let queries = std::iter::empty()
-        .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
-
-      let msm = MSMIPA::new(&poly_params);
-      assert!(verifier.verify_proof(&mut transcript, queries, msm).is_ok());
-      // let guard = ipa::commitment::verify_proof(&poly_params, commitment_msm, &mut transcript, *beta, rho).unwrap();
-      // let ch_verifier = transcript.squeeze_challenge();
-      // assert_eq!(*ch_prover, *ch_verifier);
-      //         // Test guard behavior prior to checking another proof
-      // {
-      //   // Test use_challenges()
-      //   let msm_challenges = guard.clone().use_challenges();
-      //   assert!(msm_challenges.check());
+      let mut transcript_ipa_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_ipa.as_slice());
     
-      //   // Test use_g()
-      //   let g = guard.compute_g();
-      //   let (msm_g, _accumulator) = guard.clone().use_g(g);
-      //   assert!(msm_g.check());
-      // }
-      // println!("IPA commit vfy time: {:?}", ipa_vfy_timer.elapsed());
-      verifying_time[i] += ipa_vfy_timer.elapsed();
+      let queries = std::iter::empty()
+          .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
+    
+      let msm = MSMIPA::new(&poly_params);
+      assert!(verifier.verify_proof(&mut transcript_ipa_verify, queries, msm).is_ok());
+      let vfy_time = ipa_vfy_timer.elapsed();
+      verifying_time[i] += vfy_time;
+      println!("IPA vfy time: {:?}", vfy_time);
+      
+      // For advice
+      let ipa_vfy_timer = Instant::now();
+      // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
+      // let rhs = pairing(&pi.into(), &(&params.s_g2() - &params.g2() * beta).into());
+      // assert_eq!(lhs, rhs);
+      let verifier_params = poly_params.verifier_params();
+      let verifier = VerifierIPA::new(&verifier_params);
+      let mut transcript_ipa_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_ipa_advice.as_slice());
+    
+      let queries = std::iter::empty()
+          .chain(Some(VerifierQuery::new_commitment(&poly_com_advice, domain.rotate_omega(Fp::ONE, Rotation((row_idx) as i32)), rho)));
+    
+      let msm = MSMIPA::new(&poly_params);
+      assert!(verifier.verify_proof(&mut transcript_ipa_verify, queries, msm).is_ok());
+      let vfy_time = ipa_vfy_timer.elapsed();
+      verifying_time[i] += vfy_time;
+      println!("IPA vfy time: {:?}", vfy_time);
     }
   }
   println!("Proving time: {:?}", proving_time);

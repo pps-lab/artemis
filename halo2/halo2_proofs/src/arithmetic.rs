@@ -158,6 +158,10 @@ pub fn small_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::C
 ///
 /// This will use multithreading if beneficial.
 pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Curve {
+    let mut bases = bases.to_vec();
+    if coeffs.len() < bases.len() {
+        bases = bases.iter().take(coeffs.len()).map(|coeff| *coeff).collect();
+    }
     assert_eq!(coeffs.len(), bases.len());
 
     log_info(format!("msm: {}", coeffs.len()));
@@ -184,7 +188,7 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
         results.iter().fold(C::Curve::identity(), |a, b| a + b)
     } else {
         let mut acc = C::Curve::identity();
-        multiexp_serial(coeffs, bases, &mut acc);
+        multiexp_serial(coeffs, &bases, &mut acc);
         acc
     };
 
