@@ -1,6 +1,6 @@
 use core::num;
 use std::{
-  fmt::Debug, fs::File, io::{BufReader, Write}, path::{self, Path}, time::{Duration, Instant}
+  cmp::min, fmt::Debug, fs::File, io::{BufReader, Write}, path::{self, Path}, time::{Duration, Instant}
 };
 use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanishing_on_set, verify1, verify1_lite};
 use bitvec::{domain::Domain, order::verify};
@@ -119,7 +119,6 @@ pub fn time_circuit_kzg<
     //println!("Tensor: {:?}, idx: {}", tensor, tensor_idx);
   }
 
-  let poly_coeff_len = poly_coeff.len();
   let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![];
   if poly_col_len > 0 {
@@ -250,7 +249,7 @@ pub fn time_circuit_kzg<
       //let u_coms = advice_com.clone();
       //let u_coms = vec![E::G1::identity(); c];
       let z_v_com = params.commit_g2(&z_v);
-      let u = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff));
+      let u = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff.clone()));
       let u_com = params.commit_g1(&u);
       let (uprimes, uprime_coms, cp2_prove, cp2_vfy, cp2_proof_size) = cplink2(thetas, HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
       proof_size += cp2_proof_size;
@@ -324,8 +323,9 @@ pub fn time_circuit_kzg<
       println!("Chunks per column: {:?}", chunks_per_column);
       let l = chunks_per_column;
       let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, size * chunks_per_column, l, &params);
+      let poly_col_len = (poly_coeff.len() + (1 << circuit.k) - 1) / (1 << circuit.k);
+      let poly_coeff = poly_coeff[..min(poly_col_len * chunks_per_column * size, poly_coeff.len())].to_vec();
       let vals = (0..c).map(|y| if y < c - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
-      let poly_col_len = (poly_coeff_len + (1 << circuit.k) - 1) / (1 << circuit.k);
       //let poly_col_len = 3;
       //let vals = (0..l).map(|y| (0..size).map(|x| poly_coeff[y + l * x]).collect::<Vec<_>>()).collect::<Vec<_>>();
       //let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
@@ -413,7 +413,7 @@ pub fn time_circuit_kzg<
 
   if commit_poly {
     let col_idx = if pedersen {poly_col_len * 2} else {poly_col_len};
-    let row_idx = (poly_coeff_len + poly_col_len - 1) / poly_col_len - 1;
+    let row_idx = (poly_coeff.len() + poly_col_len - 1) / poly_col_len - 1;
     let beta = public_valss[0];
     
     let rho_advice = advice_lagrange[col_idx][row_idx];
