@@ -316,43 +316,93 @@ pub fn time_circuit_kzg<
         }
       }
     } else {
-      //fast
-      println!("Fast CPLink");
-      let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
-      let size = (poly_coeff.len() + c - 1) / c;
-      let domain_vals = powers(domain.get_omega()).take(size as usize).collect::<Vec<_>>();
-      // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
-      let z = vanishing_on_set(&domain_vals);
-      //let z = Polynomial::from_coefficients_vec(vec![E::Scalar::one()]);
-      let z_com = params.commit_g2(&z);
-      //println!("poly sum: {:?}", poly_sum);
-      //println!("z: {:?}", z);
-      let polys_lagrange = (0..c).map(|x| {
-        let poly: Polynomial<E::Scalar, LagrangeCoeff> = if x < c - 1 {
-          domain.lagrange_from_vec(poly_coeff[(x * size)..((x + 1) * size)].to_vec())
+      println!("Fast CPLINK");
+      let col_size = circuit.k;
+      let witness_size =  poly_coeff.len();
+      let l = c;
+      let size = (witness_size + l - 1) / l;
+      let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, &params);
+      let vals = (0..l).map(|y| if y < l - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
+      let poly_col_len = (poly_coeff_len + (1 << circuit.k) - 1) / (1 << circuit.k);
+      //let poly_col_len = 3;
+      //let vals = (0..l).map(|y| (0..size).map(|x| poly_coeff[y + l * x]).collect::<Vec<_>>()).collect::<Vec<_>>();
+      //let coeffs = vals.iter().map(|x| HH.lagrange_from_vec(x.clone())).collect::<Vec<_>>();
+      //let us = coeffs.iter().map(|x| HH.lagrange_to_coeff(x.clone())).collect::<Vec<_>>();
+      //let us = advice_lagrange.clone();
+      //let polys: Vec<_> = advice_lagrange.iter().map(|poly |HH.lagrange_to_coeff(poly.clone())).collect();
+      //println!("Sum: {:?}", sum);
+      //let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
+      //let u_coms = advice_com.clone();
+      //let u_coms = vec![E::G1::identity(); c];
+      let chunks_per_column = std::cmp::min((1 << circuit.k) / size, c);
+      let z_v_com = params.commit_g2(&z_v);
+      println!("poly_cols {:?}, chunks per column: {:?}", poly_col_len, chunks_per_column);
+      for j in 0..poly_col_len {
+        let evals =  if j < poly_col_len - 1 {
+          vals[j*chunks_per_column..(j+1)*chunks_per_column].iter().flatten().map(|x| *x).collect::<Vec<E::Scalar>>()
         } else {
-          domain.lagrange_from_vec(poly_coeff[(x * size)..].to_vec())
+          vals[j*chunks_per_column..].iter().flatten().map(|x| *x).collect::<Vec<E::Scalar>>()
         };
-        poly
-      }).collect::<Vec<_>>();
-
-      let uhats: Vec<_> = polys_lagrange.iter().map(|poly| poly_divmod(&domain.lagrange_to_coeff(poly.clone()), &z).1).collect();
-      let chats: Vec<_> = uhats.iter().map(|uhat| params.commit_g1(&uhat)).collect();
-      for i in 0..c {
-        //let (q, mut uhat) = poly_divmod(poly, &z);   
-        let poly_coeff = domain.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
-
-       //let chat = E::G1::identity();///advice_com[i];
-        let polycom = params.commit_g1(&poly_coeff);
-        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z, &poly_coeff, &params, &domain);
-        proving_time += cplink_time;
-        proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
-        proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
-        proof_size += zz.to_raw_bytes().len();  
-        for i in 0..num_runs {
-          verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+        let chunks_left = std::cmp::min(c - (j) * chunks_per_column, chunks_per_column);
+        println!("Chunks left {:?}", chunks_left);
+        let u = HH.lagrange_to_coeff(HH.lagrange_from_vec(evals.clone()));
+        let u_com = params.commit_g1(&u);
+        let (uprimes, uprime_coms, cp2_prove, cp2_vfy, cp2_proof_size) = cplink2(thetas[..chunks_left].to_vec().clone(), HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
+        proof_size += cp2_proof_size;
+        for i in 0..uprimes.len() {
+          //let (q, mut uhat) = poly_divmod(poly, &z);   
+          let witness_poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
+  
+         //let chat = E::G1::identity();///advice_com[i];
+          let polycom = params.commit_g1(&witness_poly_coeff);
+          let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &witness_poly_coeff, &params, &HH);
+          proving_time += cplink_time;
+          proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
+          proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
+          proof_size += zz.to_raw_bytes().len();  
+          for i in 0..num_runs {
+            verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_v_com, wcom, bigc, d, x, zz);
+          }
         }
       }
+
+      //fast
+      // println!("Fast CPLink");
+      // let domain = EvaluationDomain::<E::Scalar>::new(1, params.k());
+      // let size = (poly_coeff.len() + c - 1) / c;
+      // let domain_vals = powers(domain.get_omega()).take(size as usize).collect::<Vec<_>>();
+      // // let domain_vals = (0..poly_col_len).map(|i| domain_vals[(i * poly_coeff.len() / poly_col_len)..((i + 1) * poly_coeff.len() / poly_col_len)].to_vec()).collect::<Vec<_>>() ;
+      // let z = vanishing_on_set(&domain_vals);
+      // //let z = Polynomial::from_coefficients_vec(vec![E::Scalar::one()]);
+      // let z_com = params.commit_g2(&z);
+      // //println!("poly sum: {:?}", poly_sum);
+      // //println!("z: {:?}", z);
+      // let polys_lagrange = (0..c).map(|x| {
+      //   let poly: Polynomial<E::Scalar, LagrangeCoeff> = if x < c - 1 {
+      //     domain.lagrange_from_vec(poly_coeff[(x * size)..((x + 1) * size)].to_vec())
+      //   } else {
+      //     domain.lagrange_from_vec(poly_coeff[(x * size)..].to_vec())
+      //   };
+      //   poly
+      // }).collect::<Vec<_>>();
+
+      // let uhats: Vec<_> = polys_lagrange.iter().map(|poly| poly_divmod(&domain.lagrange_to_coeff(poly.clone()), &z).1).collect();
+      // let chats: Vec<_> = uhats.iter().map(|uhat| params.commit_g1(&uhat)).collect();
+      // for i in 0..c {
+      //   //let (q, mut uhat) = poly_divmod(poly, &z);   
+      //   let poly_coeff = domain.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
+
+      //  //let chat = E::G1::identity();///advice_com[i];
+      //   let polycom = params.commit_g1(&poly_coeff);
+      //   let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z, &poly_coeff, &params, &domain);
+      //   proving_time += cplink_time;
+      //   proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
+      //   proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
+      //   proof_size += zz.to_raw_bytes().len();  
+      //   for i in 0..num_runs {
+      //     verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+      //   }
+      // }
     }
   }
 
