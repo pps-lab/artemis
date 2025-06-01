@@ -446,7 +446,7 @@ pub fn setup<E: Engine<Scalar: WithSmallOrderMulGroup<3>, G1Affine: SerdeCurveAf
     let n = 2u32.pow(col_size);
     let rng = OsRng;
     let size = (witness_size + l - 1) / l;
-    println!("Witness size: {}, Columns size {}, Columns {}", size, col_size, l);
+    println!("Witness size {}, size: {}, Columns size {}, Columns {}", witness_size, size, col_size, l);
     //let ck = keygen2::<E>(n * 2);
     let HH_vals = powers(HH.get_omega()).take(n as usize).collect::<Vec<_>>();
     let thetas = (0..l).map(|x| HH_vals[x * size].invert().unwrap()).collect::<Vec<_>>();

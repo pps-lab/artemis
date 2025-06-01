@@ -319,10 +319,12 @@ pub fn time_circuit_kzg<
       println!("Fast CPLINK");
       let col_size = circuit.k;
       let witness_size =  poly_coeff.len();
-      let l = c;
-      let size = (witness_size + l - 1) / l;
-      let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, witness_size, l, &params);
-      let vals = (0..l).map(|y| if y < l - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
+      let size = (witness_size + c - 1) / c;
+      let chunks_per_column = std::cmp::min((1 << circuit.k) / size, c);
+      println!("Chunks per column: {:?}", chunks_per_column);
+      let l = chunks_per_column;
+      let (HH, thetas, zs, z_v, z_last, zhats, z_coms, zhat_coms) = setup(col_size as u32, size * chunks_per_column, l, &params);
+      let vals = (0..c).map(|y| if y < c - 1 {poly_coeff[y*size..(y+1)*size].to_vec()} else {poly_coeff[y*size..].to_vec()}).collect::<Vec<_>>();
       let poly_col_len = (poly_coeff_len + (1 << circuit.k) - 1) / (1 << circuit.k);
       //let poly_col_len = 3;
       //let vals = (0..l).map(|y| (0..size).map(|x| poly_coeff[y + l * x]).collect::<Vec<_>>()).collect::<Vec<_>>();
@@ -334,10 +336,11 @@ pub fn time_circuit_kzg<
       //let u_coms = us.iter().map(|u| params.commit_g1(u)).collect();
       //let u_coms = advice_com.clone();
       //let u_coms = vec![E::G1::identity(); c];
-      let chunks_per_column = std::cmp::min((1 << circuit.k) / size, c);
+
       let z_v_com = params.commit_g2(&z_v);
       println!("poly_cols {:?}, chunks per column: {:?}", poly_col_len, chunks_per_column);
       for j in 0..poly_col_len {
+        println!("j: {}, chunks_per_col: {}, j*c: {}", j, chunks_per_column, j*chunks_per_column);
         let evals =  if j < poly_col_len - 1 {
           vals[j*chunks_per_column..(j+1)*chunks_per_column].iter().flatten().map(|x| *x).collect::<Vec<E::Scalar>>()
         } else {
@@ -351,7 +354,7 @@ pub fn time_circuit_kzg<
         proof_size += cp2_proof_size;
         for i in 0..uprimes.len() {
           //let (q, mut uhat) = poly_divmod(poly, &z);   
-          let witness_poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
+          let witness_poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i + j*chunks_per_column].clone());//polys[i].clone();
   
          //let chat = E::G1::identity();///advice_com[i];
           let polycom = params.commit_g1(&witness_poly_coeff);
