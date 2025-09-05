@@ -1,4 +1,9 @@
-does_results
+does_results/
+nocom_results/
+plots/
+poly_plots/
+test_plots/
+debug_plots/
 
 
 # Byte-compiled / optimized / DLL files
