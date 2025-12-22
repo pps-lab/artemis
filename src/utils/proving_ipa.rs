@@ -312,13 +312,15 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   // zkFFT commitment (if enabled)
   if zkfft {
     println!("Running zkFFT commitment...");
+    println!("Warning! Takes a lot of memory");
 
     // Get domain for omega
     let domain = pk.get_vk().get_domain();
 
     // Prepare witness and generators for computing initial commitment P
     let omega = domain.get_omega();
-    let mut a: Vec<Fp> = poly.values.clone();
+    let poly_advice_coeff = domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
+    let mut a: Vec<Fp> = poly_advice_coeff.values.clone();
     let n = a.len();
     let next_pow2 = n.next_power_of_two();
     if n < next_pow2 {
@@ -333,6 +335,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     for i in 1..k {
         omega_powers.push(omega_powers[i - 1] * omega);
     }
+
+    println!("Precomputing");
 
     // Build b[i][j] = omega^(i*j) using iterative multiplication
     let mut b = Vec::with_capacity(k);
@@ -394,7 +398,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
     // Run prover with alpha
     let (zkfft_proof_bytes, zkfft_ptime, _zkfft_vtime, zkfft_size) =
-        zkfft_commit_ipa(poly.clone(), &poly_params, domain.clone(), alpha);
+        zkfft_commit_ipa(poly_advice_coeff.clone(), &poly_params, domain.clone(), alpha);
 
     proving_time += zkfft_ptime;
     proof_size += zkfft_size;
