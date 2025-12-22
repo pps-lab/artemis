@@ -54,10 +54,19 @@
         - rust
 
 
+#- name: Build the Artifact
+#  ansible.builtin.shell: |
+#    . ~/.bashrc
+#    . "$HOME/.cargo/env"
+#    rustup install nightly
+#    cargo +nightly build --release
+#  args:
+#    chdir: "{{ exp_code_dir }}"
+#  tags: [print_action]
+
 - name: Build the Artifact
   ansible.builtin.shell: |
     . ~/.bashrc
-    . "$HOME/.cargo/env"
     rustup install nightly
     cargo +nightly build --release
   args:

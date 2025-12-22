@@ -34,6 +34,7 @@ $SUITE_ID$:
   cplink_fast-large: "1748779019" #"1748600491"doe-suite-results/cplink_fast-large_
   cplink_fast-med: "1748784094" #"1748600477"doe-suite-results/cplink_fast-med_
   cplink_fast-small: "1748779025" #"1748600551"doe-suite-results/cplink_fast-small_
+  zkfft-small: "1767690436"
 #  cplink: "1725423229" # "1725379289"
 #  poly-ipa: "1725483589"   # "1725441369" <- the old one
 $ETL$:
@@ -72,6 +73,7 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
+      zkfft-small: "*"
     extractors:
       ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
       IgnoreExtractor: {file_regex: ["stdout.log", "runtime_info.yaml"]} #, ""
@@ -115,13 +117,14 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
+      zkfft-small: "*"  # Re-enabled with synthetic KZG baseline
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
-      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
-      YamlExtractor: {file_regex: ["runtime_info.yaml"]}
-      
-    transformers: 
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml"]}
+
+    transformers:
       - name: MergeRowsTransformer
+      - name: AddSyntheticBaselineTransformer
       - name: OsirisPreprocessTransformer
       #- name: ResultFilterTransformer
     loaders:
@@ -132,7 +135,7 @@ $ETL$:
         data_filter:
           allowed:
             model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
-            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, cp_link, poseidon]
+            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, cp_link, poseidon, zkfft]
             pc_type: [kzg, ipa]
 
         fig_foreach:
@@ -225,6 +228,8 @@ $ETL$:
             jp_query: starts_with(cpsnark, 'poseidon')
           - color: "#3FA2DA" # "#56B4E9" #
             jp_query: starts_with(cpsnark, 'pedersen')
+          - color: "#CC79A7" # purple/pink for zkfft
+            jp_query: starts_with(cpsnark, 'zkfft')
           - edgecolor: black
             linewidth: 2
             zorder: 10000
@@ -237,6 +242,7 @@ $ETL$:
             poseidon: Poseidon
             pedersen: Artemis (Inner Product)
             cp_link_fast: Lunar (Multi-column)
+            zkfft: zkFFT
 
             mnist: MNIST ~8k
             snet: SNET ~100k
@@ -292,12 +298,13 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
+      zkfft-small: "*"  # Re-enabled with synthetic KZG baseline
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
-      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
-      YamlExtractor: {file_regex: ["runtime_info.yaml"]}
-    transformers: 
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml"]}
+    transformers:
       - name: MergeRowsTransformer
+      - name: AddSyntheticBaselineTransformer
       - name: OsirisPreprocessTransformer
       #- name: ResultFilterTransformer
     loaders:
@@ -305,7 +312,7 @@ $ETL$:
         data_filter:
           allowed:
             model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
-            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, poseidon]
+            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, poseidon, zkfft]
             pc_type: [kzg, ipa]
 
         fig_foreach:
@@ -388,6 +395,8 @@ $ETL$:
             jp_query: starts_with(cpsnark, 'poseidon')
           - color: "#3FA2DA" # "#56B4E9" #
             jp_query: starts_with(cpsnark, 'pedersen')
+          - color: "#CC79A7" # purple/pink for zkfft
+            jp_query: starts_with(cpsnark, 'zkfft')
           - edgecolor: black
             linewidth: 2
             zorder: 10000
@@ -399,7 +408,8 @@ $ETL$:
             poly: Artemis
             poseidon: Poseidon
             pedersen: Artemis (Inner Product)
-            cp_link_fast: Lunar 
+            cp_link_fast: Lunar
+            zkfft: zkFFT 
 
             mnist: MNIST ~8k
             snet: SNET ~100k
@@ -455,12 +465,14 @@ $ETL$:
         cplink_fast-large: "*"
         cplink_fast-med: "*"
         cplink_fast-small: "*"
+        zkfft-small: "*"  # Re-enabled with robust aggregation handling
       extractors:
         CsvExtractor: { file_regex: [ "output.csv" ] } # with default file_regex
         YamlExtractor: {file_regex: ["runtime_info.yaml"]}
         IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log" ]}
       transformers:
         - name: MergeRowsTransformer
+        - name: AddSyntheticBaselineTransformer
         - name: OsirisPreprocessTransformer
       loaders:
         CsvSummaryLoader: {skip_empty: True}
@@ -470,7 +482,7 @@ $ETL$:
           data_filter:
             allowed:
               model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
-              cpsnark: [no_com, poly, pedersen, cp_link+, cp_link, poseidon, cp_link_fast]
+              cpsnark: [no_com, poly, pedersen, cp_link+, cp_link, poseidon, cp_link_fast, zkfft]
               pc_type: [kzg, ipa]
 
           fig_foreach:
@@ -532,6 +544,8 @@ $ETL$:
                   jp_query: starts_with(cpsnark, 'pedersen')
                 - color: "#D55E00" # "#56B4E9" #
                   jp_query: starts_with(cpsnark, 'poseidon')
+                - color: "#CC79A7" # purple/pink for zkfft
+                  jp_query: starts_with(cpsnark, 'zkfft')
                 - edgecolor: black
                   linewidth: 2
                   zorder: 10000
@@ -545,6 +559,7 @@ $ETL$:
                 poseidon: Poseidon
                 pedersen: Artemis (Inner Product)
                 cp_link_fast: Lunar (Multi-column)
+                zkfft: zkFFT
 
                 mnist: MNIST ~8k
                 snet: SNET ~100k

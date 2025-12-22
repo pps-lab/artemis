@@ -449,6 +449,20 @@ where
     fn get_g(&self) -> &[E::G1Affine] {
         &self.g
     }
+
+    fn get_w(&self) -> E::G1Affine {
+        // KZG doesn't use a separate blinding generator like IPA
+        // Return the last generator as a placeholder
+        // Note: zkfft is only used with IPA, not KZG
+        self.g[self.g.len() - 1]
+    }
+
+    fn get_u(&self) -> E::G1Affine {
+        // KZG doesn't use an auxiliary generator like IPA
+        // Return the second-to-last generator as a placeholder
+        // Note: This is only needed for trait conformance
+        self.g[self.g.len() - 2]
+    }
 }
 
 #[cfg(test)]

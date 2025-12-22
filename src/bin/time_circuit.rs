@@ -17,7 +17,9 @@ fn main() {
   let num_runs = std::env::args().nth(10).expect("number of verifier runs").parse().unwrap();
   let directory = std::env::args().nth(11).expect("directory name").parse().unwrap();
   let slow = std::env::args().nth(12).expect("slow/fast cplink name").parse().unwrap();
-  
+  let zkfft: bool = std::env::args().nth(13).expect("zkfft").parse().unwrap();
+  let barycentric: bool = std::env::args().nth(14).expect("barycentric").parse().unwrap();
+
   if kzg_or_ipa.get(..3) == Some("kzg") {
     if kzg_or_ipa.get(4..) == Some("bls") {
       let circuit = ModelCircuit::<<Bls12 as Engine>::G1Affine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, pedersen, cp_link);
@@ -29,6 +31,6 @@ fn main() {
   } else {
     let circuit = ModelCircuit::<EqAffine>::generate_from_file(&config_fname, &inp_fname, commit, chunks, k_ipt, c_ipt, pedersen, cp_link);
     //let k = circuit.k;
-    time_circuit_ipa(circuit, commit, chunks, num_runs, directory, pedersen);
+    time_circuit_ipa(circuit, commit, chunks, num_runs, directory, pedersen, zkfft, barycentric);
   }
 }

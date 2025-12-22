@@ -22,7 +22,14 @@ use ff::Field;
 use group::Curve;
 use rand::thread_rng;
 use rand_core::OsRng;
-use crate::{model::ModelCircuit, utils::helpers::get_public_values};
+use crate::{
+  model::ModelCircuit,
+  utils::{
+    barycentric::{bary_ipa, bary_verify_ipa},
+    helpers::{get_public_values, zkfft_commit_ipa, zkfft_verify_ipa, zkfft_commit_ipa_fft},
+    lazy_b_matrix::LazyBMatrix
+  }
+};
 
 pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   let path = format!("{}/{}.params", params_dir, degree);
@@ -44,7 +51,7 @@ pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   params
 }
 
-pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool) {
+pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool, zkfft: bool, barycentric: bool) {
   let mut rng = &mut rand::thread_rng();
   let start = Instant::now();
 
@@ -126,6 +133,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   // }
   println!("Second poly coeff len: {:?}", poly_coeff.len());
   //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32 + poly_col_len as u32) - poly_coeff.len()]);
+
   let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
   let mut polys = vec![Polynomial::from_coefficients_vec(poly_coeff.clone())];
   if poly_col_len > 0 {
@@ -165,6 +173,11 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
   let proof = transcript.finalize();
   let proof_duration = start.elapsed();
+
+  println!("DEBUG: advice_blind length: {}", advice_blind.len());
+  for i in 0..advice_blind.len().min(3) {
+    println!("DEBUG: advice_blind[{}] = {:?}", i, advice_blind[i]);
+  }
 
   let mut advice_com = vec![];
   let transcript_read: Blake2bRead<&[u8], EqAffine, Challenge255<EqAffine>> = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
@@ -308,6 +321,218 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
       println!("IPA vfy time: {:?}", vfy_time);
     }
   }
+
+  // zkFFT commitment (if enabled)
+  if zkfft {
+    println!("Running zkFFT commitment...");
+
+    // Get domain for omega
+    let domain = pk.get_vk().get_domain();
+
+    // Prepare witness and generators for computing initial commitment P
+    let omega = domain.get_omega();
+    let poly_advice_coeff = domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
+    let mut a: Vec<Fp> = poly_advice_coeff.values.clone();
+    let n = a.len();
+    let next_pow2 = n.next_power_of_two();
+    if n < next_pow2 {
+        a.resize(next_pow2, Fp::ZERO);
+    }
+    let n = a.len();
+    let k = n;
+
+    println!("Creating lazy b matrix");
+
+    // Use lazy representation to save memory (2MB vs 32GB for n=32K)
+    let b_lazy = LazyBMatrix::new(omega, n);
+
+    // Get generators (same as prover)
+    let generators_g: Vec<EqAffine> = poly_params.get_g()
+        .iter().take(n).copied().collect();
+    let generator_g = generators_g.clone();
+    let generator_h = poly_params.get_w();
+
+    // Generate alpha (blinding factor)
+    let alpha = Fp::random(OsRng);
+
+    // Compute initial commitment P = sum(a[i]*g[i]) + sum(inner_products[i]*g'[i]) + alpha*h
+    println!("Computing initial commitment P...");
+
+    // Compute all inner products using FFT: O(k log k) instead of O(k²)
+    let inner_products = b_lazy.compute_all_inner_products_fft(&a);
+
+    // Build multiexp terms for P
+    use halo2_proofs::arithmetic::best_multiexp;
+    let mut P_terms: Vec<(Fp, EqAffine)> = Vec::new();
+
+    // Add a[i] * generators_g[i] terms
+    for i in 0..n {
+        P_terms.push((a[i], generators_g[i]));
+    }
+
+    // Add inner_products[i] * generator_g[i] terms
+    for i in 0..k {
+        P_terms.push((inner_products[i], generator_g[i]));
+    }
+
+    // Add alpha * generator_h term
+    P_terms.push((alpha, generator_h));
+
+    // Compute P using multiexp
+    let (coeffs, bases): (Vec<_>, Vec<_>) = P_terms.iter().cloned().unzip();
+    let commitment_P: EqAffine = best_multiexp(&coeffs, &bases).into();
+
+    println!("Initial commitment P computed");
+
+    // Run prover with alpha
+    let (zkfft_proof_bytes, zkfft_ptime, _zkfft_vtime, zkfft_size) =
+        zkfft_commit_ipa_fft(poly_advice_coeff.clone(), &poly_params, domain.clone(), alpha);
+
+    proving_time += zkfft_ptime;
+    proof_size += zkfft_size;
+
+    println!("zkFFT: Proof size: {} bytes", zkfft_size);
+
+    // Run verifier
+    println!("Running zkFFT verifier...");
+      for i in 0..num_runs {
+          let verify_start = Instant::now();
+
+          let verified = zkfft_verify_ipa(
+              &zkfft_proof_bytes,
+              b_lazy.clone(),
+              generators_g.clone(),
+              generator_g.clone(),
+              generator_h,
+              commitment_P,
+          );
+
+          let vfy_time = verify_start.elapsed();
+
+          if verified {
+              println!("zkFFT: Verification PASSED ✓");
+              verifying_time[i] += vfy_time;
+          } else {
+              println!("zkFFT: Verification FAILED ✗");
+              panic!("zkFFT verification failed!");
+          }
+      }
+  }
+
+  // Barycentric commitment (if enabled)
+  if barycentric {
+    println!("\n=== Barycentric IPA ({} columns) ===", poly_col_len);
+
+    // Get domain for omega
+    let domain = pk.get_vk().get_domain();
+
+    // Prepare inputs as vectors
+    let advice_lagrange_vec: Vec<_> = if poly_col_len == 1 {
+        // Single column: reconstruct as before
+        let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
+        let mut reconstructed = vec![Fp::ZERO; domain.get_n() as usize];
+        for col_idx in 0..poly_col_len {
+            let start_idx = col_idx * chunk_size;
+            let end_idx = (start_idx + chunk_size).min(poly.values.len());
+            for i in 0..(end_idx - start_idx) {
+                reconstructed[start_idx + i] = advice_lagrange[col_idx].values[i];
+            }
+        }
+        for i in poly.values.len()..(domain.get_n() as usize) {
+            reconstructed[i] = advice_lagrange[0].values[i];
+        }
+        vec![domain.lagrange_from_vec(reconstructed)]
+    } else {
+        // Multi-column: pass columns directly
+        advice_lagrange[0..poly_col_len].to_vec()
+    };
+
+    let advice_com_vec: Vec<EqAffine> = advice_com[0..poly_col_len]
+        .iter().map(|c| (*c).into()).collect();
+    let advice_blind_vec: Vec<Fp> = advice_blind[0..poly_col_len].to_vec();
+
+    // Pre-compute polynomial chunks and commitments (exclude from proving time)
+    // This is preprocessing - the witness is already chunked in the circuit
+    let (poly_chunks, poly_com_vec): (Vec<_>, Vec<_>) = if poly_col_len == 1 {
+        let poly_com = params.commit(&poly, Blind::default()).to_affine();
+        (vec![poly.clone()], vec![poly_com])
+    } else {
+        let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
+        // Number of blinding rows at the end of the domain
+        let num_blinding = domain.get_n() as usize - poly.values.len();
+        let witness_end = domain.get_n() as usize - num_blinding;
+
+        (0..poly_col_len).map(|col_idx| {
+            let start_idx = col_idx * chunk_size;
+            let end_idx = (start_idx + chunk_size).min(poly.values.len());
+            let chunk_len = end_idx - start_idx;
+
+            // Allocate full domain size, fill witness data up to witness_end, leave blinding space
+            let mut poly_chunk_values = vec![Fp::ZERO; domain.get_n() as usize];
+            // Fill witness data (up to witness_end to leave room for blinding)
+            for i in 0..chunk_len.min(witness_end) {
+                poly_chunk_values[i] = poly.values[start_idx + i];
+            }
+            // Positions [witness_end .. domain.get_n()) stay zero for blinding values
+            let poly_chunk = Polynomial::from_coefficients_vec(poly_chunk_values);
+            let poly_com_chunk = params.commit(&poly_chunk, Blind::default()).to_affine();
+
+            (poly_chunk, poly_com_chunk)
+        }).unzip()
+    };
+
+    // Call unified bary_ipa function with pre-computed chunks
+    // IMPORTANT: Use params (not poly_params) because barycentric works with domain size
+    // poly_params has larger degree for multi-column polynomial commitments
+    let (bary_proof_bytes, bary_ptime, bary_size,
+         poly_com_blind_vec, rho_vec) = bary_ipa(
+        poly_chunks,
+        poly_com_vec.clone(),
+        advice_lagrange_vec,
+        advice_com_vec.clone(),
+        beta,
+        &params,
+        domain.clone(),
+        alpha,
+        advice_blind_vec,
+        poly_col_len,
+    );
+
+    proving_time += bary_ptime;
+    proof_size += bary_size;
+
+    println!("Barycentric: Proof size: {} bytes", bary_size);
+    println!("Barycentric: Evaluations: {:?}", rho_vec);
+
+    // poly_com_vec is already computed above before the proving timer
+    // Use it for verification
+
+    // Run unified verifier
+    println!("Running barycentric verifier...");
+    for i in 0..num_runs {
+        let verify_start = Instant::now();
+
+        let verified = bary_verify_ipa(
+            &bary_proof_bytes,
+            poly_com_vec.clone(),
+            poly_com_blind_vec.clone(),
+            advice_com_vec.clone(),
+            beta,
+            rho_vec.clone(),
+            &params,
+            domain.clone(),
+            poly_col_len,
+        );
+
+        let vfy_time = verify_start.elapsed();
+        verifying_time[i] += vfy_time;
+
+        if !verified {
+            panic!("Barycentric verification failed!");
+        }
+    }
+    println!("Barycentric: All verifications PASSED ✓");
+  }
   println!("Proving time: {:?}", proving_time);
   println!("Verifying time: {:?}", verifying_time);
 
@@ -317,7 +542,6 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   // Create a CSV writer
   let mut wtr = Writer::from_writer(file);
 
-  // Write the header row
   wtr.write_record(&["Prover time", "Verifier time", "Proof size"]).unwrap();
   // Write some rows of data
   let proving_time_str = format!("{:?}", proving_time);

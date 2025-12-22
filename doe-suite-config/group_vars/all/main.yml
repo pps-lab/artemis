@@ -8,6 +8,7 @@
 git_remote_repository:
   - repo: "https://github.com/pps-lab/artemis.git"
     version: "main" #"refs/tags/Usenix25"
+#    version: "91d3b391f842a4560d317a3cbc129136097f8663"
 
 prj_id_prefix: "artemis"
 

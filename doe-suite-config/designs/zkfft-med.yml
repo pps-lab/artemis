@@ -1,19 +1,18 @@
-# POLY IPA [mnist, resnet, dlrm, mobilenet, vgg] needs to be re-run because of a faster verifier implementation
 $SUITE_VARS$:
   $INCLUDE_VARS$: general.yml
 
-exp_poly_kzg_small:
+exp_zkfft_kzg_med:
   n_repetitions: 1
   host_types:
-    small:
+    medium:
       n: 1
       init_roles: setup-base
       $CMD$: "[% my_run.cmd %]"
   base_experiment:
     model:
-      $FACTOR$: [mnist, resnet18, dlrm]
-    cpsnark: no_com
-    pc_type: kzg
+      $FACTOR$: [mobilenet, vgg]
+    cpsnark: zkfft
+    pc_type: ipa
 
 
 $ETL$:

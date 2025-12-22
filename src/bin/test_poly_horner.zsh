@@ -25,6 +25,6 @@ wait
 wait
 ./target/release/time_circuit examples/cifar/diffusion.msgpack examples/cifar/diffusion_input.msgpack kzg true 1 25 13 pngs/diffusion_poly_kzg.png > logs/diffusion_polyh_kzg.txt &
 wait
-sudo shutdown -h
+#sudo shutdown -h
 #~/../../dev/null
 # wait $pid0 $pid1 $pid2 $pid3

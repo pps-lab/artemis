@@ -39,6 +39,61 @@ class MergeRowsTransformer(Transformer):
         merged_df = df.groupby(group).apply(lambda group: group.ffill().bfill()).drop_duplicates(subset=group).reset_index(drop=True)
         return merged_df
 
+class AddSyntheticBaselineTransformer(Transformer):
+    """Adds synthetic KZG baseline entries for schemes that only have IPA data.
+
+    This allows the OsirisPreprocessTransformer to compute KZG vs IPA factors
+    even when no real KZG data exists. Synthetic entries use 0 for metric values.
+
+    This transformer should run BEFORE OsirisPreprocessTransformer, so it sets
+    raw string values that will parse to 0.
+    """
+
+    def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
+        # Find IPA-only schemes (zkfft, bary, etc.) that don't have KZG data
+        ipa_only_schemes = ['zkfft', 'bary']
+
+        synthetic_rows = []
+        for scheme in ipa_only_schemes:
+            scheme_ipa = df[(df['cpsnark'] == scheme) & (df['pc_type'] == 'ipa')]
+
+            if len(scheme_ipa) == 0:
+                continue
+
+            # Create synthetic KZG entries with 0 values
+            for _, row in scheme_ipa.iterrows():
+                synthetic_row = row.copy()
+                synthetic_row['pc_type'] = 'kzg'
+
+                # Set raw string values that will parse to 0 (for pre-OsirisPreprocessTransformer)
+                if 'Prover time' in synthetic_row:
+                    synthetic_row['Prover time'] = '0s'
+                if 'Proof size' in synthetic_row:
+                    synthetic_row['Proof size'] = '0'
+                if 'Verifier time' in synthetic_row:
+                    synthetic_row['Verifier time'] = '[0s, 0s]'
+
+                # Also set parsed values to 0 (for post-OsirisPreprocessTransformer)
+                if 'prover_time_sec' in synthetic_row:
+                    synthetic_row['prover_time_sec'] = 0.0
+                if 'proof_size_bytes' in synthetic_row:
+                    synthetic_row['proof_size_bytes'] = 0
+                if 'mean(verifier_time_sec)' in synthetic_row:
+                    synthetic_row['mean(verifier_time_sec)'] = 0.0
+                if 'stddev(verifier_time_sec)' in synthetic_row:
+                    synthetic_row['stddev(verifier_time_sec)'] = 0.0
+                if 'max_rss' in synthetic_row:
+                    synthetic_row['max_rss'] = 0
+
+                synthetic_rows.append(synthetic_row)
+
+        if synthetic_rows:
+            df_synthetic = pd.DataFrame(synthetic_rows)
+            df = pd.concat([df, df_synthetic], ignore_index=True)
+
+        return df
+
+
 class OsirisPreprocessTransformer(Transformer):
 
 
@@ -101,12 +156,17 @@ class OsirisPreprocessTransformer(Transformer):
         #df = pd.concat([df, df_fake], ignore_index=True)
 
 
-        # select relevant columns
-        df = df.filter(items=['suite_name', 'suite_id', 'exp_name', 'run', 'host_type', 'model', 'cpsnark', 'pc_type', 'prover_time_sec', 'proof_size_bytes', 'mean(verifier_time_sec)', 'stddev(verifier_time_sec)', 'max_rss']) #
+        # select relevant columns (only keep columns that exist)
+        desired_columns = ['suite_name', 'suite_id', 'exp_name', 'run', 'host_type', 'model', 'cpsnark', 'pc_type', 'prover_time_sec', 'proof_size_bytes', 'mean(verifier_time_sec)', 'stddev(verifier_time_sec)', 'max_rss']
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        df = df.filter(items=existing_columns)
 
 
-        # compute factor vs no_com baseline
-        for data_col in ["prover_time_sec", "mean(verifier_time_sec)", "proof_size_bytes", "max_rss"]: #
+        # compute factor vs no_com baseline (only for columns that exist)
+        metric_columns = ["prover_time_sec", "mean(verifier_time_sec)", "proof_size_bytes", "max_rss"]
+        metric_columns = [col for col in metric_columns if col in df.columns]
+
+        for data_col in metric_columns:
 
             result_col_rel = f"{data_col}_rel_factor_vs_nocom (no_com=1)"
             result_col_abs = f"{data_col}_abs_factor_vs_nocom"
@@ -228,21 +288,33 @@ class OsirisFactorLoader(Loader):
 
         #print(df.columns)
 
+        def filter_existing_columns(agg_dict, df_columns):
+            """Filter aggregation dictionary to only include columns that exist in dataframe."""
+            return {col: funcs for col, funcs in agg_dict.items() if col in df_columns}
+
+        # Relative factor vs nocom
         agg_d = {"prover_time_sec_rel_factor_vs_nocom (no_com=1)": ["min", "max"], "mean(verifier_time_sec)_rel_factor_vs_nocom (no_com=1)": ["min", "max"], "proof_size_bytes_rel_factor_vs_nocom (no_com=1)": ["min", "max"], "max_rss_rel_factor_vs_nocom (no_com=1)": ["min", "max"]}
+        agg_d_filtered = filter_existing_columns(agg_d, df.columns)
 
-        res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
-        res1.to_html(f"{output_dir}/rel_factor_vs_nocom.html")
+        if agg_d_filtered:  # Only aggregate if there are columns to aggregate
+            res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d_filtered)
+            res1.to_html(f"{output_dir}/rel_factor_vs_nocom.html")
 
-
+        # Absolute factor vs nocom
         agg_d = {"prover_time_sec_abs_factor_vs_nocom": ["min", "max"], "mean(verifier_time_sec)_abs_factor_vs_nocom": ["min", "max"], "proof_size_bytes_abs_factor_vs_nocom": ["min", "max"], "max_rss_abs_factor_vs_nocom": ["min", "max"]}
+        agg_d_filtered = filter_existing_columns(agg_d, df.columns)
 
-        res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
-        res1.to_html(f"{output_dir}/abs_factor_vs_nocom.html")
+        if agg_d_filtered:
+            res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d_filtered)
+            res1.to_html(f"{output_dir}/abs_factor_vs_nocom.html")
 
+        # Relative factor vs poly
         agg_d = {"prover_time_sec_rel_factor_vs_poly (poly=1)": ["min", "max"], "mean(verifier_time_sec)_rel_factor_vs_poly (poly=1)": ["min", "max"], "proof_size_bytes_rel_factor_vs_poly (poly=1)": ["min", "max"], "max_rss_rel_factor_vs_poly (poly=1)": ["min", "max"]}
+        agg_d_filtered = filter_existing_columns(agg_d, df.columns)
 
-        res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
-        res1.to_html(f"{output_dir}/rel_factor_vs_poly.html")
+        if agg_d_filtered:
+            res1 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d_filtered)
+            res1.to_html(f"{output_dir}/rel_factor_vs_poly.html")
         # res2 = df.groupby(["pc_type", "cpsnark"]).agg(agg_d)
         # res2.to_html(f"{output_dir}/factor_vs_kzg.html")
 
@@ -319,7 +391,11 @@ class LargeTableLoader(Loader):
         output_dir = self.get_output_dir(etl_info)
 
         df = df[~((df["pc_type"] == "ipa") & (df["cpsnark"].isin(["cp_link", "cp_link+"])))].copy()
-        df1 = df[["model", "cpsnark", "pc_type", "proof_size_bytes", "mean(verifier_time_sec)", 'prover_time_sec', 'max_rss']].copy()
+
+        # Only select columns that exist
+        desired_cols = ["model", "cpsnark", "pc_type", "proof_size_bytes", "mean(verifier_time_sec)", 'prover_time_sec', 'max_rss']
+        existing_cols = [col for col in desired_cols if col in df.columns]
+        df1 = df[existing_cols].copy()
 
         # Rename and order models
         model_map = {
@@ -343,7 +419,8 @@ class LargeTableLoader(Loader):
         df1['proof_size_bytes'] = (df1['proof_size_bytes'] / 1000).round(0).astype('Int64')  # in KB
         df1['mean(verifier_time_sec)'] = (df1['mean(verifier_time_sec)'] * 1000).round(0).astype('Int64')
         df1['prover_time_sec'] = df1['prover_time_sec'].round(0).astype('Int64')
-        df1['max_rss'] = (df1['max_rss']/ 1_000_000).round(2).astype('Float64')  # in GB
+        if 'max_rss' in df1.columns:
+            df1['max_rss'] = (df1['max_rss']/ 1_000_000).round(2).astype('Float64')  # in GB
         # Pivot tables
         def pivot_metric_int(metric, unit):
             pivot = df1.pivot_table(index=['pc_type', 'cpsnark'], columns='model', values=metric)
@@ -359,7 +436,7 @@ class LargeTableLoader(Loader):
         
         proof_tbl = pivot_metric_int('proof_size_bytes', "")
         verifier_tbl = pivot_metric_int_sec('mean(verifier_time_sec)')
-        memory_tbl = pivot_metric_float('max_rss', "")
+        memory_tbl = pivot_metric_float('max_rss', "") if 'max_rss' in df1.columns else None
 
         def row_to_str(row):
             return " & ".join(row.values)
@@ -377,9 +454,15 @@ class LargeTableLoader(Loader):
                         prefix = f"\\multirow{{{len(systems)}}}{{*}}{{\\rotatebox{{90}}{{IPA}}}}"
 
                 row = [prefix, system]
-                for tbl in [proof_tbl, verifier_tbl, memory_tbl]:
+                tables_to_process = [proof_tbl, verifier_tbl]
+                if memory_tbl is not None:
+                    tables_to_process.append(memory_tbl)
+                for tbl in tables_to_process:
                     vals = tbl.loc[(pc, system)].values if (pc, system) in tbl.index else ["-"] * 7
                     row.extend(vals)
+                # Add empty values for memory if not available
+                if memory_tbl is None:
+                    row.extend(["-"] * 7)
                 rows.append("    " + " & ".join(row) + r" \\")
             rows.append(r"\midrule")
 

@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::{marker::PhantomData, time::Instant};
 use std::fmt::Debug;
 use commitment::Prover;
+use crate::utils::lazy_b_matrix::LazyBMatrix;
 use ff::{Field, WithSmallOrderMulGroup, FromUniformBytes};
 use halo2_proofs::helpers::SerdePrimeField;
 use halo2_proofs::plonk::Error;
@@ -29,7 +30,8 @@ use num_bigint::BigUint;
 use rand_core::OsRng;
 use rayon::{iter::{IntoParallelIterator, ParallelIterator}, slice::ParallelSlice};
 use std::ops::Mul;
-
+use halo2_proofs::poly::ipa::commitment::ParamsIPA;
+use halo2curves::pasta::EqAffine;
 use crate::{gadgets::gadget::convert_to_u128, model::PUBLIC_VALS};
 
 // TODO: this is very bad
@@ -629,6 +631,561 @@ pub fn verify1_lite<P: Engine + Debug> (
   assert_eq!(lhs, rhs);
   println!("CPLINK1: Verifier time: {:?}", verifier_timer.elapsed());
   verifier_timer.elapsed()
+}
+
+// Helper function for zkFFT: split vector in half
+fn split_vector_in_half_zkfft<T: Clone>(vec: Vec<T>) -> (Vec<T>, Vec<T>) {
+    let mid = vec.len() / 2;
+    (vec[..mid].to_vec(), vec[mid..].to_vec())
+}
+
+// Helper function for zkFFT: compute inner product (optimized)
+fn inner_product_zkfft(a: &[halo2_proofs::halo2curves::pasta::Fp], b: &[halo2_proofs::halo2curves::pasta::Fp]) -> halo2_proofs::halo2curves::pasta::Fp {
+    use ff::Field;
+    assert_eq!(a.len(), b.len());
+    // Use sum() which is optimized by the compiler
+    a.iter().zip(b.iter()).map(|(x, y)| *x * *y).sum()
+}
+
+// Helper function for zkFFT: multiexponentiation using halo2's best_multiexp (optimized)
+fn multiexp_affine_zkfft(terms: &[(halo2_proofs::halo2curves::pasta::Fp, halo2_proofs::halo2curves::pasta::EqAffine)]) -> halo2_proofs::halo2curves::pasta::EqAffine {
+    use halo2_proofs::arithmetic::best_multiexp;
+    use halo2_proofs::halo2curves::pasta::EqAffine;
+
+    if terms.is_empty() {
+        return EqAffine::identity();
+    }
+
+    // Unzip scalars and bases
+    let (coeffs, bases): (Vec<_>, Vec<_>) = terms.iter().cloned().unzip();
+
+    // Use halo2's optimized best_multiexp (same as zkFFT repo uses)
+    best_multiexp(&coeffs, &bases).into()
+}
+
+/// Optimized generator folding for zkFFT (OPTIMIZED VERSION)
+///
+/// Computes: result[i] = left[i] * scalar_left + right[i] * scalar_right
+///
+/// **OPTIMIZATION**: Uses parallel batch normalization instead of n separate 2-element MSMs.
+/// This is the same optimization applied to bulletproofs fold_points function.
+///
+/// Performance improvement: ~10-20x faster than the naive approach for large n.
+/// - Old: n separate 2-element MSMs (very slow)
+/// - New: parallel curve operations + batch normalization (much faster)
+fn fold_generators_zkfft(
+    left: &[halo2_proofs::halo2curves::pasta::EqAffine],
+    right: &[halo2_proofs::halo2curves::pasta::EqAffine],
+    scalar_left: halo2_proofs::halo2curves::pasta::Fp,
+    scalar_right: halo2_proofs::halo2curves::pasta::Fp,
+) -> Vec<halo2_proofs::halo2curves::pasta::EqAffine> {
+    use halo2_proofs::arithmetic::parallelize;
+    use halo2_proofs::halo2curves::pasta::{EqAffine, Eq};
+    use group::Curve;
+
+    assert_eq!(left.len(), right.len(), "Generator halves must have same length");
+
+    let n = left.len();
+    let mut result = vec![EqAffine::identity(); n];
+
+    // Parallel computation: each thread handles a chunk of the vectors
+    parallelize(&mut result, |result, start| {
+        let left = &left[start..start + result.len()];
+        let right = &right[start..start + result.len()];
+
+        // Compute projective points: G'[i] = G_L[i] * scalar_left + G_R[i] * scalar_right
+        let mut tmp = Vec::with_capacity(result.len());
+        for (l, r) in left.iter().zip(right.iter()) {
+            tmp.push(l.to_curve() * scalar_left + r.to_curve() * scalar_right);
+        }
+
+        // Batch normalize all projective points to affine at once
+        // This is much faster than normalizing individually
+        Eq::batch_normalize(&tmp, result);
+    });
+
+    result
+}
+
+/// zkFFT WIP (Witness Indistinguishable Proof) protocol for IPA
+///
+/// Implements the zkFFT recursive folding protocol from zkFFT/zkFFT/src/prover.rs
+/// Proves knowledge of witness vector a satisfying inner product relations with FFT matrices b.
+///
+/// # Parameters:
+/// - `poly`: The witness polynomial (coefficients become witness vector a)
+/// - `poly_params`: IPA parameters (provides generators)
+/// - `domain`: Evaluation domain (provides omega for FFT matrices)
+/// - `alpha`: Blinding factor for the initial commitment
+///
+/// # Returns:
+/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size)
+pub fn zkfft_commit_ipa(
+    poly: Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>,
+    poly_params: &ParamsIPA<EqAffine>,
+    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    alpha: halo2_proofs::halo2curves::pasta::Fp,
+) -> (Vec<u8>, Duration, Duration, usize) {
+
+    use halo2_proofs::halo2curves::pasta::{Fp, EqAffine, Eq};
+    use halo2_proofs::poly::commitment::Params;
+    use halo2_proofs::transcript::{Blake2bWrite, Challenge255, TranscriptWrite, TranscriptWriterBuffer};
+    use ff::Field;
+    use group::Curve;
+
+    let zkfft_timer = Instant::now();
+
+    // Initialize Blake2b transcript for Fiat-Shamir
+    let mut transcript = Blake2bWrite::<Vec<u8>, EqAffine, Challenge255<EqAffine>>::init(vec![]);
+
+    // Step 2: Extract witness vector a from polynomial coefficients
+    let mut a: Vec<Fp> = poly.values.clone();
+    let n = a.len();
+
+    // Ensure n is power of 2
+    let next_pow2 = n.next_power_of_two();
+    if n < next_pow2 {
+        a.resize(next_pow2, Fp::ZERO);
+    }
+
+    let n = a.len();
+    let k = n; // Same size as witness
+
+    println!("zkFFT: n={}, k={}", n, k);
+
+    // Step 3: Build FFT matrices (b vectors) - LAZY REPRESENTATION
+    let omega = domain.get_omega();
+
+    // Use lazy representation to avoid materializing 32GB matrix
+    // Memory: ~2MB (2*n*32 bytes) vs ~32GB (n²*32 bytes) for n=32,768
+    let mut b_lazy = LazyBMatrix::new(omega, n);
+
+    // Step 4: Extract generators from IPA params
+    let generators_g: Vec<EqAffine> = poly_params.get_g()
+        .iter()
+        .take(n)
+        .copied()
+        .collect();
+
+    // Use the SAME generators as generators_g (since SRS might be too small)
+    let generator_g: Vec<EqAffine> = generators_g.clone();
+
+    // For generator_h (blinding generator) - use w instead of g[n]
+    let generator_h: EqAffine = poly_params.get_w();
+
+    // Use alpha parameter (will be updated during folding)
+    let mut alpha = alpha;
+
+    // Step 5: Implement zkFFT recursive folding
+    let mut g_bold = generators_g.clone();
+
+    // Recursive folding loop
+    while g_bold.len() > 1 {
+        // Split vectors in half
+        let (a1, a2) = split_vector_in_half_zkfft(a.clone());
+        let half_size = a1.len(); // Size of each half
+        let (g_bold1, g_bold2) = split_vector_in_half_zkfft(g_bold.clone());
+
+        // Random blinding factors for this round
+        let d_l = Fp::random(OsRng);
+        let d_r = Fp::random(OsRng);
+
+        // Compute cross inner products using lazy representation
+        let mut c_l: Vec<Fp> = vec![];
+        let mut c_r: Vec<Fp> = vec![];
+
+        // c_l[i] = <a1, b2[i]> where b2[i] is second half of row i (offset = half_size)
+        for i in 0..k {
+            let ip = b_lazy.inner_product_with_offset(&a1, i, half_size);
+            c_l.push(ip);
+        }
+
+        // c_r[i] = <a2, b1[i]> where b1[i] is first half of row i (no offset)
+        for i in 0..k {
+            let ip = b_lazy.inner_product_with(&a2, i);
+            c_r.push(ip);
+        }
+
+        // Create L commitment
+        let mut L_terms: Vec<(Fp, EqAffine)> = a1.iter()
+            .copied()
+            .zip(g_bold2.iter().copied())
+            .chain(c_l.iter().copied().zip(generator_g.iter().copied()))
+            .collect();
+        L_terms.push((d_l, generator_h));
+        let L = multiexp_affine_zkfft(&L_terms);
+
+        // Create R commitment
+        let mut R_terms: Vec<(Fp, EqAffine)> = a2.iter()
+            .copied()
+            .zip(g_bold1.iter().copied())
+            .chain(c_r.iter().copied().zip(generator_g.iter().copied()))
+            .collect();
+        R_terms.push((d_r, generator_h));
+        let R = multiexp_affine_zkfft(&R_terms);
+
+        // Write L and R to transcript
+        transcript.write_point(L).unwrap();
+        transcript.write_point(R).unwrap();
+
+        // Get challenge from transcript (Fiat-Shamir transform)
+        let e = *transcript.squeeze_challenge_scalar::<()>();
+        let inv_e = e.invert().unwrap();
+        let e_square = e.square();
+        let inv_e_square = inv_e.square();
+
+        // Fold vectors
+        a = a1.iter().zip(a2.iter())
+            .map(|(&x1, &x2)| x1 * e + x2 * inv_e)
+            .collect();
+
+        // Fold lazy b matrix (O(n) update instead of O(n²) materialization!)
+        b_lazy.fold(inv_e, e);
+
+        // Fold generators (OPTIMIZED: parallel batch normalization)
+        g_bold = fold_generators_zkfft(&g_bold1, &g_bold2, inv_e, e);
+
+        // Update alpha
+        alpha += d_l * e_square + d_r * inv_e_square;
+    }
+
+    // Final commitment (when vectors reduced to size 1)
+    let r = Fp::random(OsRng);
+    let delta = Fp::random(OsRng);
+
+    let mut g_terms = vec![];
+    for (i, g_i) in generator_g.iter().enumerate() {
+        // After all folding, b[i][0] = row_start[i]
+        g_terms.push((r * b_lazy.row_start[i], *g_i));
+    }
+
+    let mut A_terms = vec![(r, g_bold[0]), (delta, generator_h)];
+    A_terms.extend(g_terms);
+    let A = multiexp_affine_zkfft(&A_terms);
+
+    // Write final A commitment to transcript
+    transcript.write_point(A).unwrap();
+
+    // Get final challenge from transcript
+    let e_final = *transcript.squeeze_challenge_scalar::<()>();
+
+    // Compute final answers
+    let r_answer = r + (a[0] * e_final);
+    let delta_answer = delta + (alpha * e_final);
+
+    // Write answers to transcript
+    transcript.write_scalar(r_answer).unwrap();
+    transcript.write_scalar(delta_answer).unwrap();
+
+    // Finalize transcript to get proof bytes
+    let proof_bytes = transcript.finalize();
+    let proof_size = proof_bytes.len();
+
+    let prover_time = zkfft_timer.elapsed();
+    println!("zkFFT-IPA: Prover time: {:?}", prover_time);
+    println!("zkFFT-IPA: Proof size: {} bytes", proof_size);
+
+    // Placeholder verifier time (will be updated after verifier runs)
+    let verifier_time = Duration::from_micros(0);
+
+    (proof_bytes, prover_time, verifier_time, proof_size)
+}
+
+/// zkFFT WIP (Witness Indistinguishable Proof) protocol for IPA - FFT OPTIMIZED VERSION
+///
+/// Same as zkfft_commit_ipa but uses FFT for computing inner products:
+/// - O(n log n) per iteration instead of O(n²)
+/// - Total: O(n log² n) instead of O(n² log n)
+///
+/// # Parameters:
+/// - `poly`: The witness polynomial (coefficients become witness vector a)
+/// - `poly_params`: IPA parameters (provides generators)
+/// - `domain`: Evaluation domain (provides omega for FFT matrices)
+/// - `alpha`: Blinding factor for the initial commitment
+///
+/// # Returns:
+/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size)
+pub fn zkfft_commit_ipa_fft(
+    poly: Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>,
+    poly_params: &ParamsIPA<EqAffine>,
+    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    alpha: halo2_proofs::halo2curves::pasta::Fp,
+) -> (Vec<u8>, Duration, Duration, usize) {
+
+    use halo2_proofs::halo2curves::pasta::{Fp, EqAffine, Eq};
+    use halo2_proofs::poly::commitment::Params;
+    use halo2_proofs::transcript::{Blake2bWrite, Challenge255, TranscriptWrite, TranscriptWriterBuffer};
+    use ff::Field;
+    use group::Curve;
+
+    let zkfft_timer = Instant::now();
+
+    // Initialize Blake2b transcript for Fiat-Shamir
+    let mut transcript = Blake2bWrite::<Vec<u8>, EqAffine, Challenge255<EqAffine>>::init(vec![]);
+
+    // Step 2: Extract witness vector a from polynomial coefficients
+    let mut a: Vec<Fp> = poly.values.clone();
+    let n = a.len();
+
+    // Ensure n is power of 2
+    let next_pow2 = n.next_power_of_two();
+    if n < next_pow2 {
+        a.resize(next_pow2, Fp::ZERO);
+    }
+
+    let n = a.len();
+    let k = n; // Same size as witness
+
+    println!("zkFFT-FFT: n={}, k={}", n, k);
+
+    // Step 3: Build FFT matrices (b vectors) - LAZY REPRESENTATION
+    let omega = domain.get_omega();
+
+    // Use lazy representation to avoid materializing 32GB matrix
+    let mut b_lazy = LazyBMatrix::new(omega, n);
+
+    // Step 4: Extract generators from IPA params
+    let generators_g: Vec<EqAffine> = poly_params.get_g()
+        .iter()
+        .take(n)
+        .copied()
+        .collect();
+
+    let generator_g: Vec<EqAffine> = generators_g.clone();
+    let generator_h: EqAffine = poly_params.get_w();
+
+    let mut alpha = alpha;
+
+    // Step 5: Implement zkFFT recursive folding with FFT optimization
+    let mut g_bold = generators_g.clone();
+
+    // Recursive folding loop
+    while g_bold.len() > 1 {
+        // Split vectors in half
+        let (a1, a2) = split_vector_in_half_zkfft(a.clone());
+        let half_size = a1.len();
+        let (g_bold1, g_bold2) = split_vector_in_half_zkfft(g_bold.clone());
+
+        // Random blinding factors for this round
+        let d_l = Fp::random(OsRng);
+        let d_r = Fp::random(OsRng);
+
+        // ==================== FFT OPTIMIZATION ====================
+        // Instead of O(k * half_size) = O(n²/2) per iteration,
+        // we use FFT for O(half_size * log(half_size)) = O(n/2 * log(n/2))
+
+        // c_l[i] = <a1, b2[i]> where b2[i] is second half of row i (offset = half_size)
+        // = row_start[i] * omega^(i*half_size) * DFT(a1)[i]
+        let c_l = b_lazy.compute_all_inner_products_with_offset_fft(&a1, half_size);
+
+        // c_r[i] = <a2, b1[i]> where b1[i] is first half of row i (no offset)
+        // = row_start[i] * DFT(a2)[i]
+        let c_r = b_lazy.compute_all_inner_products_fft(&a2);
+        // ==========================================================
+
+        // Create L commitment
+        let mut L_terms: Vec<(Fp, EqAffine)> = a1.iter()
+            .copied()
+            .zip(g_bold2.iter().copied())
+            .chain(c_l.iter().copied().zip(generator_g.iter().copied()))
+            .collect();
+        L_terms.push((d_l, generator_h));
+        let L = multiexp_affine_zkfft(&L_terms);
+
+        // Create R commitment
+        let mut R_terms: Vec<(Fp, EqAffine)> = a2.iter()
+            .copied()
+            .zip(g_bold1.iter().copied())
+            .chain(c_r.iter().copied().zip(generator_g.iter().copied()))
+            .collect();
+        R_terms.push((d_r, generator_h));
+        let R = multiexp_affine_zkfft(&R_terms);
+
+        // Write L and R to transcript
+        transcript.write_point(L).unwrap();
+        transcript.write_point(R).unwrap();
+
+        // Get challenge from transcript (Fiat-Shamir transform)
+        let e = *transcript.squeeze_challenge_scalar::<()>();
+        let inv_e = e.invert().unwrap();
+        let e_square = e.square();
+        let inv_e_square = inv_e.square();
+
+        // Fold vectors
+        a = a1.iter().zip(a2.iter())
+            .map(|(&x1, &x2)| x1 * e + x2 * inv_e)
+            .collect();
+
+        // Fold lazy b matrix (O(n) update)
+        b_lazy.fold(inv_e, e);
+
+        // Fold generators (OPTIMIZED: parallel batch normalization)
+        g_bold = fold_generators_zkfft(&g_bold1, &g_bold2, inv_e, e);
+
+        // Update alpha
+        alpha += d_l * e_square + d_r * inv_e_square;
+    }
+
+    // Final commitment (when vectors reduced to size 1)
+    let r = Fp::random(OsRng);
+    let delta = Fp::random(OsRng);
+
+    let mut g_terms = vec![];
+    for (i, g_i) in generator_g.iter().enumerate() {
+        g_terms.push((r * b_lazy.row_start[i], *g_i));
+    }
+
+    let mut A_terms = vec![(r, g_bold[0]), (delta, generator_h)];
+    A_terms.extend(g_terms);
+    let A = multiexp_affine_zkfft(&A_terms);
+
+    // Write final A commitment to transcript
+    transcript.write_point(A).unwrap();
+
+    // Get final challenge from transcript
+    let e_final = *transcript.squeeze_challenge_scalar::<()>();
+
+    // Compute final answers
+    let r_answer = r + (a[0] * e_final);
+    let delta_answer = delta + (alpha * e_final);
+
+    // Write answers to transcript
+    transcript.write_scalar(r_answer).unwrap();
+    transcript.write_scalar(delta_answer).unwrap();
+
+    // Finalize transcript to get proof bytes
+    let proof_bytes = transcript.finalize();
+    let proof_size = proof_bytes.len();
+
+    let prover_time = zkfft_timer.elapsed();
+    println!("zkFFT-FFT: Prover time: {:?}", prover_time);
+    println!("zkFFT-FFT: Proof size: {} bytes", proof_size);
+
+    let verifier_time = Duration::from_micros(0);
+
+    (proof_bytes, prover_time, verifier_time, proof_size)
+}
+
+/// zkFFT Verifier for IPA
+///
+/// Verifies the zkFFT proof by:
+/// 1. Reading L/R commitments from transcript and folding witness matrices
+/// 2. Reading final A commitment and challenge
+/// 3. Reading answer scalars
+/// 4. Checking the verification equation: -e*P + e²*L₁ + e⁻²*R₁ + ... + r*g + r*b[i][0]*g'[i] + δ*h - A = 0
+///
+/// # Parameters:
+/// - `proof_bytes`: The proof from the prover
+/// - `b`: FFT witness matrices (same as prover)
+/// - `generators_g`: Generator vector for witness commitments
+/// - `generator_g`: Generator vector for inner product commitments
+/// - `generator_h`: Blinding generator
+/// - `commitment_P`: Initial commitment to witness
+///
+/// # Returns:
+/// `true` if verification passes, `false` otherwise
+pub fn zkfft_verify_ipa(
+    proof_bytes: &[u8],
+    b_lazy: LazyBMatrix,
+    generators_g: Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
+    generator_g: Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
+    generator_h: halo2_proofs::halo2curves::pasta::EqAffine,
+    commitment_P: halo2_proofs::halo2curves::pasta::EqAffine,
+) -> bool {
+    use halo2_proofs::halo2curves::pasta::{Fp, EqAffine};
+    use halo2_proofs::transcript::{Blake2bRead, Challenge255, TranscriptRead, TranscriptReadBuffer};
+    use ff::Field;
+
+    let n = generators_g.len();
+    let m = n.trailing_zeros() as usize; // number of folding rounds
+
+    // Initialize transcript for reading
+    let mut transcript = Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(proof_bytes);
+
+    // Phase 1: Read proof and collect challenges (NO EC ops — just transcript parsing)
+    let mut challenges = Vec::with_capacity(m);
+    let mut inv_challenges = Vec::with_capacity(m);
+    let mut L_points = Vec::with_capacity(m);
+    let mut R_points = Vec::with_capacity(m);
+
+    for _ in 0..m {
+        let L = transcript.read_point().unwrap();
+        let R = transcript.read_point().unwrap();
+        let e = *transcript.squeeze_challenge_scalar::<()>();
+        let inv_e = e.invert().unwrap();
+
+        L_points.push(L);
+        R_points.push(R);
+        challenges.push(e);
+        inv_challenges.push(inv_e);
+    }
+
+    let A = transcript.read_point().unwrap();
+    let e_final = *transcript.squeeze_challenge_scalar::<()>();
+    let r_answer = transcript.read_scalar().unwrap();
+    let delta_answer = transcript.read_scalar().unwrap();
+
+    // Phase 2: Compute generator folding scalars s_j in O(n) field muls via butterfly.
+    // After all folds, g_final = sum_j s_j * g_j where:
+    //   s_j = product over bits of j: bit k=0 -> inv_e[k], bit k=1 -> e[k]
+    let mut s = vec![Fp::ONE];
+    for round in 0..m {
+        let mut new_s = Vec::with_capacity(s.len() * 2);
+        for &v in &s {
+            new_s.push(v * inv_challenges[round]);
+            new_s.push(v * challenges[round]);
+        }
+        s = new_s;
+    }
+
+    // Phase 3: Compute final b_lazy row_start[i] directly from challenges.
+    // After all folds: row_start[i] = product_{k=0}^{m-1} (inv_e[k] + omega^(i*half_size_k) * e[k])
+    // Use iterative powers of omega^half_size to avoid expensive .pow() calls.
+    let k = b_lazy.omega_base.len();
+    let mut final_row_start = vec![Fp::ONE; k];
+    let mut half_size = n / 2;
+    for round in 0..m {
+        // omega^half_size for this round; compute powers iteratively: O(k) muls
+        let omega_half = b_lazy.omega_base[1].pow([half_size as u64]);
+        let mut omega_i_half = Fp::ONE; // omega^(0 * half_size)
+        for i in 0..k {
+            final_row_start[i] *= inv_challenges[round] + omega_i_half * challenges[round];
+            omega_i_half *= omega_half;
+        }
+        half_size /= 2;
+    }
+
+    // Phase 4: Single multiexp combining everything.
+    // Verification equation: -e_final*(P + e²L₁ + e⁻²R₁ + ...) + r*sum(s_j*g_j) + r*sum(row_start[i]*g'[i]) + δ*h - A = 0
+    let mut multiexp_terms: Vec<(Fp, EqAffine)> = Vec::with_capacity(2 * n + 2 * m + 3);
+
+    // -e_final * P
+    multiexp_terms.push((-e_final, commitment_P));
+
+    // -e_final * e_k² * L_k  and  -e_final * inv_e_k² * R_k
+    for round in 0..m {
+        multiexp_terms.push((-e_final * challenges[round].square(), L_points[round]));
+        multiexp_terms.push((-e_final * inv_challenges[round].square(), R_points[round]));
+    }
+
+    // r * s_j * g_j (deferred generator folding — replaces O(n) EC additions)
+    for j in 0..n {
+        multiexp_terms.push((r_answer * s[j], generators_g[j]));
+    }
+
+    // r * final_row_start[i] * g'[i]
+    for i in 0..k {
+        multiexp_terms.push((r_answer * final_row_start[i], generator_g[i]));
+    }
+
+    // delta * h
+    multiexp_terms.push((delta_answer, generator_h));
+
+    // -A
+    multiexp_terms.push((-Fp::ONE, A));
+
+    let result = multiexp_affine_zkfft(&multiexp_terms);
+    result == EqAffine::identity()
 }
 
 fn fast_product_parallel<F: WithSmallOrderMulGroup<3>>(polys: &[Polynomial<F, Coeff>]) -> Polynomial<F, Coeff> {

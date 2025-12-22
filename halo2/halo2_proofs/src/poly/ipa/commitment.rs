@@ -255,7 +255,7 @@ impl<'params, C: CurveAffine> ParamsProver<'params, C> for ParamsIPA<C> {
         tmp_scalars.extend(poly.iter());
         tmp_scalars.push(r.0);
 
-        tmp_bases.extend(self.g.iter());
+        tmp_bases.extend(self.g.iter().take(poly.values.len())); // Make sure blinding generator is in the right position.
         tmp_bases.push(self.w);
 
         best_multiexp::<C>(&tmp_scalars, &tmp_bases)
@@ -263,6 +263,16 @@ impl<'params, C: CurveAffine> ParamsProver<'params, C> for ParamsIPA<C> {
 
     fn get_g(&self) -> &[C] {
         &self.g
+    }
+
+    /// Returns the blinding generator w
+    fn get_w(&self) -> C {
+        self.w
+    }
+
+    /// Returns the auxiliary generator u
+    fn get_u(&self) -> C {
+        self.u
     }
 }
 
