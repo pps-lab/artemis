@@ -1,3 +1,4 @@
+pub mod barycentric;
 pub mod helpers;
 pub mod loader;
 pub mod proving_ipa;

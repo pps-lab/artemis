@@ -22,7 +22,13 @@ use ff::Field;
 use group::Curve;
 use rand::thread_rng;
 use rand_core::OsRng;
-use crate::{model::ModelCircuit, utils::helpers::{get_public_values, zkfft_commit_ipa, zkfft_verify_ipa}};
+use crate::{
+  model::ModelCircuit,
+  utils::{
+    barycentric::{bary_ipa, bary_verify_ipa},
+    helpers::{get_public_values, zkfft_commit_ipa, zkfft_verify_ipa}
+  }
+};
 
 pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   let path = format!("{}/{}.params", params_dir, degree);
@@ -44,7 +50,7 @@ pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   params
 }
 
-pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool, zkfft: bool) {
+pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool, zkfft: bool, barycentric: bool) {
   let mut rng = &mut rand::thread_rng();
   let start = Instant::now();
 
@@ -430,6 +436,59 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
         println!("zkFFT: Verification FAILED ✗");
         panic!("zkFFT verification failed!");
     }
+  }
+
+  // Barycentric commitment (if enabled)
+  if barycentric {
+    println!("Running barycentric commitment...");
+
+    // Get domain for omega
+    let domain = pk.get_vk().get_domain();
+
+    // Get the advice polynomial in Lagrange form
+    let poly_advice_lagrange = advice_lagrange[poly_col_len + 1].clone();
+
+    // Run prover with both polynomials at beta
+    let (bary_proof_bytes, bary_ptime, _bary_vtime, bary_size) =
+        bary_ipa(poly.clone(), poly_advice_lagrange, beta, &poly_params, domain.clone(), alpha);
+
+    proving_time += bary_ptime;
+    proof_size += bary_size;
+
+    println!("Barycentric: Proof size: {} bytes", bary_size);
+
+    // Compute commitments and evaluations for verification
+    let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
+    let poly_advice_coeff = domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
+    let poly_advice_com = poly_params.commit(&poly_advice_coeff, Blind::default()).to_affine();
+    let rho = poly.evaluate(beta);
+    let rho_advice = poly_advice_coeff.evaluate(beta);
+
+    // Run verifier
+    println!("Running barycentric verifier...");
+    for i in 0..num_runs {
+      let verify_start = Instant::now();
+
+      let verified = bary_verify_ipa(
+          &bary_proof_bytes,
+          poly_com,
+          poly_advice_com,
+          beta,
+          rho,
+          rho_advice,
+          &poly_params,
+      );
+
+      let vfy_time = verify_start.elapsed();
+      verifying_time[i] += vfy_time;
+      println!("Barycentric IPA vfy time: {:?}", vfy_time);
+
+      if !verified {
+          println!("Barycentric: Verification FAILED ✗");
+          panic!("Barycentric verification failed!");
+      }
+    }
+    println!("Barycentric: Verification PASSED ✓");
   }
   println!("Proving time: {:?}", proving_time);
   println!("Verifying time: {:?}", verifying_time);
