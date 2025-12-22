@@ -671,24 +671,27 @@ fn multiexp_affine_zkfft(terms: &[(halo2_proofs::halo2curves::pasta::Fp, halo2_p
 /// - `poly`: The witness polynomial (coefficients become witness vector a)
 /// - `poly_params`: IPA parameters (provides generators)
 /// - `domain`: Evaluation domain (provides omega for FFT matrices)
+/// - `alpha`: Blinding factor for the initial commitment
 ///
 /// # Returns:
-/// Tuple of (L_commitments, R_commitments, final_commitment, prover_time, verifier_time, proof_size)
+/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size)
 pub fn zkfft_commit_ipa(
     poly: Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>,
     poly_params: &ParamsIPA<EqAffine>,
     domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
-) -> (Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
-      Vec<halo2_proofs::halo2curves::pasta::Fp>,
-      halo2_proofs::halo2curves::pasta::EqAffine,
-      Duration, Duration, usize) {
+    alpha: halo2_proofs::halo2curves::pasta::Fp,
+) -> (Vec<u8>, Duration, Duration, usize) {
 
     use halo2_proofs::halo2curves::pasta::{Fp, EqAffine, Eq};
     use halo2_proofs::poly::commitment::Params;
+    use halo2_proofs::transcript::{Blake2bWrite, Challenge255, TranscriptWrite, TranscriptWriterBuffer};
     use ff::Field;
     use group::Curve;
 
     let zkfft_timer = Instant::now();
+
+    // Initialize Blake2b transcript for Fiat-Shamir
+    let mut transcript = Blake2bWrite::<Vec<u8>, EqAffine, Challenge255<EqAffine>>::init(vec![]);
 
     // Step 2: Extract witness vector a from polynomial coefficients
     let mut a: Vec<Fp> = poly.values.clone();
@@ -729,8 +732,6 @@ pub fn zkfft_commit_ipa(
         b.push(b_i);
     }
 
-    println!("Done with omega powers");
-
     // Step 4: Extract generators from IPA params
     let generators_g: Vec<EqAffine> = poly_params.get_g()
         .iter()
@@ -744,13 +745,11 @@ pub fn zkfft_commit_ipa(
     // For generator_h (blinding generator)
     let generator_h: EqAffine = poly_params.get_g()[n];
 
-    // Random blinding factor
-    let mut alpha = Fp::random(OsRng);
+    // Use alpha parameter (will be updated during folding)
+    let mut alpha = alpha;
 
     // Step 5: Implement zkFFT recursive folding
     let mut g_bold = generators_g.clone();
-    let mut L_vec: Vec<EqAffine> = vec![];
-    let mut R_vec: Vec<EqAffine> = vec![];
 
     // Recursive folding loop
     while g_bold.len() > 1 {
@@ -760,7 +759,7 @@ pub fn zkfft_commit_ipa(
             b.clone().into_iter().map(split_vector_in_half_zkfft).unzip();
         let (g_bold1, g_bold2) = split_vector_in_half_zkfft(g_bold.clone());
 
-        // Random challenges
+        // Random blinding factors for this round
         let d_l = Fp::random(OsRng);
         let d_r = Fp::random(OsRng);
 
@@ -785,7 +784,6 @@ pub fn zkfft_commit_ipa(
             .collect();
         L_terms.push((d_l, generator_h));
         let L = multiexp_affine_zkfft(&L_terms);
-        L_vec.push(L);
 
         // Create R commitment
         let mut R_terms: Vec<(Fp, EqAffine)> = a2.iter()
@@ -795,10 +793,13 @@ pub fn zkfft_commit_ipa(
             .collect();
         R_terms.push((d_r, generator_h));
         let R = multiexp_affine_zkfft(&R_terms);
-        R_vec.push(R);
 
-        // Get challenge from Fiat-Shamir (using random for now)
-        let e = Fp::random(OsRng);
+        // Write L and R to transcript
+        transcript.write_point(L).unwrap();
+        transcript.write_point(R).unwrap();
+
+        // Get challenge from transcript (Fiat-Shamir transform)
+        let e = *transcript.squeeze_challenge_scalar::<()>();
         let inv_e = e.invert().unwrap();
         let e_square = e.square();
         let inv_e_square = inv_e.square();
@@ -841,28 +842,147 @@ pub fn zkfft_commit_ipa(
     A_terms.extend(g_terms);
     let A = multiexp_affine_zkfft(&A_terms);
 
+    // Write final A commitment to transcript
+    transcript.write_point(A).unwrap();
+
+    // Get final challenge from transcript
+    let e_final = *transcript.squeeze_challenge_scalar::<()>();
+
+    // Compute final answers
+    let r_answer = r + (a[0] * e_final);
+    let delta_answer = delta + (alpha * e_final);
+
+    // Write answers to transcript
+    transcript.write_scalar(r_answer).unwrap();
+    transcript.write_scalar(delta_answer).unwrap();
+
+    // Finalize transcript to get proof bytes
+    let proof_bytes = transcript.finalize();
+    let proof_size = proof_bytes.len();
+
     let prover_time = zkfft_timer.elapsed();
     println!("zkFFT-IPA: Prover time: {:?}", prover_time);
-
-    // Step 7: Calculate proof size
-    let mut proof_size = 0usize;
-    for L in L_vec.iter() {
-        proof_size += L.to_bytes().as_ref().len();
-    }
-    for R in R_vec.iter() {
-        proof_size += R.to_bytes().as_ref().len();
-    }
-    proof_size += A.to_bytes().as_ref().len();
-
-    // Placeholder verifier time
-    let verifier_time = Duration::from_micros(100);
     println!("zkFFT-IPA: Proof size: {} bytes", proof_size);
 
-    // Return final answer scalars instead of second Vec<EqAffine>
-    let r_answer = r + (a[0] * Fp::random(OsRng)); // Placeholder
-    let delta_answer = delta + (alpha * Fp::random(OsRng)); // Placeholder
+    // Placeholder verifier time (will be updated after verifier runs)
+    let verifier_time = Duration::from_micros(0);
 
-    (L_vec, vec![r_answer, delta_answer], A, prover_time, verifier_time, proof_size)
+    (proof_bytes, prover_time, verifier_time, proof_size)
+}
+
+/// zkFFT Verifier for IPA
+///
+/// Verifies the zkFFT proof by:
+/// 1. Reading L/R commitments from transcript and folding witness matrices
+/// 2. Reading final A commitment and challenge
+/// 3. Reading answer scalars
+/// 4. Checking the verification equation: -e*P + e²*L₁ + e⁻²*R₁ + ... + r*g + r*b[i][0]*g'[i] + δ*h - A = 0
+///
+/// # Parameters:
+/// - `proof_bytes`: The proof from the prover
+/// - `b`: FFT witness matrices (same as prover)
+/// - `generators_g`: Generator vector for witness commitments
+/// - `generator_g`: Generator vector for inner product commitments
+/// - `generator_h`: Blinding generator
+/// - `commitment_P`: Initial commitment to witness
+///
+/// # Returns:
+/// `true` if verification passes, `false` otherwise
+pub fn zkfft_verify_ipa(
+    proof_bytes: &[u8],
+    b: Vec<Vec<halo2_proofs::halo2curves::pasta::Fp>>,
+    generators_g: Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
+    generator_g: Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
+    generator_h: halo2_proofs::halo2curves::pasta::EqAffine,
+    commitment_P: halo2_proofs::halo2curves::pasta::EqAffine,
+) -> bool {
+    use halo2_proofs::halo2curves::pasta::{Fp, EqAffine};
+    use halo2_proofs::transcript::{Blake2bRead, Challenge255, TranscriptRead, TranscriptReadBuffer};
+    use ff::Field;
+
+    // Initialize transcript for reading
+    let mut transcript = Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(proof_bytes);
+
+    let mut g_bold = generators_g.clone();
+    let mut b_folded = b.clone();
+    let mut P_terms = vec![(Fp::ONE, commitment_P)];
+
+    // Recursive folding - read L/R and derive challenges
+    while g_bold.len() > 1 {
+        // Read L and R from transcript
+        let L = transcript.read_point().unwrap();
+        let R = transcript.read_point().unwrap();
+
+        // Split vectors
+        let (b1, b2): (Vec<Vec<_>>, Vec<Vec<_>>) =
+            b_folded.into_iter().map(split_vector_in_half_zkfft).unzip();
+        let (g_bold1, g_bold2) = split_vector_in_half_zkfft(g_bold.clone());
+
+        // Derive challenge from transcript (same as prover via Fiat-Shamir)
+        let e = *transcript.squeeze_challenge_scalar::<()>();
+        let inv_e = e.invert().unwrap();
+        let e_square = e.square();
+        let inv_e_square = inv_e.square();
+
+        // Fold b vectors
+        b_folded = b1.iter().zip(b2.iter())
+            .map(|(b1_i, b2_i)| {
+                b1_i.iter().zip(b2_i.iter())
+                    .map(|(&x1, &x2)| x1 * inv_e + x2 * e)
+                    .collect()
+            })
+            .collect();
+
+        // Fold generators
+        g_bold = g_bold1.iter().zip(g_bold2.iter())
+            .map(|(g1, g2)| {
+                let terms = vec![(inv_e, *g1), (e, *g2)];
+                multiexp_affine_zkfft(&terms)
+            })
+            .collect();
+
+        // Accumulate L/R into verification equation
+        P_terms.push((e_square, L));
+        P_terms.push((inv_e_square, R));
+    }
+
+    // Read final A commitment
+    let A = transcript.read_point().unwrap();
+
+    // Read final challenge
+    let e_final = *transcript.squeeze_challenge_scalar::<()>();
+
+    // Read answer scalars
+    let r_answer = transcript.read_scalar().unwrap();
+    let delta_answer = transcript.read_scalar().unwrap();
+
+    // Build verification equation: -e_final*P + e²*L₁ + e⁻²*R₁ + ... + r*g + r*b[i][0]*g'[i] + δ*h - A = 0
+    let mut multiexp_var = P_terms;
+
+    // Negate commitment terms by e_final
+    for (scalar, _) in multiexp_var.iter_mut() {
+        *scalar *= -e_final;
+    }
+
+    // Add r*g terms (final folded generator)
+    for g_i in g_bold.iter() {
+        multiexp_var.push((r_answer, *g_i));
+    }
+
+    // Add -A term
+    multiexp_var.push((-Fp::ONE, A));
+
+    // Add r*b[i][0]*g'[i] terms
+    for (i, g_i) in generator_g.iter().enumerate() {
+        multiexp_var.push((r_answer * b_folded[i][0], *g_i));
+    }
+
+    // Add delta*h term
+    multiexp_var.push((delta_answer, generator_h));
+
+    // Check if multi-exp equals identity
+    let result = multiexp_affine_zkfft(&multiexp_var);
+    result == EqAffine::identity()
 }
 
 fn fast_product_parallel<F: WithSmallOrderMulGroup<3>>(polys: &[Polynomial<F, Coeff>]) -> Polynomial<F, Coeff> {

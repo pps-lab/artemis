@@ -22,7 +22,7 @@ use ff::Field;
 use group::Curve;
 use rand::thread_rng;
 use rand_core::OsRng;
-use crate::{model::ModelCircuit, utils::helpers::{get_public_values, zkfft_commit_ipa}};
+use crate::{model::ModelCircuit, utils::helpers::{get_public_values, zkfft_commit_ipa, zkfft_verify_ipa}};
 
 pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   let path = format!("{}/{}.params", params_dir, degree);
@@ -316,14 +316,116 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     // Get domain for omega
     let domain = pk.get_vk().get_domain();
 
-    let (zkfft_L, zkfft_answers, zkfft_final, zkfft_ptime, zkfft_vtime, zkfft_size) =
-        zkfft_commit_ipa(poly.clone(), &poly_params, domain.clone());
+    // Prepare witness and generators for computing initial commitment P
+    let omega = domain.get_omega();
+    let mut a: Vec<Fp> = poly.values.clone();
+    let n = a.len();
+    let next_pow2 = n.next_power_of_two();
+    if n < next_pow2 {
+        a.resize(next_pow2, Fp::ZERO);
+    }
+    let n = a.len();
+    let k = n;
+
+    // Precompute omega^i for all i
+    let mut omega_powers = Vec::with_capacity(k);
+    omega_powers.push(Fp::ONE);
+    for i in 1..k {
+        omega_powers.push(omega_powers[i - 1] * omega);
+    }
+
+    // Build b[i][j] = omega^(i*j) using iterative multiplication
+    let mut b = Vec::with_capacity(k);
+    for i in 0..k {
+        let mut b_i = Vec::with_capacity(n);
+        let omega_i = omega_powers[i];
+        let mut current = Fp::ONE;
+        for _j in 0..n {
+            b_i.push(current);
+            current *= omega_i;
+        }
+        b.push(b_i);
+    }
+
+    // Get generators (same as prover)
+    let generators_g: Vec<EqAffine> = poly_params.get_g()
+        .iter().take(n).copied().collect();
+    let generator_g = generators_g.clone();
+    let generator_h = poly_params.get_g()[n];
+
+    // Generate alpha (blinding factor)
+    let alpha = Fp::random(OsRng);
+
+    // Compute initial commitment P = sum(a[i]*g[i]) + sum(inner_products[i]*g'[i]) + alpha*h
+    println!("Computing initial commitment P...");
+
+    // Compute inner products: inner_products[i] = sum(a[j] * b[i][j])
+    let mut inner_products = Vec::with_capacity(k);
+    for i in 0..k {
+        let mut ip = Fp::ZERO;
+        for j in 0..n {
+            ip += a[j] * b[i][j];
+        }
+        inner_products.push(ip);
+    }
+
+    // Build multiexp terms for P
+    use halo2_proofs::arithmetic::best_multiexp;
+    let mut P_terms: Vec<(Fp, EqAffine)> = Vec::new();
+
+    // Add a[i] * generators_g[i] terms
+    for i in 0..n {
+        P_terms.push((a[i], generators_g[i]));
+    }
+
+    // Add inner_products[i] * generator_g[i] terms
+    for i in 0..k {
+        P_terms.push((inner_products[i], generator_g[i]));
+    }
+
+    // Add alpha * generator_h term
+    P_terms.push((alpha, generator_h));
+
+    // Compute P using multiexp
+    let (coeffs, bases): (Vec<_>, Vec<_>) = P_terms.iter().cloned().unzip();
+    let commitment_P: EqAffine = best_multiexp(&coeffs, &bases).into();
+
+    println!("Initial commitment P computed");
+
+    // Run prover with alpha
+    let (zkfft_proof_bytes, zkfft_ptime, _zkfft_vtime, zkfft_size) =
+        zkfft_commit_ipa(poly.clone(), &poly_params, domain.clone(), alpha);
 
     proving_time += zkfft_ptime;
     proof_size += zkfft_size;
 
-    println!("zkFFT: L commitments: {}, answer scalars: {}", zkfft_L.len(), zkfft_answers.len());
-    println!("zkFFT: Proof size contribution: {} bytes", zkfft_size);
+    println!("zkFFT: Proof size: {} bytes", zkfft_size);
+
+    // Run verifier
+    println!("Running zkFFT verifier...");
+    let verify_start = Instant::now();
+
+    let verified = zkfft_verify_ipa(
+        &zkfft_proof_bytes,
+        b,
+        generators_g,
+        generator_g,
+        generator_h,
+        commitment_P,
+    );
+
+    let vfy_time = verify_start.elapsed();
+
+    if verified {
+        println!("zkFFT: Verification PASSED ✓");
+        // Update verifying time for all runs
+        for i in 0..num_runs {
+            verifying_time[i] += vfy_time;
+        }
+    } else {
+        println!("zkFFT: Verification FAILED ✗");
+        panic!("zkFFT verification failed!");
+    }
   }
   println!("Proving time: {:?}", proving_time);
   println!("Verifying time: {:?}", verifying_time);
