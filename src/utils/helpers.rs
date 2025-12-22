@@ -638,22 +638,28 @@ fn split_vector_in_half_zkfft<T: Clone>(vec: Vec<T>) -> (Vec<T>, Vec<T>) {
     (vec[..mid].to_vec(), vec[mid..].to_vec())
 }
 
-// Helper function for zkFFT: compute inner product
+// Helper function for zkFFT: compute inner product (optimized)
 fn inner_product_zkfft(a: &[halo2_proofs::halo2curves::pasta::Fp], b: &[halo2_proofs::halo2curves::pasta::Fp]) -> halo2_proofs::halo2curves::pasta::Fp {
     use ff::Field;
     assert_eq!(a.len(), b.len());
-    a.iter().zip(b.iter()).map(|(x, y)| *x * *y).fold(halo2_proofs::halo2curves::pasta::Fp::ZERO, |acc, x| acc + x)
+    // Use sum() which is optimized by the compiler
+    a.iter().zip(b.iter()).map(|(x, y)| *x * *y).sum()
 }
 
-// Helper function for zkFFT: multiexponentiation for affine points
+// Helper function for zkFFT: multiexponentiation using halo2's best_multiexp (optimized)
 fn multiexp_affine_zkfft(terms: &[(halo2_proofs::halo2curves::pasta::Fp, halo2_proofs::halo2curves::pasta::EqAffine)]) -> halo2_proofs::halo2curves::pasta::EqAffine {
-    use group::Curve;
-    use ff::Field;
+    use halo2_proofs::arithmetic::best_multiexp;
+    use halo2_proofs::halo2curves::pasta::EqAffine;
 
-    let result: halo2_proofs::halo2curves::pasta::Eq = terms.iter()
-        .map(|(scalar, base)| base.to_curve() * scalar)
-        .fold(halo2_proofs::halo2curves::pasta::Eq::identity(), |acc, x| acc + x);
-    result.to_affine()
+    if terms.is_empty() {
+        return EqAffine::identity();
+    }
+
+    // Unzip scalars and bases
+    let (coeffs, bases): (Vec<_>, Vec<_>) = terms.iter().cloned().unzip();
+
+    // Use halo2's optimized best_multiexp (same as zkFFT repo uses)
+    best_multiexp(&coeffs, &bases).into()
 }
 
 /// zkFFT WIP (Witness Indistinguishable Proof) protocol for IPA
@@ -699,21 +705,31 @@ pub fn zkfft_commit_ipa(
 
     println!("zkFFT: n={}, k={}", n, k);
 
-    // Step 3: Build FFT matrices (b vectors)
+    // Step 3: Build FFT matrices (b vectors) - OPTIMIZED
     let omega = domain.get_omega();
 
-    // TODO: Can be more optimized
+    // Precompute omega^i for all i (only n exponentiations instead of n²)
+    let mut omega_powers = Vec::with_capacity(k);
+    omega_powers.push(Fp::ONE);
+    for i in 1..k {
+        omega_powers.push(omega_powers[i - 1] * omega);
+    }
+
+    // Build b[i][j] = omega^(i*j) using iterative multiplication
     let mut b: Vec<Vec<Fp>> = Vec::with_capacity(k);
     for i in 0..k {
         let mut b_i = Vec::with_capacity(n);
-        for j in 0..n {
-            // Compute omega^(i*j)
-            let power = ((i * j) % (1 << domain.k())) as u64;
-            let omega_ij = omega.pow_vartime([power]);
-            b_i.push(omega_ij);
+        let omega_i = omega_powers[i]; // omega^i
+        let mut current = Fp::ONE;     // Will be omega^(i*j) for current j
+
+        for _j in 0..n {
+            b_i.push(current);
+            current *= omega_i; // omega^(i*j) -> omega^(i*(j+1))
         }
         b.push(b_i);
     }
+
+    println!("Done with omega powers");
 
     // Step 4: Extract generators from IPA params
     let generators_g: Vec<EqAffine> = poly_params.get_g()
