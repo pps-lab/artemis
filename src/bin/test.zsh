@@ -5,10 +5,11 @@ trap "exit" INT TERM
 
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
-# arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus']
+# arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus', 'zkfft']
 # arg4: num_runs - int
 # arg5: code directory
-# example: ./test.zsh mnist kzg nocom 5 
+# example: ./test.zsh mnist kzg nocom 5 .
+# example (zkfft): ./test.zsh mnist ipa zkfft 1 .
 
 name="$1"
 pc_type="$2"
@@ -29,6 +30,7 @@ cplink=false
 poly_com=false
 pedersen=false
 slow=true
+zkfft=false
 
 case "$name" in
     mnist)
@@ -197,6 +199,12 @@ case "$cp_snark" in
         #     poly_cols=3
         # fi
         ;;
+
+    zkfft)
+        cp_link=true 
+        poly_com=false
+        zkfft=true
+        ;;
     *)
         echo "Error: Unknown case '$case'"
         echo "Available cases: mnist, resnet, dlrm, mobilenet, vgg, gpt2, diffusion"
@@ -204,4 +212,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft

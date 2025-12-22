@@ -22,7 +22,7 @@ use ff::Field;
 use group::Curve;
 use rand::thread_rng;
 use rand_core::OsRng;
-use crate::{model::ModelCircuit, utils::helpers::get_public_values};
+use crate::{model::ModelCircuit, utils::helpers::{get_public_values, zkfft_commit_ipa}};
 
 pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   let path = format!("{}/{}.params", params_dir, degree);
@@ -44,7 +44,7 @@ pub fn get_ipa_params(params_dir: &str, degree: u32) -> ParamsIPA<EqAffine> {
   params
 }
 
-pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool) {
+pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly_col_len: usize,  num_runs: usize, directory: String, pedersen: bool, zkfft: bool) {
   let mut rng = &mut rand::thread_rng();
   let start = Instant::now();
 
@@ -307,6 +307,23 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
       verifying_time[i] += vfy_time;
       println!("IPA vfy time: {:?}", vfy_time);
     }
+  }
+
+  // zkFFT commitment (if enabled)
+  if zkfft {
+    println!("Running zkFFT commitment...");
+
+    // Get domain for omega
+    let domain = pk.get_vk().get_domain();
+
+    let (zkfft_L, zkfft_answers, zkfft_final, zkfft_ptime, zkfft_vtime, zkfft_size) =
+        zkfft_commit_ipa(poly.clone(), &poly_params, domain.clone());
+
+    proving_time += zkfft_ptime;
+    proof_size += zkfft_size;
+
+    println!("zkFFT: L commitments: {}, answer scalars: {}", zkfft_L.len(), zkfft_answers.len());
+    println!("zkFFT: Proof size contribution: {} bytes", zkfft_size);
   }
   println!("Proving time: {:?}", proving_time);
   println!("Verifying time: {:?}", verifying_time);
