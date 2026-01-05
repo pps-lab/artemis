@@ -294,15 +294,13 @@ pub fn bary_ipa(
 
 /// Barycentric Verifier for IPA
 ///
-/// Verifies the opening proof for two polynomials at beta.
+/// Verifies the opening proof for the external polynomial at beta.
 ///
 /// # Parameters:
 /// - `proof_bytes`: The proof from the prover
-/// - `poly_com`: Commitment to the first polynomial
-/// - `poly_advice_com`: Commitment to the second polynomial (advice)
-/// - `beta`: The point at which polynomials were opened
-/// - `rho`: Evaluation of first polynomial at beta
-/// - `rho_advice`: Evaluation of second polynomial at beta
+/// - `poly_com`: Commitment to the external polynomial
+/// - `beta`: The point at which polynomial was opened
+/// - `rho`: Evaluation of polynomial at beta
 /// - `poly_params`: IPA parameters
 ///
 /// # Returns:
@@ -310,10 +308,8 @@ pub fn bary_ipa(
 pub fn bary_verify_ipa(
     proof_bytes: &[u8],
     poly_com: EqAffine,
-    poly_advice_com: EqAffine,
     beta: halo2_proofs::halo2curves::pasta::Fp,
     rho: halo2_proofs::halo2curves::pasta::Fp,
-    rho_advice: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
 ) -> bool {
     println!("Barycentric IPA: Starting verification");

@@ -560,29 +560,71 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
     println!("Barycentric: Proof size: {} bytes", bary_size);
 
-    // Compute commitments and evaluations for verification
-    let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
+    // For verification, we need:
+    // 1. Commitment to the external polynomial (as Lagrange values)
+    // 2. Evaluation at beta (which includes blinding contribution)
 
-    // Reconstruct poly_advice from split columns (same as in prover)
+    // Compute poly as Lagrange and commit
+    let poly_as_lagrange_direct = domain.lagrange_from_vec(poly.values.clone());
+    let poly_from_lag_coeff = domain.lagrange_to_coeff(poly_as_lagrange_direct.clone());
+    let poly_com = poly_params.commit(&poly_from_lag_coeff, Blind::default()).to_affine();
+
+    // Compute evaluation: <poly, b_coeffs> + blinding_contribution
+    // This was already computed in bary_ipa as rho_poly_blinded
+    // We need to recompute it here for the verifier
+
+    // Precompute omega powers for barycentric coefficients
+    let mut omega_powers = Vec::with_capacity(domain.get_n() as usize);
+    omega_powers.push(Fp::ONE);
+    for i in 1..(domain.get_n() as usize) {
+        omega_powers.push(domain.rotate_omega(omega_powers[i - 1], Rotation(1)));
+    }
+
+    // Compute barycentric coefficients
+    let beta_d = beta.pow([domain.get_n() as u64]);
+    let numerator = beta_d - Fp::ONE;
+    let d_inv = Fp::from(domain.get_n() as u64).invert().unwrap();
+    let scaling_factor = numerator * d_inv;
+
+    let mut b_coeffs = Vec::with_capacity(domain.get_n() as usize);
+    for i in 0..(domain.get_n() as usize) {
+        let omega_i = omega_powers[i];
+        let denominator = beta - omega_i;
+        if denominator == Fp::ZERO {
+            b_coeffs.push(Fp::ZERO);
+        } else {
+            let b_i = scaling_factor * omega_i * denominator.invert().unwrap();
+            b_coeffs.push(b_i);
+        }
+    }
+
+    // Compute <poly, b_coeffs>
+    let mut rho = Fp::ZERO;
+    for i in 0..poly.values.len() {
+        rho += poly.values[i] * b_coeffs[i];
+    }
+
+    // Add blinding contribution from reconstructed poly_advice
     let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
-    let mut reconstructed_lagrange_verify = vec![Fp::ZERO; domain.get_n() as usize];
+    let mut reconstructed_lagrange = vec![Fp::ZERO; domain.get_n() as usize];
     for col_idx in 0..poly_col_len {
         let start_idx = col_idx * chunk_size;
         let end_idx = (start_idx + chunk_size).min(poly.values.len());
         for i in 0..(end_idx - start_idx) {
             let poly_idx = start_idx + i;
-            reconstructed_lagrange_verify[poly_idx] = advice_lagrange[col_idx].values[i];
+            reconstructed_lagrange[poly_idx] = advice_lagrange[col_idx].values[i];
         }
     }
     for i in poly.values.len()..(domain.get_n() as usize) {
-        reconstructed_lagrange_verify[i] = advice_lagrange[0].values[i];
+        reconstructed_lagrange[i] = advice_lagrange[0].values[i];
     }
-    let poly_advice_lagrange_verify = domain.lagrange_from_vec(reconstructed_lagrange_verify);
 
-    let poly_advice_coeff = domain.lagrange_to_coeff(poly_advice_lagrange_verify);
-    let poly_advice_com = poly_params.commit(&poly_advice_coeff, Blind::default()).to_affine();
-    let rho = poly.evaluate(beta);
-    let rho_advice = poly_advice_coeff.evaluate(beta);
+    let mut blinding_contribution = Fp::ZERO;
+    for i in poly.values.len()..(domain.get_n() as usize) {
+        blinding_contribution += reconstructed_lagrange[i] * b_coeffs[i];
+    }
+
+    rho += blinding_contribution;
 
     // Run verifier
     println!("Running barycentric verifier...");
@@ -592,10 +634,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
       let verified = bary_verify_ipa(
           &bary_proof_bytes,
           poly_com,
-          poly_advice_com,
           beta,
           rho,
-          rho_advice,
           &poly_params,
       );
 

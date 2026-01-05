@@ -382,6 +382,7 @@ cargo build --release
 ```
 
 ### Remote Execution with DoE-Suite
+Make sure the working directory is at `./doe-suite`, and that the variables in `.envrc` are loaded.
 
 ```bash
 # Run a specific suite
