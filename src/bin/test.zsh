@@ -17,7 +17,7 @@ cp_snark="$3"
 num_runs="$4"
 dir="$5"
 
-cargo +nightly build --release --manifest-path $dir'/Cargo.toml'
+cargo +nightly build --release --manifest-path $dir'/Cargo.toml' --bin time_circuit
 mkdir -p results
 mkdir -p $dir'/params_ipa'
 mkdir -p $dir'/params_kzg_Bls12'
@@ -31,6 +31,7 @@ poly_com=false
 pedersen=false
 slow=true
 zkfft=false
+bary=false
 
 case "$name" in
     mnist)
@@ -201,9 +202,15 @@ case "$cp_snark" in
         ;;
 
     zkfft)
-        cp_link=true 
+        cp_link=true
         poly_com=false
         zkfft=true
+        ;;
+
+    bary)
+        cp_link=true
+        poly_com=false
+        bary=true
         ;;
     *)
         echo "Error: Unknown case '$case'"
@@ -212,4 +219,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft $bary
