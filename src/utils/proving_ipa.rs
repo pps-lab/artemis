@@ -561,13 +561,16 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     println!("Barycentric: Proof size: {} bytes", bary_size);
 
     // For verification, we need:
-    // 1. Commitment to the external polynomial (as Lagrange values)
-    // 2. Evaluation at beta (which includes blinding contribution)
+    // 1. Commitment to the witness polynomial (without blinding)
+    // 2. Evaluation at beta (with blinding contribution)
+    // The verifier will extract the blinding commitment from the proof
 
-    // Compute poly as Lagrange and commit
+    // Compute witness commitment (poly as Lagrange, without blinding rows)
     let poly_as_lagrange_direct = domain.lagrange_from_vec(poly.values.clone());
     let poly_from_lag_coeff = domain.lagrange_to_coeff(poly_as_lagrange_direct.clone());
-    let poly_com = poly_params.commit(&poly_from_lag_coeff, Blind::default()).to_affine();
+    let poly_witness_com = poly_params.commit(&poly_from_lag_coeff, Blind::default()).to_affine();
+
+    println!("\nDEBUG: Verifier will use witness commitment: {:?}", poly_witness_com);
 
     // Compute evaluation: <poly, b_coeffs> + blinding_contribution
     // This was already computed in bary_ipa as rho_poly_blinded
@@ -633,7 +636,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
       let verified = bary_verify_ipa(
           &bary_proof_bytes,
-          poly_com,
+          poly_witness_com,
           beta,
           rho,
           &poly_params,

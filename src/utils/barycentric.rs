@@ -251,9 +251,33 @@ pub fn bary_ipa(
     println!("    {:?}", poly_from_lag_com);
     println!("  Match with poly_advice: {}", poly_from_lag_com == poly_advice_com);
 
-    // For now, commit to poly as Lagrange values (without worrying about commitment blinding)
-    // The evaluation already matches after adding the polynomial blinding contribution
-    let poly_com = poly_from_lag_com;
+    // Commit to the blinding polynomial (rows beyond witness)
+    // Create a polynomial with zeros for witness and actual blinding values in blinding rows
+    println!("\nBarycentric IPA: Creating commitment to blinding polynomial");
+    let mut blinding_only_lag = vec![Fp::ZERO; dim];
+    for i in poly.values.len()..dim {
+        blinding_only_lag[i] = poly_advice.values[i];
+    }
+    let blinding_lag = domain.lagrange_from_vec(blinding_only_lag);
+    let blinding_coeff = domain.lagrange_to_coeff(blinding_lag);
+    let blinding_com = poly_params.commit(&blinding_coeff, Blind::default()).to_affine();
+
+    println!("  Blinding commitment: {:?}", blinding_com);
+
+    // The witness commitment (without blinding)
+    let poly_witness_com = poly_from_lag_com;
+    println!("  Witness commitment:  {:?}", poly_witness_com);
+
+    // Combined commitment (for internal verification)
+    use halo2_proofs::halo2curves::pasta::Eq;
+    let poly_com_combined: EqAffine = {
+        let c1: Eq = poly_witness_com.into();
+        let c2: Eq = blinding_com.into();
+        (c1 + c2).into()
+    };
+    println!("  Combined commitment: {:?}", poly_com_combined);
+    println!("  poly_advice_com:     {:?}", poly_advice_com);
+    println!("  Match: {}", poly_com_combined == poly_advice_com);
 
     // Use the blinded evaluation for both (they should match)
     let rho = rho_poly_blinded;
@@ -266,12 +290,25 @@ pub fn bary_ipa(
     // Create transcript for Fiat-Shamir
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
 
-    // Create ProverQuery for the external polynomial at beta
-    // We only need to prove poly evaluation, poly_advice is already committed in halo2
+    // Write the blinding commitment to the transcript so verifier can extract it
+    transcript_ipa_proof.write_point(blinding_com).unwrap();
+
+    // Create the combined polynomial for the IPA proof (witness + blinding)
+    let mut combined_lag = vec![Fp::ZERO; dim];
+    for i in 0..poly.values.len() {
+        combined_lag[i] = poly.values[i];
+    }
+    for i in poly.values.len()..dim {
+        combined_lag[i] = poly_advice.values[i];
+    }
+    let combined_lag_poly = domain.lagrange_from_vec(combined_lag);
+    let combined_coeff = domain.lagrange_to_coeff(combined_lag_poly);
+
+    // Create ProverQuery for the combined polynomial (witness + blinding) at beta
     let queries = vec![
         ProverQuery {
             point: beta,
-            poly: &poly_from_lag_coeff,
+            poly: &combined_coeff,
             blind: Blind::default(),
         },
     ];
@@ -298,20 +335,22 @@ pub fn bary_ipa(
 ///
 /// # Parameters:
 /// - `proof_bytes`: The proof from the prover
-/// - `poly_com`: Commitment to the external polynomial
+/// - `poly_witness_com`: Commitment to the external witness polynomial (without blinding)
 /// - `beta`: The point at which polynomial was opened
-/// - `rho`: Evaluation of polynomial at beta
+/// - `rho`: Evaluation of polynomial at beta (with blinding contribution)
 /// - `poly_params`: IPA parameters
 ///
 /// # Returns:
 /// `true` if verification passes, `false` otherwise
 pub fn bary_verify_ipa(
     proof_bytes: &[u8],
-    poly_com: EqAffine,
+    poly_witness_com: EqAffine,
     beta: halo2_proofs::halo2curves::pasta::Fp,
     rho: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
 ) -> bool {
+    use halo2_proofs::halo2curves::pasta::Fp;
+
     println!("Barycentric IPA: Starting verification");
 
     let verify_timer = Instant::now();
@@ -319,9 +358,23 @@ pub fn bary_verify_ipa(
     // Initialize transcript for reading
     let mut transcript_ipa_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_bytes);
 
-    // Create verifier query for the external polynomial
+    // Read the blinding commitment from the transcript
+    let blinding_com: EqAffine = transcript_ipa_verify.read_point().unwrap();
+    println!("  Extracted blinding commitment: {:?}", blinding_com);
+
+    // Combine witness and blinding commitments homomorphically
+    use halo2_proofs::halo2curves::pasta::Eq;
+    let poly_com_combined: EqAffine = {
+        let c1: Eq = poly_witness_com.into();
+        let c2: Eq = blinding_com.into();
+        (c1 + c2).into()
+    };
+    println!("  Witness commitment:  {:?}", poly_witness_com);
+    println!("  Combined commitment: {:?}", poly_com_combined);
+
+    // Create verifier query for the combined polynomial
     let queries = std::iter::empty()
-        .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
+        .chain(Some(VerifierQuery::new_commitment(&poly_com_combined, beta, rho)));
 
     // Verify the proof
     let verifier_params = poly_params.verifier_params();
