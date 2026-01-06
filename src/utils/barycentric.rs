@@ -37,12 +37,13 @@ use rand_core::OsRng;
 pub fn bary_ipa(
     poly: Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>,
     poly_advice: Polynomial<halo2_proofs::halo2curves::pasta::Fp, LagrangeCoeff>,
+    poly_com: EqAffine,
     beta: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
     domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
     alpha: halo2_proofs::halo2curves::pasta::Fp,
     blind: halo2_proofs::halo2curves::pasta::Fp,  // Blinding factor from advice_blind
-) -> (Vec<u8>, Duration, Duration, usize) {
+) -> (Vec<u8>, Duration, Duration, usize, EqAffine) {
     use halo2_proofs::halo2curves::pasta::Fp;
 
     let bary_timer = Instant::now();
@@ -139,8 +140,22 @@ pub fn bary_ipa(
     }
     println!("  Blinding contribution = {:?}", blinding_contribution);
 
-    // Add blinding to external poly evaluation
-    let rho_poly_blinded = rho_poly + blinding_contribution;
+    // Create the combined polynomial for the IPA proof (witness + blinding)
+    let mut combined_lag = vec![Fp::ZERO; dim];
+    for i in 0..poly.values.len() {
+        combined_lag[i] = poly.values[i];
+    }
+    for i in poly.values.len()..dim {
+        combined_lag[i] = poly_advice.values[i];
+    }
+    // inner product between combined_lag and b_coeffs
+    let rho_poly_blinded = {
+        let mut acc = Fp::ZERO;
+        for i in 0..dim {
+            acc += combined_lag[i] * b_coeffs[i];
+        }
+        acc
+    };
     println!("  poly(beta) + blinding = {:?}", rho_poly_blinded);
 
     // Now they should match!
@@ -192,30 +207,41 @@ pub fn bary_ipa(
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
 
     // Create the combined polynomial for the IPA proof (witness + blinding)
-    let mut combined_lag = vec![Fp::ZERO; dim];
-    for i in 0..poly.values.len() {
-        combined_lag[i] = poly.values[i];
-    }
+    let mut poly_only_blind = vec![Fp::ZERO; dim];
     for i in poly.values.len()..dim {
-        combined_lag[i] = poly_advice.values[i];
+        poly_only_blind[i] = poly_advice.values[i];
     }
-    let combined_lag_poly = domain.lagrange_from_vec(combined_lag);
-    let combined_coeff = domain.lagrange_to_coeff(combined_lag_poly);
-    println!("  rho combined = {:?}", combined_coeff.evaluate(beta));
+    let poly_com_blind = poly_params.commit(&Polynomial::from_coefficients_vec(poly_only_blind), Blind::default()).to_affine();
 
     // Verify that our combined commitment matches halo2's advice commitment
     println!("\nBarycentric IPA: Verifying commitment matches halo2's advice commitment");
-    let poly_com_combined = poly_params.commit(&combined_coeff, Blind(blind)).to_affine();
-    println!("  Our combined commitment:  {:?}", poly_com_combined);
-    println!("  poly_advice_com (halo2):  {:?}", poly_advice_com);
-    println!("  Match: {}", poly_com_combined == poly_advice_com);
+    let combined_lag_poly = Polynomial::from_coefficients_vec(combined_lag);
+    // Compare combined_lag_poly and poly by value
+    println!("rhos {:?} {:?}", combined_lag_poly.evaluate(beta), poly.evaluate(beta));
+
+    let poly_com_combined = poly_params.commit(&combined_lag_poly, Blind::default() + Blind::default()).to_affine();
+
+    println!("poly_com_combined = poly_com + poly_com_blind");
+    println!("  combined commitment: {:?}", poly_com_combined);
+    println!("  external commitment with blinding:   {:?}", (poly_com + poly_com_blind).to_affine());
+    // println!("  external commitment with blinding:   {:?}", (poly_com + poly_com_blind).to_affine());
+    // verify coefficients match
+    for i in 0..poly.values.len() {
+        assert_eq!(
+            combined_lag_poly.values[i], poly.values[i],
+            "Combined polynomial does not match external polynomial at index {}",
+            i
+        );
+    }
+
+
 
     // Create ProverQuery for the combined polynomial (witness + blinding) at beta
     // Use the same blinding factor that halo2 used for the advice column
     let queries = vec![
         ProverQuery {
             point: beta,
-            poly: &combined_coeff,
+            poly: &poly_advice_coeff, // TODO: A challenge here is that the poly was not materialized yet
             blind: Blind(blind),
         },
     ];
@@ -233,7 +259,7 @@ pub fn bary_ipa(
     println!("Barycentric IPA: Prover time: {:?}", prover_time);
     println!("Barycentric IPA: Proof size: {} bytes", proof_size);
 
-    (proof_bytes, prover_time, Duration::from_micros(0), proof_size)
+    (proof_bytes, prover_time, Duration::from_micros(0), proof_size, poly_com_blind)
 }
 
 /// Barycentric Verifier for IPA
@@ -252,6 +278,8 @@ pub fn bary_ipa(
 pub fn bary_verify_ipa(
     proof_bytes: &[u8],
     poly_com: EqAffine,
+    poly_com_blind: EqAffine,
+    poly_advice_com: EqAffine,
     beta: halo2_proofs::halo2curves::pasta::Fp,
     rho: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,

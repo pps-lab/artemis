@@ -34,7 +34,7 @@ $SUITE_ID$:
   cplink_fast-large: "1748779019" #"1748600491"doe-suite-results/cplink_fast-large_
   cplink_fast-med: "1748784094" #"1748600477"doe-suite-results/cplink_fast-med_
   cplink_fast-small: "1748779025" #"1748600551"doe-suite-results/cplink_fast-small_
-  zkfft-small: "1767688750"
+  zkfft-small: "1767690436"
 #  cplink: "1725423229" # "1725379289"
 #  poly-ipa: "1725483589"   # "1725441369" <- the old one
 $ETL$:
@@ -117,14 +117,14 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
-      zkfft-small: "*"
+      zkfft-small: "*"  # Re-enabled with synthetic KZG baseline
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
-      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
-      YamlExtractor: {file_regex: ["runtime_info.yaml"]}
-      
-    transformers: 
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml"]}
+
+    transformers:
       - name: MergeRowsTransformer
+      - name: AddSyntheticBaselineTransformer
       - name: OsirisPreprocessTransformer
       #- name: ResultFilterTransformer
     loaders:
@@ -298,13 +298,13 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
-      zkfft-small: "*"
+      zkfft-small: "*"  # Re-enabled with synthetic KZG baseline
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
-      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log"]}
-      YamlExtractor: {file_regex: ["runtime_info.yaml"]}
-    transformers: 
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml"]}
+    transformers:
       - name: MergeRowsTransformer
+      - name: AddSyntheticBaselineTransformer
       - name: OsirisPreprocessTransformer
       #- name: ResultFilterTransformer
     loaders:
@@ -465,13 +465,14 @@ $ETL$:
         cplink_fast-large: "*"
         cplink_fast-med: "*"
         cplink_fast-small: "*"
-        zkfft-small: "*"
+        zkfft-small: "*"  # Re-enabled with robust aggregation handling
       extractors:
         CsvExtractor: { file_regex: [ "output.csv" ] } # with default file_regex
         YamlExtractor: {file_regex: ["runtime_info.yaml"]}
         IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log" ]}
       transformers:
         - name: MergeRowsTransformer
+        - name: AddSyntheticBaselineTransformer
         - name: OsirisPreprocessTransformer
       loaders:
         CsvSummaryLoader: {skip_empty: True}

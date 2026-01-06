@@ -453,8 +453,9 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     for i in 0..advice_lagrange.len().min(5) {
       println!("DEBUG: advice_lagrange[{}].len() = {}", i, advice_lagrange[i].values.len());
     }
+    let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
 
-    // Get domain for omega
+      // Get domain for omega
     let domain = pk.get_vk().get_domain();
 
     // Try to find which column contains the witness by checking matches
@@ -551,8 +552,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     let blind_value = advice_blind[0];  // For single column case, use first blind
     println!("DEBUG: Using blind value: {:?}", blind_value);
 
-    let (bary_proof_bytes, bary_ptime, _bary_vtime, bary_size) =
-        bary_ipa(poly.clone(), poly_advice_lagrange, beta, &poly_params, domain.clone(), alpha, blind_value);
+    let (bary_proof_bytes, bary_ptime, _bary_vtime, bary_size, poly_com_blind) =
+        bary_ipa(poly.clone(), poly_advice_lagrange, poly_com.clone(), beta, &poly_params, domain.clone(), alpha, blind_value);
 
     proving_time += bary_ptime;
     proof_size += bary_size;
@@ -634,6 +635,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
       let verified = bary_verify_ipa(
           &bary_proof_bytes,
+          poly_com,
+          poly_com_blind,
           poly_witness_com,
           beta,
           rho,

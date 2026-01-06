@@ -200,6 +200,8 @@ source .envrc && make etl-super config=<config-name> out=<output-dir> pipelines=
 - `<output-dir>/<config>/<pipeline-name>/*.html`
 - `<output-dir>/<config>/<pipeline-name>/*.csv`
 
+When you add new results to the super-ETL config, verify that the outputs contain the new data by checking the csv files.
+
 ### 6. Cleanup
 
 **Automatic cleanup**: Instances are terminated automatically after suite completion (exit code 0).
@@ -334,6 +336,9 @@ Each experiment produces files based on the commands executed and ETL extractors
 - Use `make design suite=<suite-name>` to validate before running
 - Check `doe-suite-results/<suite>_<id>/` for stdout/stderr logs
 - Use `make run-keep` to keep instances alive for debugging (remember to clean up!)
+
+**Other tips**:
+- Check the docs in `doe-suite/docs/` for more details on how to edit ETL workflows, server provisioning and other doe-suite syntax.
 
 ## Example Workflow
 
