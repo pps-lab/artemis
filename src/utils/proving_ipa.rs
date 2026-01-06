@@ -419,29 +419,28 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
     // Run verifier
     println!("Running zkFFT verifier...");
-    let verify_start = Instant::now();
+      for i in 0..num_runs {
+          let verify_start = Instant::now();
 
-    let verified = zkfft_verify_ipa(
-        &zkfft_proof_bytes,
-        b,
-        generators_g,
-        generator_g,
-        generator_h,
-        commitment_P,
-    );
+          let verified = zkfft_verify_ipa(
+              &zkfft_proof_bytes,
+              b.clone(),
+              generators_g.clone(),
+              generator_g.clone(),
+              generator_h,
+              commitment_P,
+          );
 
-    let vfy_time = verify_start.elapsed();
+          let vfy_time = verify_start.elapsed();
 
-    if verified {
-        println!("zkFFT: Verification PASSED ✓");
-        // Update verifying time for all runs
-        for i in 0..num_runs {
-            verifying_time[i] += vfy_time;
-        }
-    } else {
-        println!("zkFFT: Verification FAILED ✗");
-        panic!("zkFFT verification failed!");
-    }
+          if verified {
+              println!("zkFFT: Verification PASSED ✓");
+              verifying_time[i] += vfy_time;
+          } else {
+              println!("zkFFT: Verification FAILED ✗");
+              panic!("zkFFT verification failed!");
+          }
+      }
   }
 
   // Barycentric commitment (if enabled)
@@ -561,16 +560,15 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     println!("Barycentric: Proof size: {} bytes", bary_size);
 
     // For verification, we need:
-    // 1. Commitment to the witness polynomial (without blinding)
+    // 1. Commitment to the witness polynomial (from halo2's advice_com)
     // 2. Evaluation at beta (with blinding contribution)
     // The verifier will extract the blinding commitment from the proof
 
-    // Compute witness commitment (poly as Lagrange, without blinding rows)
-    let poly_as_lagrange_direct = domain.lagrange_from_vec(poly.values.clone());
-    let poly_from_lag_coeff = domain.lagrange_to_coeff(poly_as_lagrange_direct.clone());
-    let poly_witness_com = poly_params.commit(&poly_from_lag_coeff, Blind::default()).to_affine();
+    // Use the halo2-generated commitment for the witness column
+    // For single-column case (poly_col_len=1), witness is in column 0
+    let poly_witness_com: EqAffine = advice_com[0].into();
 
-    println!("\nDEBUG: Verifier will use witness commitment: {:?}", poly_witness_com);
+    println!("\nDEBUG: Verifier will use witness commitment from advice_com[0]: {:?}", poly_witness_com);
 
     // Compute evaluation: <poly, b_coeffs> + blinding_contribution
     // This was already computed in bary_ipa as rho_poly_blinded

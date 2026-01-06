@@ -3,138 +3,213 @@ name: doe-suite-experiments
 description: Run remote experiments (and process results) using the doe-suite framework. Use when running experiments remotely or when processing experiment results to create plots or other diagrams.
 ---
 
-This skill orchestrates the complete workflow for running and operating a DoE-Suite experiment:
+This skill orchestrates the complete workflow for running DoE-Suite experiments:
 
-1. Validates the suite exists and is configured
-2. Runs experiment suites on remote infrastructure (e.g., AWS)
-3. Monitors progress and collects results
-3. Runs and edits super-etl pipelines
-4. Edits and creates new suites and configurations.
+1. Validates suite configuration and launches remote infrastructure
+2. Executes experiments on AWS EC2, ETHZ Euler, or existing remote machines
+3. Monitors progress and automatically collects results
+4. Processes results with ETL (Extract-Transform-Load) pipelines
+5. Generates visualizations and aggregated data
+6. Creates and edits suite designs and ETL configurations
+
+## Key Concepts
+
+**DoE-Suite** is a tool for remote experiment management following Design of Experiments (DoE) methodology:
+
+- **Suite**: A collection of experiments defined in a YAML configuration file
+- **Experiment**: A set of runs with different configurations
+- **Factor**: A parameter that varies between runs (e.g., model, algorithm)
+- **Level**: A specific value a factor takes in a run (e.g., mnist, resnet18)
+- **Run**: A single execution with a specific combination of factor levels
+- **ETL Pipeline**: Extract-Transform-Load pipeline that processes results locally
+- **Super-ETL**: Aggregates and processes results across multiple suite runs
 
 ## Prerequisites
-The doe-suite invocation will tell you if things are improperly configured. Do not check this before.
 
-- `.envrc` file must be configured with:
+The doe-suite will report configuration issues when invoked. Key requirements:
+
+- `.envrc` file with environment variables:
   - `DOES_PROJECT_DIR`: Project root directory
   - `DOES_PROJECT_ID_SUFFIX`: Project identifier suffix
   - `DOES_SSH_KEY_NAME`: AWS SSH key name
   - `DOES_CLOUD`: Cloud provider (aws)
   - `AWS_PROFILE`: AWS credentials profile
   - `AWS_REGION`: AWS region to deploy in
-- AWS credentials must be configured
+- AWS credentials properly configured
 - SSH key must exist in the target AWS region
 
+**Working Directory**: All doe-suite commands must be run from the `doe-suite` directory within your project.
+
 ## Available Suites
-Available suites are defined in `doe-suite-config` as yaml files.
 
-### Small Model Suites (r6i.8xlarge - 32 vCPU, 256GB RAM)
-- `apollo-small`: mnist, resnet18, dlrm with Apollo (cp_link+) + KZG
-- `poly-small`: mnist, resnet18, dlrm with Artemis (poly) + KZG
-- `poly-small-ipa`: mnist, resnet18, dlrm with Artemis + IPA
-- `poly-ip-small`: mnist, resnet18, dlrm with Artemis Inner Product (pedersen) + KZG
-- `poly-ip-small_ipa`: mnist, resnet18, dlrm with Artemis Inner Product + IPA
-- `nocom-small`: mnist, resnet18, dlrm with no commitment baseline + KZG
-- `nocom-small-ipa`: mnist, resnet18, dlrm with no commitment + IPA
-- `cplink-small`: mnist, resnet18, dlrm with Lunar (cp_link) + KZG
-- `cplink_fast-small`: mnist, resnet18, dlrm with Lunar Fast + KZG
-- `poseidon-small`: mnist, resnet18, dlrm with Poseidon + KZG
-- `poseidon-small_ipa`: mnist, resnet18, dlrm with Poseidon + IPA
+Suites are defined as YAML files in `doe-suite-config/designs/`. To discover available suites:
 
-### Medium Model Suites (r6i.16xlarge - 64 vCPU, 512GB RAM)
-- `apollo-med`: mobilenet, vgg with Apollo + KZG
-- `poly-med`: mobilenet, vgg with Artemis + KZG
-- `poly-med-ipa`: mobilenet, vgg with Artemis + IPA
-- `poly-ip-med`: mobilenet, vgg with Artemis Inner Product + KZG
-- `poly-ip-med_ipa`: mobilenet, vgg with Artemis Inner Product + IPA
-- `nocom-med`: mobilenet, vgg with no commitment + KZG
-- `nocom-med-ipa`: mobilenet, vgg with no commitment + IPA
-- `cplink-med`: mobilenet, vgg with Lunar + KZG
-- `cplink_fast-med`: mobilenet, vgg with Lunar Fast + KZG
-- `poseidon-med`: mobilenet, vgg with Poseidon + KZG
-- `poseidon-med_ipa`: mobilenet, vgg with Poseidon + IPA
+```bash
+# List all suite design files
+ls doe-suite-config/designs/*.yml
 
-### Large Model Suites (r6i.32xlarge - 128 vCPU, 1TB RAM)
-- `apollo-large`: diffusion, gpt2 with Apollo + KZG
-- `poly-large`: diffusion, gpt2 with Artemis + KZG
-- `poly-large-ipa`: diffusion, gpt2 with Artemis + IPA
-- `poly-ip-large`: diffusion, gpt2 with Artemis Inner Product + KZG
-- `poly-ip-large_ipa`: diffusion, gpt2 with Artemis Inner Product + IPA
-- `nocom-large`: diffusion, gpt2 with no commitment + KZG
-- `nocom-large-ipa`: diffusion, gpt2 with no commitment + IPA
-- `cplink-large`: diffusion, gpt2 with Lunar + KZG
-- `cplink_fast-large`: diffusion, gpt2 with Lunar Fast + KZG
-- `xlarge-poseidon_kzg`: diffusion, gpt2 with Poseidon + KZG
-- `xlarge-poseidon_ipa`: diffusion, gpt2 with Poseidon + IPA
+# Get information about configured suites
+make info
+
+# View what a specific suite will execute
+make design suite=<suite-name>
+```
+
+Each suite typically defines:
+- **Host types**: Machine sizes and configurations (e.g., small, medium, large)
+- **Factors**: Parameters that vary between runs (e.g., model, algorithm, dataset)
+- **Experiments**: Collections of runs with different factor combinations
+- **ETL pipelines**: How to process and visualize results
+
+Machine configurations are defined in `doe-suite-config/group_vars/<host-type>/main.yml`.
 
 ## Workflow Steps
 
-### 1. Launch Experiment
+### 1. Design and Validate Suite (Optional)
+
+Before running experiments, you can validate your suite design:
+
+```bash
+# View all commands that will be executed
+make design suite=<suite-name>
+
+# Validate design and show with default values
+make design-validate suite=<suite-name>
+```
+
+This helps catch configuration errors before launching expensive cloud resources.
+
+### 2. Launch Experiment
 
 ```bash
 source .envrc && make run suite=<suite-name> id=new
 ```
 
-This will:
-- Create a new suite ID (Unix timestamp)
-- Set up cloud networking (VPC, subnet, security groups)
-- Launch instance(s) with appropriate size
-- Install dependencies
-- Clone code from GitHub
-- Enqueue all experiment jobs
-- Start execution
+**What happens automatically:**
+1. Creates a new suite ID (Unix timestamp, e.g., 1767685699)
+2. Sets up cloud networking (VPC, subnet, security groups, instance)
+3. Launches EC2 instance(s) with appropriate size
+4. Installs dependencies (Rust, AWS CLI, task spooler)
+5. Clones code from GitHub (`main` branch)
+6. Builds the project with `cargo build --release`
+7. Downloads model artifacts from S3
+8. Enqueues all experiment jobs to task spooler
+9. Starts execution sequentially
 
 **Expected Duration**:
 - Small suites: 15-30 minutes per model
 - Medium suites: 1-3 hours per model
 - Large suites: 4-12 hours per model
 
-### 2. Monitor Progress
-Make sure to keep monitoring runs continuously
+**Options:**
+- `id=new`: Start a new run
+- `id=last`: Continue the most recent run
+- `id=<suite_id>`: Continue a specific run
+- `make run-keep`: Keep instances running after completion (don't forget to clean up!)
+
+### 3. Monitor Progress
+
+**Continuously monitor** to detect issues early:
 
 ```bash
 source .envrc && make status suite=<suite-name> id=last
 ```
 
-This shows:
-- Total jobs completed/remaining
+**Output shows:**
+- Total jobs completed/remaining (e.g., "3/3 jobs")
+- Progress percentage
+- ETL pipeline warnings/errors
 - Current job status (queued/running/finished)
-- Any errors or warnings
 
-**Check periodically** (every 5-10 minutes for small models, 30-60 minutes for large models)
+**Check frequency**:
+- Small models: every 5-10 minutes
+- Medium models: every 15-30 minutes
+- Large models: every 30-60 minutes
 
-### 3. Review Results
+### 4. Review Raw Results
 
-Once completed, results are in:
+Results are automatically downloaded to:
 ```
-doe-suite-results/<suite-name>_<suite-id>/exp_<exp-name>/run_<N>/rep_0/small/host_0/
+doe-suite-results/<suite-name>_<suite-id>/exp_<exp-name>/run_<N>/rep_<R>/<host-type>/host_<H>/
 ```
 
-Key files:
-- `output.csv`: Prover time, verifier time, proof size
+**Directory structure:**
+- `<suite-name>_<suite-id>`: Suite and timestamp ID
+- `exp_<exp-name>`: Experiment name from design
+- `run_<N>`: Run index (starts at 0) - different factor level combinations
+- `rep_<R>`: Repetition index (starts at 0)
+- `<host-type>`: Machine type (small/medium/large)
+- `host_<H>`: Host index (starts at 0)
+
+**Key files:**
+- `output.csv`: Experiment metrics (prover time, verifier time, proof size)
 - `runtime_info.yaml`: Wall time and max memory (RSS)
-- `stderr.log`: Compilation warnings (normal)
-- `stdout.log`: Execution output
+- `stdout.log`: Program output
+- `stderr.log`: Compilation warnings (usually normal)
 
-### 4. Process Results with ETL
-Available Super ETL configurations are available in `doe-suite-config/super_etl`.
-Each configuration file defines pipelines, and experiments to load at the top:
+**Example:**
+`doe-suite-results/nocom-small_1767685699/exp_poly_kzg_small/run_0/rep_0/small/host_0/output.csv`
+
+### 5. Process Results with ETL
+
+#### Automatic ETL (Per-Suite)
+
+ETL pipelines defined in the suite design run **automatically** when results are downloaded. They process individual suite results.
+
+To manually re-run (useful for tweaking plots):
+```bash
+make etl suite=<suite-name> id=last
+
+# Or develop/test ETL changes:
+make etl-design suite=<suite-name> id=last
 ```
+
+#### Super-ETL (Cross-Suite Aggregation)
+
+Super-ETL configurations (`doe-suite-config/super_etl/`) aggregate results from **multiple suite runs** and generate comparative visualizations.
+
+**Configuration structure:**
+```yaml
 $SUITE_ID$:
-  nocom-small: "<run_id1>"
-  poly-small: "<run_id2>"
+  suite-name-1: "1767685699"
+  suite-name-2: "1748250734"
+  suite-name-3: "1748545862"
+
+$PIPELINES$:
+  pipeline-name:
+    experiments: "*"  # or list specific experiments
+    extractors:
+      CsvExtractor: {file_regex: ["*.csv"]}
+      IgnoreExtractor: {file_regex: ["*.log"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}
 ```
-To add results from a new run, make sure to update the `run_id` to the new run.
+
+**To add new results:**
+1. Update suite IDs in the super-ETL config file (`doe-suite-config/super_etl/<config>.yml`)
+2. Run the super-ETL pipeline
 
 ```bash
-source .envrc && make etl-super config=poly_plots out=./doe-suite-results-super pipelines="overview"
+source .envrc && make etl-super config=<config-name> out=<output-dir> pipelines="<pipeline1>,<pipeline2>"
 ```
 
-This aggregates results from all experiments and generates:
-- Combined CSV files
-- Summary statistics
-- Plots (if configured)
-- 
-The output location is `./doe-suite-results-super`
+**Common output locations:**
+- `<output-dir>/<config>/overview/overview.csv`
+- `<output-dir>/<config>/<pipeline-name>/*.pdf`
+- `<output-dir>/<config>/<pipeline-name>/*.html`
+- `<output-dir>/<config>/<pipeline-name>/*.csv`
+
+### 6. Cleanup
+
+**Automatic cleanup**: Instances are terminated automatically after suite completion (exit code 0).
+
+**Manual cleanup** (if suite fails or is interrupted):
+```bash
+make clean
+```
+
+**Always verify** in AWS Console that instances are terminated!
 
 
 ## Common Issues & Solutions
@@ -170,88 +245,140 @@ The output location is `./doe-suite-results-super`
 - Verify argument order matches what `time_circuit.rs` expects
 - Test locally first with same parameters
 
+Experiments may run succesfully but the remote code may have errored, which should be visible in stderr.
+If this is the case, the result files should provide more information. 
+Double check with me whether your proposed fix makes sense. 
+Always commit and push the fix, so it gets pulled on the remote server as well when re-invoking doe-suite
+
 ### ETL Pipeline Errors
 **Error**: `file=runtime_info.yaml matches no extractor`
 
+**Root cause**: The ETL pipeline encounters a file that doesn't match any configured extractor.
+
 **Solution**:
-- Ensure suite design includes `YamlExtractor` in extractors list
-- Check that experiment completed successfully (output files exist)
-- Verify ETL configuration in suite design matches expected output structure
+1. **Ignore the file**: Add it to `IgnoreExtractor` in the suite design:
+   ```yaml
+   $ETL$:
+     overview:
+       extractors:
+         IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml"]}
+   ```
 
-## Results Interpretation
+2. **Extract the file**: Add appropriate extractor (e.g., `YamlExtractor`) if you need the data:
+   ```yaml
+   extractors:
+     YamlExtractor: {file_regex: ["runtime_info.yaml"]}
+   ```
 
-### Metrics Collected
+3. **Verify files exist**: Check that the experiment actually produced the expected output files
 
-1. **Prover Time** (`prover_time_sec`)
-   - Time to generate the proof
-   - Measured in seconds, displayed in minutes
-   - Main performance indicator
+**Note**: ETL runs both automatically (after each job) and during `make status`. A failing ETL doesn't block experiment execution but prevents result aggregation.
 
-2. **Verifier Time** (`verifier_time_sec`)
-   - Time to verify the proof
-   - Averaged over 5 repetitions with stddev
-   - Measured in seconds
+## Understanding Results
 
-3. **Proof Size** (`proof_size_bytes`)
-   - Size of generated proof
-   - Measured in bytes, displayed in kB
-   - Communication cost indicator
+### Result Files
 
-4. **Memory Usage** (`max_rss`)
-   - Maximum resident set size
-   - Measured in kibibytes, displayed in GB
-   - Peak memory consumption
+Each experiment produces files based on the commands executed and ETL extractors configured:
 
-### CP-SNARK Schemes Comparison
+**Common file types:**
+- **CSV files**: Structured data (extracted by `CsvExtractor`)
+- **JSON files**: Structured data (extracted by `JsonExtractor`)
+- **YAML files**: Configuration/metadata (extracted by `YamlExtractor`)
+- **Log files**: stdout/stderr output (usually ignored or extracted separately)
+- **Custom files**: Any output your experiment produces
 
-- **No Commitment (no_com)**: Baseline without commitment (fastest, but not CP-SNARK)
-- **Artemis Horner (poly)**: Polynomial commitment using Horner evaluation
-- **Artemis Inner Product (pedersen)**: Inner product argument approach
-- **Apollo (cp_link+)**: Enhanced CP-Link construction
-- **Lunar (cp_link)**: Basic CP-Link construction
-- **Lunar Fast (cp_link_fast)**: Optimized multi-column CP-Link
-- **Poseidon (poseidon)**: Poseidon hash-based commitment
+**Runtime metrics** (if using `/usr/bin/time`):
+- **Wall time**: Total elapsed time
+- **max_rss**: Maximum resident set size (memory usage)
+- **CPU usage**: User and system time
+
+### ETL Processing Stages
+
+1. **Extract**: Aggregate raw result files into a pandas DataFrame
+   - Each file matches one extractor by regex pattern
+   - Files that don't match any extractor cause errors (add to `IgnoreExtractor`)
+
+2. **Transform**: Process and aggregate data
+   - `RepAggTransformer`: Aggregate over repetitions (mean, std, etc.)
+   - `MergeRowsTransformer`: Combine data from multiple sources
+   - Custom transformers: Project-specific data processing
+
+3. **Load**: Generate outputs
+   - `CsvSummaryLoader`: Save processed data as CSV
+   - Plotting loaders: Generate visualizations
+   - Custom loaders: Project-specific outputs
 
 ## Important Notes
 
-⚠️ **Cost Warning**: Running experiments on AWS incurs costs. Instances are charged per hour:
-- r6i.8xlarge: ~$2.00/hour
-- r6i.16xlarge: ~$4.00/hour
-- r6i.32xlarge: ~$8.00/hour
+⚠️ **Cost Warning**: Running experiments on AWS incurs costs. EC2 instances are charged per hour.
+- Check [AWS EC2 pricing](https://aws.amazon.com/ec2/pricing/) for your region and instance types
+- Set up billing alerts in AWS Console
+- Always verify instances are terminated after experiments
 
-💡 **Infrastructure Cleanup**: The system automatically terminates instances after completion. To manually clean up:
-```bash
-source .envrc && make clean-cloud
-```
+💡 **Infrastructure Cleanup**:
+- **Automatic**: Instances terminate when suite completes successfully
+- **Manual**: Use `make clean` if suite fails or is interrupted
+- **Verify**: Always check AWS Console that resources are terminated
 
-🔄 **Retrying Failed Runs**: If an experiment fails, fix the code and re-run with `id=new` to create a fresh run.
+🔄 **Retrying Failed Runs**:
+- Fix code issues in your repository
+- Re-run with `id=new` to create a fresh run
+- Or continue with `id=last` if the suite partially completed
 
-📊 **Comparing Results**: Use `make etl-super` to aggregate results from multiple suite IDs for comparison.
+📊 **Comparing Results**:
+- Use Super-ETL to aggregate results from multiple suite runs
+- Update suite IDs in `doe-suite-config/super_etl/<config>.yml`
+- Run `make etl-super config=<config> out=<output-dir>`
+
+🐛 **Debugging**:
+- Use `make design suite=<suite-name>` to validate before running
+- Check `doe-suite-results/<suite>_<id>/` for stdout/stderr logs
+- Use `make run-keep` to keep instances alive for debugging (remember to clean up!)
 
 ## Example Workflow
 
 ```bash
-# 1. Launch experiment
+# 1. Navigate to doe-suite directory
 cd doe-suite
 source .envrc
-make run suite=apollo-small id=new
 
-# 2. Wait ~45 minutes, then check status
-make status suite=apollo-small id=last
+# 2. Validate suite design
+make design suite=<suite-name>
 
-# 3. Once complete, review results
-ls -lh ../doe-suite-results/apollo-small_<id>/exp_apollo_kzg_small/
+# 3. Launch experiment
+make run suite=<suite-name> id=new
 
-# 4. Process results with ETL
-make etl-super config=poly_plots out=../doe-suite-results-super pipelines="overview"
+# 4. Monitor progress periodically
+make status suite=<suite-name> id=last
 
-# 5. View aggregated results
-cat ../doe-suite-results-super/poly_plots/overview/overview.csv
+# 5. Once complete (X/X jobs), review raw results
+ls -lh ../doe-suite-results/<suite-name>_<id>/
+
+# 6. Process results with Super-ETL (if configured)
+make etl-super config=<config-name> out=../doe-suite-results-aggregated
+
+# 7. View aggregated results
+cat ../doe-suite-results-aggregated/<config>/overview/overview.csv
+
+# 8. Verify cleanup (should be automatic)
+# Check AWS Console or run: make clean
 ```
 
-## Working Directory
+## Additional Commands
 
-All doe-suite `make` commands must be run from the `doe-suite` directory:
 ```bash
-cd /Users/hidde/PhD/zkml/artemis/doe-suite
+# Get help and see all available commands
+make help
+
+# Get info about configured suites
+make info
+
+# Manually trigger ETL on existing results
+make etl suite=<suite-name> id=<suite-id>
+
+# Clean up all cloud resources
+make clean
+
+# Clean up only cloud resources (keep local results)
+make clean-cloud
 ```

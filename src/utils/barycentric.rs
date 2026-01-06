@@ -54,80 +54,6 @@ pub fn bary_ipa(
     // Convert poly_advice from Lagrange to coefficient form for commitment
     let poly_advice_coeff = domain.lagrange_to_coeff(poly_advice.clone());
 
-    // HYPOTHESIS 1: Try treating poly.values AS Lagrange values directly (not coefficients)
-    println!("\n=== HYPOTHESIS 1: poly.values are Lagrange values (row assignments) ===");
-    let mut poly_as_lagrange = poly.values.clone();
-    println!("Padding poly from {} to {} (domain size)", poly_as_lagrange.len(), domain.get_n());
-    while poly_as_lagrange.len() < domain.get_n() as usize {
-        poly_as_lagrange.push(Fp::ZERO);
-    }
-
-    let mut h1_matches = 0;
-    let mut h1_first_mismatch = None;
-    let mut match_indices = Vec::new();
-    let mut mismatch_indices = Vec::new();
-
-    for i in 0..poly_as_lagrange.len().min(100) {
-        if poly_as_lagrange[i] == poly_advice.values[i] {
-            h1_matches += 1;
-            match_indices.push(i);
-        } else {
-            mismatch_indices.push(i);
-            if h1_first_mismatch.is_none() {
-                h1_first_mismatch = Some(i);
-            }
-        }
-    }
-
-    // Continue counting for the rest without storing indices
-    for i in 100..poly_as_lagrange.len() {
-        if poly_as_lagrange[i] == poly_advice.values[i] {
-            h1_matches += 1;
-        }
-    }
-
-    println!("H1 Matches: {}/{} ({:.2}%)", h1_matches, poly_as_lagrange.len(),
-             100.0 * h1_matches as f64 / poly_as_lagrange.len() as f64);
-    println!("First 100 indices - Matches: {:?}", &match_indices[..match_indices.len().min(30)]);
-    println!("First 100 indices - Mismatches: {:?}", &mismatch_indices[..mismatch_indices.len().min(30)]);
-
-    if let Some(idx) = h1_first_mismatch {
-        println!("  First mismatch at [{}]: poly={:?}, advice={:?}",
-                 idx, poly_as_lagrange.get(idx), poly_advice.values.get(idx));
-    }
-
-    // HYPOTHESIS 2: Try converting poly (as coefficients) to Lagrange
-    println!("\n=== HYPOTHESIS 2: poly is coefficients, convert to Lagrange ===");
-    let mut poly_padded = poly.values.clone();
-    while poly_padded.len() < domain.get_n() as usize {
-        poly_padded.push(Fp::ZERO);
-    }
-    let poly_coeff_padded = Polynomial::from_coefficients_vec(poly_padded.clone());
-    let poly_lagrange = domain.coeff_to_lagrange(poly_coeff_padded.clone());
-
-    let mut h2_matches = 0;
-    let mut h2_first_mismatch = None;
-    for i in 0..poly_lagrange.values.len() {
-        if poly_lagrange.values[i] == poly_advice.values[i] {
-            h2_matches += 1;
-        } else if h2_first_mismatch.is_none() {
-            h2_first_mismatch = Some(i);
-        }
-    }
-    println!("H2 Matches: {}/{} ({:.2}%)", h2_matches, poly_lagrange.values.len(),
-             100.0 * h2_matches as f64 / poly_lagrange.values.len() as f64);
-    if let Some(idx) = h2_first_mismatch {
-        println!("  First mismatch at [{}]: poly_lag={:?}, advice={:?}",
-                 idx, poly_lagrange.values.get(idx), poly_advice.values.get(idx));
-    }
-
-    // Check blinding region (last few rows where halo2 adds blinding)
-    println!("\n=== Checking blinding region (last 10 rows) ===");
-    for i in (domain.get_n() as usize - 10)..(domain.get_n() as usize) {
-        println!("  [{}] poly_advice = {:?}, is_zero = {}",
-                 i, poly_advice.values.get(i), poly_advice.values[i] == Fp::ZERO);
-    }
-
     // CRITICAL: poly.values should be interpreted as LAGRANGE values (row assignments)
     // NOT as coefficients! They match the advice column values exactly.
 
@@ -223,6 +149,9 @@ pub fn bary_ipa(
     println!("  rho_advice_bary     = {:?}", rho_advice_bary);
     println!("  Match: {}", rho_poly_blinded == rho_advice_bary);
 
+    // rho_advice_coeff: advice column after interpolation at beta
+    // rho_poly_blinded: external poly barycentric
+
     // CRITICAL: poly is in COEFFICIENT form, but poly_advice is in LAGRANGE form
     // We need to interpret the same data consistently!
 
@@ -251,34 +180,6 @@ pub fn bary_ipa(
     println!("    {:?}", poly_from_lag_com);
     println!("  Match with poly_advice: {}", poly_from_lag_com == poly_advice_com);
 
-    // Commit to the blinding polynomial (rows beyond witness)
-    // Create a polynomial with zeros for witness and actual blinding values in blinding rows
-    println!("\nBarycentric IPA: Creating commitment to blinding polynomial");
-    let mut blinding_only_lag = vec![Fp::ZERO; dim];
-    for i in poly.values.len()..dim {
-        blinding_only_lag[i] = poly_advice.values[i];
-    }
-    let blinding_lag = domain.lagrange_from_vec(blinding_only_lag);
-    let blinding_coeff = domain.lagrange_to_coeff(blinding_lag);
-    let blinding_com = poly_params.commit(&blinding_coeff, Blind::default()).to_affine();
-
-    println!("  Blinding commitment: {:?}", blinding_com);
-
-    // The witness commitment (without blinding)
-    let poly_witness_com = poly_from_lag_com;
-    println!("  Witness commitment:  {:?}", poly_witness_com);
-
-    // Combined commitment (for internal verification)
-    use halo2_proofs::halo2curves::pasta::Eq;
-    let poly_com_combined: EqAffine = {
-        let c1: Eq = poly_witness_com.into();
-        let c2: Eq = blinding_com.into();
-        (c1 + c2).into()
-    };
-    println!("  Combined commitment: {:?}", poly_com_combined);
-    println!("  poly_advice_com:     {:?}", poly_advice_com);
-    println!("  Match: {}", poly_com_combined == poly_advice_com);
-
     // Use the blinded evaluation for both (they should match)
     let rho = rho_poly_blinded;
     let rho_advice = rho_advice_bary;
@@ -290,9 +191,6 @@ pub fn bary_ipa(
     // Create transcript for Fiat-Shamir
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
 
-    // Write the blinding commitment to the transcript so verifier can extract it
-    transcript_ipa_proof.write_point(blinding_com).unwrap();
-
     // Create the combined polynomial for the IPA proof (witness + blinding)
     let mut combined_lag = vec![Fp::ZERO; dim];
     for i in 0..poly.values.len() {
@@ -303,13 +201,22 @@ pub fn bary_ipa(
     }
     let combined_lag_poly = domain.lagrange_from_vec(combined_lag);
     let combined_coeff = domain.lagrange_to_coeff(combined_lag_poly);
+    println!("  rho combined = {:?}", combined_coeff.evaluate(beta));
+
+    // Verify that our combined commitment matches halo2's advice commitment
+    println!("\nBarycentric IPA: Verifying commitment matches halo2's advice commitment");
+    let poly_com_combined = poly_params.commit(&combined_coeff, Blind(blind)).to_affine();
+    println!("  Our combined commitment:  {:?}", poly_com_combined);
+    println!("  poly_advice_com (halo2):  {:?}", poly_advice_com);
+    println!("  Match: {}", poly_com_combined == poly_advice_com);
 
     // Create ProverQuery for the combined polynomial (witness + blinding) at beta
+    // Use the same blinding factor that halo2 used for the advice column
     let queries = vec![
         ProverQuery {
             point: beta,
             poly: &combined_coeff,
-            blind: Blind::default(),
+            blind: Blind(blind),
         },
     ];
 
@@ -335,7 +242,7 @@ pub fn bary_ipa(
 ///
 /// # Parameters:
 /// - `proof_bytes`: The proof from the prover
-/// - `poly_witness_com`: Commitment to the external witness polynomial (without blinding)
+/// - `poly_com`: Commitment to the polynomial (from halo2's advice_com, includes witness + blinding)
 /// - `beta`: The point at which polynomial was opened
 /// - `rho`: Evaluation of polynomial at beta (with blinding contribution)
 /// - `poly_params`: IPA parameters
@@ -344,7 +251,7 @@ pub fn bary_ipa(
 /// `true` if verification passes, `false` otherwise
 pub fn bary_verify_ipa(
     proof_bytes: &[u8],
-    poly_witness_com: EqAffine,
+    poly_com: EqAffine,
     beta: halo2_proofs::halo2curves::pasta::Fp,
     rho: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
@@ -358,23 +265,12 @@ pub fn bary_verify_ipa(
     // Initialize transcript for reading
     let mut transcript_ipa_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_bytes);
 
-    // Read the blinding commitment from the transcript
-    let blinding_com: EqAffine = transcript_ipa_verify.read_point().unwrap();
-    println!("  Extracted blinding commitment: {:?}", blinding_com);
+    // Use the halo2-generated commitment directly (includes witness + blinding)
+    println!("  Using commitment: {:?}", poly_com);
 
-    // Combine witness and blinding commitments homomorphically
-    use halo2_proofs::halo2curves::pasta::Eq;
-    let poly_com_combined: EqAffine = {
-        let c1: Eq = poly_witness_com.into();
-        let c2: Eq = blinding_com.into();
-        (c1 + c2).into()
-    };
-    println!("  Witness commitment:  {:?}", poly_witness_com);
-    println!("  Combined commitment: {:?}", poly_com_combined);
-
-    // Create verifier query for the combined polynomial
+    // Create verifier query for the polynomial
     let queries = std::iter::empty()
-        .chain(Some(VerifierQuery::new_commitment(&poly_com_combined, beta, rho)));
+        .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
 
     // Verify the proof
     let verifier_params = poly_params.verifier_params();
