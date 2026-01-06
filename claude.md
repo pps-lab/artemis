@@ -382,17 +382,29 @@ cargo build --release
 ```
 
 ### Remote Execution with DoE-Suite
+
+#### Quick Start
+
 Make sure the working directory is at `./doe-suite`, and that the variables in `.envrc` are loaded.
 
 ```bash
+# Navigate to doe-suite directory
+cd doe-suite
+
+# Load environment variables
+source .envrc
+
 # Run a specific suite
 make run suite=<suite-name> id=new
 
 # Example: Run all polynomial experiments on small models
 make run suite=poly-small id=new
 
+# Monitor progress
+make status suite=<suite-name> id=last
+
 # Process results
-make etl-super suite=<suite-name> out=<out_dir>
+make etl-super config=poly_plots out=../doe-suite-results-super pipelines="overview"
 
 # Clean up resources
 make clean

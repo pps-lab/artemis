@@ -21,7 +21,7 @@ $ETL$:
     experiments: "*"
     extractors:
       ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
-      IgnoreExtractor: {file_regex: ["stdout.log"]}
+      IgnoreExtractor: {file_regex: ["stdout.log", "runtime_info.yaml"]}
       CsvExtractor: {file_regex: ["output.csv"]}
     transformers: []
     loaders:
