@@ -26,7 +26,8 @@ use crate::{
   model::ModelCircuit,
   utils::{
     barycentric::{bary_ipa, bary_verify_ipa},
-    helpers::{get_public_values, zkfft_commit_ipa, zkfft_verify_ipa}
+    helpers::{get_public_values, zkfft_commit_ipa, zkfft_verify_ipa},
+    lazy_b_matrix::LazyBMatrix
   }
 };
 
@@ -341,33 +342,16 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     let n = a.len();
     let k = n;
 
-    // Precompute omega^i for all i
-    let mut omega_powers = Vec::with_capacity(k);
-    omega_powers.push(Fp::ONE);
-    for i in 1..k {
-        omega_powers.push(omega_powers[i - 1] * omega);
-    }
+    println!("Creating lazy b matrix");
 
-    println!("Precomputing");
-
-    // Build b[i][j] = omega^(i*j) using iterative multiplication
-    let mut b = Vec::with_capacity(k);
-    for i in 0..k {
-        let mut b_i = Vec::with_capacity(n);
-        let omega_i = omega_powers[i];
-        let mut current = Fp::ONE;
-        for _j in 0..n {
-            b_i.push(current);
-            current *= omega_i;
-        }
-        b.push(b_i);
-    }
+    // Use lazy representation to save memory (2MB vs 32GB for n=32K)
+    let b_lazy = LazyBMatrix::new(omega, n);
 
     // Get generators (same as prover)
     let generators_g: Vec<EqAffine> = poly_params.get_g()
         .iter().take(n).copied().collect();
     let generator_g = generators_g.clone();
-    let generator_h = poly_params.get_g()[n];
+    let generator_h = poly_params.get_w();
 
     // Generate alpha (blinding factor)
     let alpha = Fp::random(OsRng);
@@ -375,13 +359,10 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     // Compute initial commitment P = sum(a[i]*g[i]) + sum(inner_products[i]*g'[i]) + alpha*h
     println!("Computing initial commitment P...");
 
-    // Compute inner products: inner_products[i] = sum(a[j] * b[i][j])
+    // Compute inner products using lazy representation: inner_products[i] = sum(a[j] * b[i][j])
     let mut inner_products = Vec::with_capacity(k);
     for i in 0..k {
-        let mut ip = Fp::ZERO;
-        for j in 0..n {
-            ip += a[j] * b[i][j];
-        }
+        let ip = b_lazy.inner_product_with(&a, i);
         inner_products.push(ip);
     }
 
@@ -424,7 +405,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
           let verified = zkfft_verify_ipa(
               &zkfft_proof_bytes,
-              b.clone(),
+              b_lazy.clone(),
               generators_g.clone(),
               generator_g.clone(),
               generator_h,

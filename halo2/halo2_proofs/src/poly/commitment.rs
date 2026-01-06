@@ -91,6 +91,9 @@ pub trait ParamsProver<'params, C: CurveAffine>: Params<'params, C> {
     /// Getter for g generators
     fn get_g(&self) -> &[C];
 
+    /// Getter for w (blinding generator)
+    fn get_w(&self) -> C;
+
     /// Returns verification parameters.
     fn verifier_params(&'params self) -> &'params Self::ParamsVerifier;
 }

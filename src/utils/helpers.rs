@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::{marker::PhantomData, time::Instant};
 use std::fmt::Debug;
 use commitment::Prover;
+use crate::utils::lazy_b_matrix::LazyBMatrix;
 use ff::{Field, WithSmallOrderMulGroup, FromUniformBytes};
 use halo2_proofs::helpers::SerdePrimeField;
 use halo2_proofs::plonk::Error;
@@ -708,29 +709,12 @@ pub fn zkfft_commit_ipa(
 
     println!("zkFFT: n={}, k={}", n, k);
 
-    // Step 3: Build FFT matrices (b vectors) - OPTIMIZED
+    // Step 3: Build FFT matrices (b vectors) - LAZY REPRESENTATION
     let omega = domain.get_omega();
 
-    // Precompute omega^i for all i (only n exponentiations instead of n²)
-    let mut omega_powers = Vec::with_capacity(k);
-    omega_powers.push(Fp::ONE);
-    for i in 1..k {
-        omega_powers.push(omega_powers[i - 1] * omega);
-    }
-
-    // Build b[i][j] = omega^(i*j) using iterative multiplication
-    let mut b: Vec<Vec<Fp>> = Vec::with_capacity(k);
-    for i in 0..k {
-        let mut b_i = Vec::with_capacity(n);
-        let omega_i = omega_powers[i]; // omega^i
-        let mut current = Fp::ONE;     // Will be omega^(i*j) for current j
-
-        for _j in 0..n {
-            b_i.push(current);
-            current *= omega_i; // omega^(i*j) -> omega^(i*(j+1))
-        }
-        b.push(b_i);
-    }
+    // Use lazy representation to avoid materializing 32GB matrix
+    // Memory: ~2MB (2*n*32 bytes) vs ~32GB (n²*32 bytes) for n=32,768
+    let mut b_lazy = LazyBMatrix::new(omega, n);
 
     // Step 4: Extract generators from IPA params
     let generators_g: Vec<EqAffine> = poly_params.get_g()
@@ -742,8 +726,8 @@ pub fn zkfft_commit_ipa(
     // Use the SAME generators as generators_g (since SRS might be too small)
     let generator_g: Vec<EqAffine> = generators_g.clone();
 
-    // For generator_h (blinding generator)
-    let generator_h: EqAffine = poly_params.get_g()[n];
+    // For generator_h (blinding generator) - use w instead of g[n]
+    let generator_h: EqAffine = poly_params.get_w();
 
     // Use alpha parameter (will be updated during folding)
     let mut alpha = alpha;
@@ -755,25 +739,27 @@ pub fn zkfft_commit_ipa(
     while g_bold.len() > 1 {
         // Split vectors in half
         let (a1, a2) = split_vector_in_half_zkfft(a.clone());
-        let (b1, b2): (Vec<Vec<_>>, Vec<Vec<_>>) =
-            b.clone().into_iter().map(split_vector_in_half_zkfft).unzip();
+        let half_size = a1.len(); // Size of each half
         let (g_bold1, g_bold2) = split_vector_in_half_zkfft(g_bold.clone());
 
         // Random blinding factors for this round
         let d_l = Fp::random(OsRng);
         let d_r = Fp::random(OsRng);
 
-        // Compute cross inner products
+        // Compute cross inner products using lazy representation
         let mut c_l: Vec<Fp> = vec![];
         let mut c_r: Vec<Fp> = vec![];
 
-        for b_i in b2.iter() {
-            let tmp = inner_product_zkfft(&a1, b_i);
-            c_l.push(tmp);
+        // c_l[i] = <a1, b2[i]> where b2[i] is second half of row i (offset = half_size)
+        for i in 0..k {
+            let ip = b_lazy.inner_product_with_offset(&a1, i, half_size);
+            c_l.push(ip);
         }
-        for b_i in b1.iter() {
-            let tmp = inner_product_zkfft(&a2, b_i);
-            c_r.push(tmp);
+
+        // c_r[i] = <a2, b1[i]> where b1[i] is first half of row i (no offset)
+        for i in 0..k {
+            let ip = b_lazy.inner_product_with(&a2, i);
+            c_r.push(ip);
         }
 
         // Create L commitment
@@ -809,13 +795,8 @@ pub fn zkfft_commit_ipa(
             .map(|(&x1, &x2)| x1 * e + x2 * inv_e)
             .collect();
 
-        b = b1.iter().zip(b2.iter())
-            .map(|(b1_i, b2_i)| {
-                b1_i.iter().zip(b2_i.iter())
-                    .map(|(&x1, &x2)| x1 * inv_e + x2 * e)
-                    .collect()
-            })
-            .collect();
+        // Fold lazy b matrix (O(n) update instead of O(n²) materialization!)
+        b_lazy.fold(inv_e, e);
 
         // Fold generators
         g_bold = g_bold1.iter().zip(g_bold2.iter())
@@ -834,8 +815,9 @@ pub fn zkfft_commit_ipa(
     let delta = Fp::random(OsRng);
 
     let mut g_terms = vec![];
-    for (g_i, b_i) in generator_g.iter().zip(b.iter()) {
-        g_terms.push((r * b_i[0], *g_i));
+    for (i, g_i) in generator_g.iter().enumerate() {
+        // After all folding, b[i][0] = row_start[i]
+        g_terms.push((r * b_lazy.row_start[i], *g_i));
     }
 
     let mut A_terms = vec![(r, g_bold[0]), (delta, generator_h)];
@@ -890,7 +872,7 @@ pub fn zkfft_commit_ipa(
 /// `true` if verification passes, `false` otherwise
 pub fn zkfft_verify_ipa(
     proof_bytes: &[u8],
-    b: Vec<Vec<halo2_proofs::halo2curves::pasta::Fp>>,
+    mut b_lazy: LazyBMatrix,
     generators_g: Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
     generator_g: Vec<halo2_proofs::halo2curves::pasta::EqAffine>,
     generator_h: halo2_proofs::halo2curves::pasta::EqAffine,
@@ -904,7 +886,6 @@ pub fn zkfft_verify_ipa(
     let mut transcript = Blake2bRead::<&[u8], EqAffine, Challenge255<EqAffine>>::init(proof_bytes);
 
     let mut g_bold = generators_g.clone();
-    let mut b_folded = b.clone();
     let mut P_terms = vec![(Fp::ONE, commitment_P)];
 
     // Recursive folding - read L/R and derive challenges
@@ -913,9 +894,7 @@ pub fn zkfft_verify_ipa(
         let L = transcript.read_point().unwrap();
         let R = transcript.read_point().unwrap();
 
-        // Split vectors
-        let (b1, b2): (Vec<Vec<_>>, Vec<Vec<_>>) =
-            b_folded.into_iter().map(split_vector_in_half_zkfft).unzip();
+        // Split generators
         let (g_bold1, g_bold2) = split_vector_in_half_zkfft(g_bold.clone());
 
         // Derive challenge from transcript (same as prover via Fiat-Shamir)
@@ -924,14 +903,8 @@ pub fn zkfft_verify_ipa(
         let e_square = e.square();
         let inv_e_square = inv_e.square();
 
-        // Fold b vectors
-        b_folded = b1.iter().zip(b2.iter())
-            .map(|(b1_i, b2_i)| {
-                b1_i.iter().zip(b2_i.iter())
-                    .map(|(&x1, &x2)| x1 * inv_e + x2 * e)
-                    .collect()
-            })
-            .collect();
+        // Fold lazy b matrix (O(n) instead of O(n²)!)
+        b_lazy.fold(inv_e, e);
 
         // Fold generators
         g_bold = g_bold1.iter().zip(g_bold2.iter())
@@ -972,9 +945,9 @@ pub fn zkfft_verify_ipa(
     // Add -A term
     multiexp_var.push((-Fp::ONE, A));
 
-    // Add r*b[i][0]*g'[i] terms
+    // Add r*b[i][0]*g'[i] terms (after all folding, b[i][0] = row_start[i])
     for (i, g_i) in generator_g.iter().enumerate() {
-        multiexp_var.push((r_answer * b_folded[i][0], *g_i));
+        multiexp_var.push((r_answer * b_lazy.row_start[i], *g_i));
     }
 
     // Add delta*h term

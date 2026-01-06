@@ -264,6 +264,11 @@ impl<'params, C: CurveAffine> ParamsProver<'params, C> for ParamsIPA<C> {
     fn get_g(&self) -> &[C] {
         &self.g
     }
+
+    /// Returns the blinding generator w
+    fn get_w(&self) -> C {
+        self.w
+    }
 }
 
 #[cfg(test)]
