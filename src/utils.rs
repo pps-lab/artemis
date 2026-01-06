@@ -1,4 +1,5 @@
 pub mod barycentric;
+pub mod bulletproof;
 pub mod helpers;
 pub mod lazy_b_matrix;
 pub mod loader;

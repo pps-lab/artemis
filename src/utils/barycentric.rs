@@ -17,9 +17,11 @@ use halo2_proofs::transcript::{
     TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
 };
 use ff::Field;
-use group::Curve;
+use group::{Curve, cofactor::CofactorCurveAffine};
 use num_traits::pow;
 use rand_core::OsRng;
+
+use crate::utils::bulletproof::{BulletproofParams, prove as bulletproof_prove, verify as bulletproof_verify};
 
 /// Barycentric interpolation-based commitment for IPA
 ///
@@ -33,7 +35,8 @@ use rand_core::OsRng;
 /// - `alpha`: Blinding factor for the initial commitment
 ///
 /// # Returns:
-/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size)
+/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size, poly_com_blind, rho)
+/// where proof_bytes contains both IPA and Bulletproof proofs
 pub fn bary_ipa(
     poly: Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>,
     poly_advice: Polynomial<halo2_proofs::halo2curves::pasta::Fp, LagrangeCoeff>,
@@ -43,7 +46,7 @@ pub fn bary_ipa(
     domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
     alpha: halo2_proofs::halo2curves::pasta::Fp,
     blind: halo2_proofs::halo2curves::pasta::Fp,  // Blinding factor from advice_blind
-) -> (Vec<u8>, Duration, Duration, usize, EqAffine) {
+) -> (Vec<u8>, Duration, Duration, usize, EqAffine, halo2_proofs::halo2curves::pasta::Fp) {
     use halo2_proofs::halo2curves::pasta::Fp;
 
     let bary_timer = Instant::now();
@@ -164,6 +167,37 @@ pub fn bary_ipa(
     println!("  rho_advice_bary     = {:?}", rho_advice_bary);
     println!("  Match: {}", rho_poly_blinded == rho_advice_bary);
 
+    // Create Bulletproof inner product argument
+    // Prove: <combined_lag, b_coeffs> = rho_poly_blinded
+    println!("\n=== Creating Bulletproof Inner Product Argument ===");
+
+    // Create BulletproofParams from IPA parameters
+    let bulletproof_params = BulletproofParams::new(
+        poly_params.get_g().to_vec(),
+        poly_params.get_w(),
+        poly_params.get_u(),
+    );
+
+    // Generate random blinding factor for the Bulletproof commitment
+    let bulletproof_alpha = Fp::random(OsRng);
+
+    // Prove the inner product
+    println!("Bulletproof: Proving <combined_lag, b_coeffs> = {:.6?}", rho_poly_blinded);
+    println!("  Witness vector size: {}", combined_lag.len());
+    println!("  Public vector size: {}", b_coeffs.len());
+
+    let (bulletproof_proof, bulletproof_time, bulletproof_size) = bulletproof_prove(
+        &bulletproof_params,
+        &combined_lag,
+        &b_coeffs,
+        bulletproof_alpha,
+    );
+
+    println!("Bulletproof: Proof generated successfully");
+    println!("Bulletproof: Proof time: {:?}", bulletproof_time);
+    println!("Bulletproof: Proof size: {} bytes", bulletproof_size);
+    println!("Bulletproof: Verifier will compute combined commitment homomorphically as poly_com + poly_com_blind");
+
     // rho_advice_coeff: advice column after interpolation at beta
     // rho_poly_blinded: external poly barycentric
 
@@ -257,24 +291,39 @@ pub fn bary_ipa(
     let prover_time = bary_timer.elapsed();
 
     println!("Barycentric IPA: Prover time: {:?}", prover_time);
-    println!("Barycentric IPA: Proof size: {} bytes", proof_size);
+    println!("Barycentric IPA: IPA Proof size: {} bytes", proof_size);
+    println!("Barycentric IPA: Total proof size (IPA + Bulletproof): {} bytes", proof_size + bulletproof_size);
 
-    (proof_bytes, prover_time, Duration::from_micros(0), proof_size, poly_com_blind)
+    // Combine both proofs
+    let mut combined_proof = Vec::new();
+    // Write IPA proof length (4 bytes)
+    combined_proof.extend_from_slice(&(proof_bytes.len() as u32).to_le_bytes());
+    // Write IPA proof
+    combined_proof.extend_from_slice(&proof_bytes);
+    // Write Bulletproof proof
+    combined_proof.extend_from_slice(&bulletproof_proof);
+
+    let total_proof_size = combined_proof.len();
+
+    (combined_proof, prover_time, Duration::from_micros(0), total_proof_size, poly_com_blind, rho_poly_blinded)
 }
 
-/// Barycentric Verifier for IPA
+/// Barycentric Verifier for IPA with Bulletproof Inner Product Argument
 ///
-/// Verifies the opening proof for the external polynomial at beta.
+/// Verifies both the IPA opening proof and the Bulletproof inner product proof.
 ///
 /// # Parameters:
-/// - `proof_bytes`: The proof from the prover
-/// - `poly_com`: Commitment to the polynomial (from halo2's advice_com, includes witness + blinding)
+/// - `proof_bytes`: Combined proof from the prover (IPA + Bulletproof)
+/// - `poly_com`: Commitment to the polynomial (external witness)
+/// - `poly_com_blind`: Commitment to the blinding part
+/// - `poly_advice_com`: Commitment to the advice column (from halo2)
 /// - `beta`: The point at which polynomial was opened
 /// - `rho`: Evaluation of polynomial at beta (with blinding contribution)
 /// - `poly_params`: IPA parameters
+/// - `domain`: Evaluation domain (for computing barycentric coefficients)
 ///
 /// # Returns:
-/// `true` if verification passes, `false` otherwise
+/// `true` if both verifications pass, `false` otherwise
 pub fn bary_verify_ipa(
     proof_bytes: &[u8],
     poly_com: EqAffine,
@@ -283,6 +332,7 @@ pub fn bary_verify_ipa(
     beta: halo2_proofs::halo2curves::pasta::Fp,
     rho: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
+    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
 ) -> bool {
     use halo2_proofs::halo2curves::pasta::Fp;
 
@@ -290,25 +340,121 @@ pub fn bary_verify_ipa(
 
     let verify_timer = Instant::now();
 
-    // Initialize transcript for reading
-    let mut transcript_ipa_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_bytes);
+    // Split the combined proof
+    if proof_bytes.len() < 4 {
+        println!("Error: Proof too short");
+        return false;
+    }
+
+    let ipa_proof_len = u32::from_le_bytes([
+        proof_bytes[0],
+        proof_bytes[1],
+        proof_bytes[2],
+        proof_bytes[3],
+    ]) as usize;
+
+    if proof_bytes.len() < 4 + ipa_proof_len {
+        println!("Error: Invalid proof structure");
+        return false;
+    }
+
+    let ipa_proof = &proof_bytes[4..4 + ipa_proof_len];
+    let bulletproof_proof = &proof_bytes[4 + ipa_proof_len..];
+
+    println!("  IPA proof size: {} bytes", ipa_proof.len());
+    println!("  Bulletproof proof size: {} bytes", bulletproof_proof.len());
+
+    // Verify IPA proof
+    println!("\n=== Verifying IPA Opening Proof ===");
+    let mut transcript_ipa_verify = Blake2bRead::<_, _, Challenge255<_>>::init(ipa_proof);
 
     // Use the halo2-generated commitment directly (includes witness + blinding)
     println!("  Using commitment: {:?}", poly_com);
 
     // Create verifier query for the polynomial
     let queries = std::iter::empty()
-        .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
+        .chain(Some(VerifierQuery::new_commitment(&poly_advice_com, beta, rho)));
 
-    // Verify the proof
+    // Verify the IPA proof
     let verifier_params = poly_params.verifier_params();
     let verifier = VerifierIPA::new(&verifier_params);
     let msm = MSMIPA::new(&poly_params);
 
-    let result = verifier.verify_proof(&mut transcript_ipa_verify, queries, msm).is_ok();
+    let ipa_result = verifier.verify_proof(&mut transcript_ipa_verify, queries, msm).is_ok();
+    println!("  IPA verification: {}", if ipa_result { "PASS" } else { "FAIL" });
+
+    // Verify Bulletproof inner product proof
+    println!("\n=== Verifying Bulletproof Inner Product Argument ===");
+
+    // Reconstruct barycentric coefficients (same as prover)
+    let dim = domain.get_n() as usize;
+    let omega = domain.get_omega();
+
+    // Precompute omega powers
+    let mut omega_powers = Vec::with_capacity(dim);
+    omega_powers.push(Fp::ONE);
+    for i in 1..dim {
+        omega_powers.push(domain.rotate_omega(omega_powers[i - 1], Rotation(1)));
+    }
+
+    // Compute scaling factor: (beta^d - 1) / d
+    let beta_d = beta.pow([dim as u64]);
+    let numerator = beta_d - Fp::ONE;
+    let d_inv = Fp::from(dim as u64).invert().unwrap();
+    let scaling_factor = numerator * d_inv;
+
+    // Compute barycentric coefficients
+    let mut b_coeffs = Vec::with_capacity(dim);
+    for i in 0..dim {
+        let omega_i = omega_powers[i];
+        let denominator = beta - omega_i;
+
+        if denominator == Fp::ZERO {
+            println!("Warning: beta equals a root of unity at index {}", i);
+            b_coeffs.push(Fp::ZERO);
+        } else {
+            let b_i = scaling_factor * omega_i * denominator.invert().unwrap();
+            b_coeffs.push(b_i);
+        }
+    }
+
+    // Create BulletproofParams from IPA parameters
+    let bulletproof_params = BulletproofParams::new(
+        poly_params.get_g().to_vec(),
+        poly_params.get_w(),
+        poly_params.get_u(),
+    );
+
+    // Compute combined commitment homomorphically: poly_com + poly_com_blind
+    // This exploits the homomorphic property of Pedersen commitments:
+    // commit(poly) + commit(blind) = commit(poly + blind)
+    let combined_lag_commitment = (poly_com.to_curve() + poly_com_blind.to_curve()).to_affine();
+
+    println!("  Computing combined commitment homomorphically:");
+    println!("    poly_com = {:?}", poly_com);
+    println!("    poly_com_blind = {:?}", poly_com_blind);
+    println!("    combined = {:?}", combined_lag_commitment);
+
+    // Verify the Bulletproof proof
+    println!("  Verifying <combined_lag, b_coeffs> = {:.6?}", rho);
+
+    let bulletproof_ok = bulletproof_verify(
+        &bulletproof_params,
+        combined_lag_commitment,
+        &b_coeffs,
+        rho,
+        bulletproof_proof,
+    );
+
+    if bulletproof_ok {
+        println!("  Bulletproof verification: PASS");
+    } else {
+        println!("  Bulletproof verification: FAIL");
+    }
 
     let verify_time = verify_timer.elapsed();
-    println!("Barycentric IPA: Verifier time: {:?}", verify_time);
+    println!("\nBarycentric IPA: Total verifier time: {:?}", verify_time);
+    println!("Barycentric IPA: Overall verification: {}", if ipa_result && bulletproof_ok { "PASS" } else { "FAIL" });
 
-    result
+    ipa_result && bulletproof_ok
 }

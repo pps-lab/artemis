@@ -269,6 +269,11 @@ impl<'params, C: CurveAffine> ParamsProver<'params, C> for ParamsIPA<C> {
     fn get_w(&self) -> C {
         self.w
     }
+
+    /// Returns the auxiliary generator u
+    fn get_u(&self) -> C {
+        self.u
+    }
 }
 
 #[cfg(test)]

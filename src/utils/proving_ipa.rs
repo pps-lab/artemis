@@ -533,13 +533,15 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     let blind_value = advice_blind[0];  // For single column case, use first blind
     println!("DEBUG: Using blind value: {:?}", blind_value);
 
-    let (bary_proof_bytes, bary_ptime, _bary_vtime, bary_size, poly_com_blind) =
+    let (bary_proof_bytes, bary_ptime, _bary_vtime, bary_size, poly_com_blind, rho_bary) =
         bary_ipa(poly.clone(), poly_advice_lagrange, poly_com.clone(), beta, &poly_params, domain.clone(), alpha, blind_value);
 
     proving_time += bary_ptime;
     proof_size += bary_size;
 
-    println!("Barycentric: Proof size: {} bytes", bary_size);
+    println!("Barycentric: Proof size: {} bytes (includes IPA + Bulletproof)", bary_size);
+    println!("Barycentric: Evaluation from prover: {:?}", rho_bary);
+    println!("Barycentric: Verifier will compute combined commitment as poly_com + poly_com_blind");
 
     // For verification, we need:
     // 1. Commitment to the witness polynomial (from halo2's advice_com)
@@ -622,18 +624,19 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
           beta,
           rho,
           &poly_params,
+          domain.clone(),
       );
 
       let vfy_time = verify_start.elapsed();
       verifying_time[i] += vfy_time;
-      println!("Barycentric IPA vfy time: {:?}", vfy_time);
+      println!("Barycentric IPA + Bulletproof vfy time: {:?}", vfy_time);
 
       if !verified {
           println!("Barycentric: Verification FAILED ✗");
           panic!("Barycentric verification failed!");
       }
     }
-    println!("Barycentric: Verification PASSED ✓");
+    println!("Barycentric: All verifications PASSED ✓");
   }
   println!("Proving time: {:?}", proving_time);
   println!("Verifying time: {:?}", verifying_time);
