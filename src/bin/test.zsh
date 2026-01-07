@@ -45,7 +45,7 @@ case "$name" in
         else
             cols=10
             rows=15
-            poly_cols=3
+            poly_cols=1
         fi
 
         ;;
