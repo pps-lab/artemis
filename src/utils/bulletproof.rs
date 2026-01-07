@@ -183,9 +183,13 @@ fn fold_points<C: CurveAffine>(
     let n = left.len();
     let mut result = Vec::with_capacity(n);
 
+    // Optimization: Reuse scalar and point arrays instead of allocating every iteration
+    let mut scalars = [challenge_inv, challenge];
+    let mut points = [left[0], right[0]];
+
     for i in 0..n {
-        let scalars = vec![challenge_inv, challenge];
-        let points = vec![left[i], right[i]];
+        points[0] = left[i];
+        points[1] = right[i];
         let folded = best_multiexp(&scalars, &points).to_affine();
         result.push(folded);
     }
@@ -240,6 +244,13 @@ where
 
     println!("Bulletproof Prover: n={}, rounds={}", n, num_rounds);
 
+    // Preallocate buffers for L/R commitments (reused across all rounds)
+    let max_half_size = n / 2;
+    let mut l_scalars = Vec::with_capacity(max_half_size + 2);
+    let mut l_points = Vec::with_capacity(max_half_size + 2);
+    let mut r_scalars = Vec::with_capacity(max_half_size + 2);
+    let mut r_points = Vec::with_capacity(max_half_size + 2);
+
     // Recursive folding
     for round in 0..num_rounds {
         let half = a_vec.len() / 2;
@@ -260,22 +271,28 @@ where
         let alpha_r = C::Scalar::random(OsRng);
 
         // Compute L commitment: <a_L, G_R> + c_L * U + alpha_L * H
-        let mut l_scalars = a_l.to_vec();
+        // Reuse preallocated buffers
+        l_scalars.clear();
+        l_scalars.extend_from_slice(a_l);
         l_scalars.push(c_l);
         l_scalars.push(alpha_l);
 
-        let mut l_points = g_r.to_vec();
+        l_points.clear();
+        l_points.extend_from_slice(g_r);
         l_points.push(params.u);
         l_points.push(params.h);
 
         let l_commitment = best_multiexp(&l_scalars, &l_points).to_affine();
 
         // Compute R commitment: <a_R, G_L> + c_R * U + alpha_R * H
-        let mut r_scalars = a_r.to_vec();
+        // Reuse preallocated buffers
+        r_scalars.clear();
+        r_scalars.extend_from_slice(a_r);
         r_scalars.push(c_r);
         r_scalars.push(alpha_r);
 
-        let mut r_points = g_l.to_vec();
+        r_points.clear();
+        r_points.extend_from_slice(g_l);
         r_points.push(params.u);
         r_points.push(params.h);
 
@@ -365,6 +382,10 @@ where
 
     println!("Bulletproof Verifier: n={}, rounds={}", n, num_rounds);
 
+    // Preallocate buffers for commitment folding (reused across all rounds)
+    let mut commitment_fold_scalars = vec![C::Scalar::ZERO; 3];
+    let mut commitment_fold_points = vec![commitment; 3];
+
     // Process each round
     for round in 0..num_rounds {
         let half = b_vec.len() / 2;
@@ -380,12 +401,16 @@ where
         let challenge_inv = challenge.invert().unwrap();
 
         // Fold commitment: C' = L * e^2 + C + R * e^{-2}
-        // Use multiexp for efficient batch computation
+        // Use preallocated buffers for efficient batch computation
         let challenge_sq = challenge.square();
         let challenge_inv_sq = challenge_inv.square();
-        let scalars = vec![challenge_sq, C::Scalar::ONE, challenge_inv_sq];
-        let points = vec![l_commitment, commitment_acc, r_commitment];
-        commitment_acc = best_multiexp(&scalars, &points).to_affine();
+        commitment_fold_scalars[0] = challenge_sq;
+        commitment_fold_scalars[1] = C::Scalar::ONE;
+        commitment_fold_scalars[2] = challenge_inv_sq;
+        commitment_fold_points[0] = l_commitment;
+        commitment_fold_points[1] = commitment_acc;
+        commitment_fold_points[2] = r_commitment;
+        commitment_acc = best_multiexp(&commitment_fold_scalars, &commitment_fold_points).to_affine();
 
         // Fold b vector
         let (b_l, b_r) = b_vec.split_at(half);
