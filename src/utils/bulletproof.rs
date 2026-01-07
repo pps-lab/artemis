@@ -179,18 +179,17 @@ fn fold_points<C: CurveAffine>(
 ) -> Vec<C> {
     assert_eq!(left.len(), right.len(), "Vectors must have same length");
 
-    // For each point, compute G'[i] = G_L[i] * e^(-1) + G_R[i] * e using multiexp
+    // For each point, compute G'[i] = G_L[i] * e^(-1) + G_R[i] * e
+    // Note: We need n separate results, so we must do n separate MSMs
+    // The only optimization is to avoid allocating scalars/points arrays per iteration
+
     let n = left.len();
     let mut result = Vec::with_capacity(n);
-
-    // Optimization: Reuse scalar and point arrays instead of allocating every iteration
-    let mut scalars = [challenge_inv, challenge];
-    let mut points = [left[0], right[0]];
+    let scalars_arr = [challenge_inv, challenge];
 
     for i in 0..n {
-        points[0] = left[i];
-        points[1] = right[i];
-        let folded = best_multiexp(&scalars, &points).to_affine();
+        let points_arr = [left[i], right[i]];
+        let folded = best_multiexp(&scalars_arr, &points_arr).to_affine();
         result.push(folded);
     }
 
@@ -293,6 +292,10 @@ where
     let mut r_scalars = Vec::with_capacity(max_half_size + 2);
     let mut r_points = Vec::with_capacity(max_half_size + 2);
 
+    // Swap buffers for in-place scalar folding (avoid allocations in fold_scalars)
+    let mut a_swap = Vec::with_capacity(max_half_size);
+    let mut b_swap = Vec::with_capacity(max_half_size);
+
     // Recursive folding
     for round in 0..num_rounds {
         let half = a_vec.len() / 2;
@@ -348,9 +351,22 @@ where
         let challenge: C::Scalar = *transcript.squeeze_challenge_scalar::<()>();
         let challenge_inv = challenge.invert().unwrap();
 
-        // Fold vectors
-        a_vec = fold_scalars(a_l, a_r, challenge, challenge_inv);
-        b_vec = fold_scalars(b_l, b_r, challenge_inv, challenge);
+        // Fold vectors using swap buffers (in-place, no allocations)
+        // a_vec = fold_scalars(a_l, a_r, challenge, challenge_inv)
+        a_swap.clear();
+        for i in 0..half {
+            a_swap.push(a_l[i] * challenge + a_r[i] * challenge_inv);
+        }
+        std::mem::swap(&mut a_vec, &mut a_swap);
+
+        // b_vec = fold_scalars(b_l, b_r, challenge_inv, challenge)
+        b_swap.clear();
+        for i in 0..half {
+            b_swap.push(b_l[i] * challenge_inv + b_r[i] * challenge);
+        }
+        std::mem::swap(&mut b_vec, &mut b_swap);
+
+        // g_vec folding still needs fold_points (we need folded generators for next round)
         g_vec = fold_points(g_l, g_r, challenge, challenge_inv);
 
         // Update accumulated blinding factor: alpha += alpha_L * e^2 + alpha_R * e^{-2}
