@@ -164,6 +164,8 @@ fn fold_scalars<F: Field>(left: &[F], right: &[F], challenge: F, challenge_inv: 
 /// Computes: result[i] = left[i] * challenge_inv + right[i] * challenge
 /// (Note: inverted compared to scalars for the inner product to be preserved)
 ///
+/// Uses best_multiexp for efficient batch computation (2-element multiexp per fold)
+///
 /// # Arguments
 /// * `left` - Left half of generator vector
 /// * `right` - Right half of generator vector
@@ -177,10 +179,18 @@ fn fold_points<C: CurveAffine>(
 ) -> Vec<C> {
     assert_eq!(left.len(), right.len(), "Vectors must have same length");
 
-    left.iter()
-        .zip(right.iter())
-        .map(|(l, r)| (l.to_curve() * challenge_inv + r.to_curve() * challenge).to_affine())
-        .collect()
+    // For each point, compute G'[i] = G_L[i] * e^(-1) + G_R[i] * e using multiexp
+    let n = left.len();
+    let mut result = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let scalars = vec![challenge_inv, challenge];
+        let points = vec![left[i], right[i]];
+        let folded = best_multiexp(&scalars, &points).to_affine();
+        result.push(folded);
+    }
+
+    result
 }
 
 /// Bulletproof inner product argument - Prover
@@ -343,7 +353,10 @@ where
     // Initialize verification state
     // CRITICAL: Start with commitment adjusted by claimed inner product
     // P = C + c * U (where c is the claimed inner product <a, b>)
-    let mut commitment_acc = (commitment.to_curve() + params.u.to_curve() * c).to_affine();
+    // Use multiexp for efficient computation
+    let scalars = vec![C::Scalar::ONE, c];
+    let points = vec![commitment, params.u];
+    let mut commitment_acc = best_multiexp(&scalars, &points).to_affine();
     let mut b_vec = b.to_vec();
     let mut g_vec = params.g_vec.clone();
 
@@ -367,11 +380,12 @@ where
         let challenge_inv = challenge.invert().unwrap();
 
         // Fold commitment: C' = L * e^2 + C + R * e^{-2}
-        commitment_acc = (
-            l_commitment.to_curve() * challenge.square() +
-            commitment_acc.to_curve() +
-            r_commitment.to_curve() * challenge_inv.square()
-        ).to_affine();
+        // Use multiexp for efficient batch computation
+        let challenge_sq = challenge.square();
+        let challenge_inv_sq = challenge_inv.square();
+        let scalars = vec![challenge_sq, C::Scalar::ONE, challenge_inv_sq];
+        let points = vec![l_commitment, commitment_acc, r_commitment];
+        commitment_acc = best_multiexp(&scalars, &points).to_affine();
 
         // Fold b vector
         let (b_l, b_r) = b_vec.split_at(half);

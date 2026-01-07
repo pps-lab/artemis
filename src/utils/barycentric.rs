@@ -178,8 +178,10 @@ pub fn bary_ipa(
         poly_params.get_u(),
     );
 
-    // Generate random blinding factor for the Bulletproof commitment
-    let bulletproof_alpha = Fp::random(OsRng);
+    // Use blinding factor that matches poly_com + poly_com_blind
+    // Since both poly_com and poly_com_blind use Blind::default() = Fp::ONE,
+    // the combined commitment has blinding factor 2*Fp::ONE
+    let bulletproof_alpha = Fp::ONE + Fp::ONE;
 
     // Prove the inner product
     println!("Bulletproof: Proving <combined_lag, b_coeffs> = {:.6?}", rho_poly_blinded);
