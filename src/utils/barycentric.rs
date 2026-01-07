@@ -23,21 +23,11 @@ use rand_core::OsRng;
 
 use crate::utils::bulletproof::{BulletproofParams, prove as bulletproof_prove, verify as bulletproof_verify};
 
-/// Barycentric interpolation-based commitment for IPA
+/// Private helper: Barycentric interpolation for a single column
 ///
-/// This function will implement a barycentric interpolation approach
-/// to demonstrate correspondence between polynomial commitments and evaluations.
-///
-/// # Parameters:
-/// - `poly`: The witness polynomial (coefficients become witness vector a)
-/// - `poly_params`: IPA parameters (provides generators)
-/// - `domain`: Evaluation domain (provides omega for FFT matrices)
-/// - `alpha`: Blinding factor for the initial commitment
-///
-/// # Returns:
-/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size, poly_com_blind, rho)
-/// where proof_bytes contains both IPA and Bulletproof proofs
-pub fn bary_ipa(
+/// This function handles the core barycentric proof logic for one polynomial chunk.
+/// It is called by the public bary_ipa() function (once for single-column, multiple times for multi-column).
+fn bary_ipa_single_column(
     poly: Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>,
     poly_advice: Polynomial<halo2_proofs::halo2curves::pasta::Fp, LagrangeCoeff>,
     poly_com: EqAffine,
@@ -45,8 +35,8 @@ pub fn bary_ipa(
     poly_params: &ParamsIPA<EqAffine>,
     domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
     alpha: halo2_proofs::halo2curves::pasta::Fp,
-    blind: halo2_proofs::halo2curves::pasta::Fp,  // Blinding factor from advice_blind
-) -> (Vec<u8>, Duration, Duration, usize, EqAffine, halo2_proofs::halo2curves::pasta::Fp) {
+    blind: halo2_proofs::halo2curves::pasta::Fp,
+) -> (Vec<u8>, Duration, usize, EqAffine, halo2_proofs::halo2curves::pasta::Fp) {
     use halo2_proofs::halo2curves::pasta::Fp;
 
     let bary_timer = Instant::now();
@@ -307,26 +297,137 @@ pub fn bary_ipa(
 
     let total_proof_size = combined_proof.len();
 
-    (combined_proof, prover_time, Duration::from_micros(0), total_proof_size, poly_com_blind, rho_poly_blinded)
+    (combined_proof, prover_time, total_proof_size, poly_com_blind, rho_poly_blinded)
 }
 
-/// Barycentric Verifier for IPA with Bulletproof Inner Product Argument
+/// Barycentric interpolation-based commitment for IPA (unified single/multi-column)
 ///
-/// Verifies both the IPA opening proof and the Bulletproof inner product proof.
+/// This function handles both single-column and multi-column barycentric proofs.
+/// For single-column, it calls the helper once. For multi-column, it iterates over
+/// all columns and combines the proofs.
 ///
 /// # Parameters:
-/// - `proof_bytes`: Combined proof from the prover (IPA + Bulletproof)
-/// - `poly_com`: Commitment to the polynomial (external witness)
-/// - `poly_com_blind`: Commitment to the blinding part
-/// - `poly_advice_com`: Commitment to the advice column (from halo2)
-/// - `beta`: The point at which polynomial was opened
-/// - `rho`: Evaluation of polynomial at beta (with blinding contribution)
+/// - `poly_chunks`: Pre-computed polynomial chunks (one per column)
+/// - `poly_com_chunks`: Pre-computed commitments to polynomial chunks
+/// - `advice_lagrange`: Vector of advice columns in Lagrange form (one or more columns)
+/// - `advice_com`: Vector of commitments to advice columns
+/// - `beta`: Evaluation point
 /// - `poly_params`: IPA parameters
-/// - `domain`: Evaluation domain (for computing barycentric coefficients)
+/// - `domain`: Evaluation domain
+/// - `alpha`: Blinding factor (currently unused)
+/// - `advice_blind`: Vector of blinding factors per column
+/// - `poly_col_len`: Number of columns (1 for single, >1 for multi-column)
 ///
 /// # Returns:
-/// `true` if both verifications pass, `false` otherwise
-pub fn bary_verify_ipa(
+/// Tuple of (proof_bytes, prover_time, verifier_time, proof_size, poly_com_blind_vec, rho_vec)
+/// where proof_bytes contains combined proofs and _vec parameters are vectors for each column
+pub fn bary_ipa(
+    poly_chunks: Vec<Polynomial<halo2_proofs::halo2curves::pasta::Fp, Coeff>>,
+    poly_com_chunks: Vec<EqAffine>,
+    advice_lagrange: Vec<Polynomial<halo2_proofs::halo2curves::pasta::Fp, LagrangeCoeff>>,
+    advice_com: Vec<EqAffine>,
+    beta: halo2_proofs::halo2curves::pasta::Fp,
+    poly_params: &ParamsIPA<EqAffine>,
+    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    alpha: halo2_proofs::halo2curves::pasta::Fp,
+    advice_blind: Vec<halo2_proofs::halo2curves::pasta::Fp>,
+    poly_col_len: usize,
+) -> (Vec<u8>, Duration, Duration, usize, Vec<EqAffine>, Vec<halo2_proofs::halo2curves::pasta::Fp>) {
+    use halo2_proofs::halo2curves::pasta::Fp;
+
+    if poly_col_len == 1 {
+        // ===== SINGLE-COLUMN CASE =====
+        println!("\n=== Barycentric IPA: Single Column ===");
+
+        // Use pre-computed polynomial and commitment
+        let (proof, ptime, psize, blind_com, eval) = bary_ipa_single_column(
+            poly_chunks[0].clone(),
+            advice_lagrange[0].clone(),
+            poly_com_chunks[0],
+            beta,
+            poly_params,
+            domain,
+            alpha,
+            advice_blind[0],
+        );
+
+        return (proof, ptime, Duration::from_micros(0), psize, vec![blind_com], vec![eval]);
+    }
+
+    // ===== MULTI-COLUMN CASE =====
+    println!("\n=== Barycentric IPA: Multi-Column ({} columns) ===", poly_col_len);
+
+    let total_timer = Instant::now();
+
+    println!("  Number of columns: {}", poly_col_len);
+    println!("  Domain size: {}", domain.get_n());
+
+    let mut all_proofs = Vec::new();
+    let mut poly_com_blind_vec = Vec::new();
+    let mut rho_vec = Vec::new();
+    let mut total_proof_size = 0;
+
+    // Process each column
+    for col_idx in 0..poly_col_len {
+        println!("\n--- Column {}/{} ---", col_idx + 1, poly_col_len);
+
+        // Use pre-computed polynomial chunk and commitment
+        let poly_chunk = poly_chunks[col_idx].clone();
+        let poly_com_chunk = poly_com_chunks[col_idx];
+
+        // Get advice column for this chunk
+        let poly_advice_chunk = advice_lagrange[col_idx].clone();
+
+        // Call single-column bary_ipa
+        let (proof_bytes, _ptime, psize, poly_com_blind, rho) = bary_ipa_single_column(
+            poly_chunk,
+            poly_advice_chunk,
+            poly_com_chunk,
+            beta,
+            poly_params,
+            domain.clone(),
+            alpha,
+            advice_blind[col_idx],
+        );
+
+        println!("  Column {} proof size: {} bytes", col_idx, psize);
+        println!("  Column {} evaluation: {:?}", col_idx, rho);
+
+        all_proofs.push(proof_bytes);
+        poly_com_blind_vec.push(poly_com_blind);
+        rho_vec.push(rho);
+        total_proof_size += psize;
+    }
+
+    // Combine all column proofs
+    let mut combined_proof = Vec::new();
+
+    // Write number of columns (4 bytes)
+    combined_proof.extend_from_slice(&(poly_col_len as u32).to_le_bytes());
+
+    // Write each column proof with length prefix
+    for (col_idx, proof) in all_proofs.iter().enumerate() {
+        combined_proof.extend_from_slice(&(proof.len() as u32).to_le_bytes());
+        combined_proof.extend_from_slice(proof);
+        println!("  Added column {} proof: {} bytes", col_idx, proof.len());
+    }
+
+    let final_proof_size = combined_proof.len();
+    let total_time = total_timer.elapsed();
+
+    println!("\n=== Multi-column Proof Summary ===");
+    println!("  Number of columns: {}", poly_col_len);
+    println!("  Individual proof sizes: {} bytes total", total_proof_size);
+    println!("  Overhead (metadata): {} bytes", final_proof_size - total_proof_size);
+    println!("  Total proof size: {} bytes", final_proof_size);
+    println!("  Average per column: {} bytes", total_proof_size / poly_col_len);
+    println!("  Total proving time: {:?}", total_time);
+
+    (combined_proof, total_time, Duration::from_micros(0), final_proof_size, poly_com_blind_vec, rho_vec)
+}
+
+/// Private helper: Barycentric verifier for a single column
+fn bary_verify_ipa_single_column(
     proof_bytes: &[u8],
     poly_com: EqAffine,
     poly_com_blind: EqAffine,
@@ -459,4 +560,129 @@ pub fn bary_verify_ipa(
     println!("Barycentric IPA: Overall verification: {}", if ipa_result && bulletproof_ok { "PASS" } else { "FAIL" });
 
     ipa_result && bulletproof_ok
+}
+
+/// Barycentric Verifier for IPA (unified single/multi-column)
+///
+/// Verifies both the IPA opening proof and the Bulletproof inner product proof.
+///
+/// # Parameters:
+/// - `proof_bytes`: Combined proof from the prover (IPA + Bulletproof)
+/// - `poly_com`: Commitment to the polynomial (external witness)
+/// - `poly_com_blind`: Commitment to the blinding part
+/// - `poly_advice_com`: Commitment to the advice column (from halo2)
+/// - `beta`: The point at which polynomial was opened
+/// - `rho`: Evaluation of polynomial at beta (with blinding contribution)
+/// - `poly_params`: IPA parameters
+/// - `domain`: Evaluation domain (for computing barycentric coefficients)
+///
+/// # Returns:
+/// `true` if both verifications pass, `false` otherwise
+pub fn bary_verify_ipa(
+    proof_bytes: &[u8],
+    poly_com_vec: Vec<EqAffine>,
+    poly_com_blind_vec: Vec<EqAffine>,
+    poly_advice_com_vec: Vec<EqAffine>,
+    beta: halo2_proofs::halo2curves::pasta::Fp,
+    rho_vec: Vec<halo2_proofs::halo2curves::pasta::Fp>,
+    poly_params: &ParamsIPA<EqAffine>,
+    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    poly_col_len: usize,
+) -> bool {
+    use halo2_proofs::halo2curves::pasta::Fp;
+
+    if poly_col_len == 1 {
+        // ===== SINGLE-COLUMN CASE =====
+        println!("\n=== Barycentric Verification: Single Column ===");
+
+        return bary_verify_ipa_single_column(
+            proof_bytes,
+            poly_com_vec[0],
+            poly_com_blind_vec[0],
+            poly_advice_com_vec[0],
+            beta,
+            rho_vec[0],
+            poly_params,
+            domain,
+        );
+    }
+
+    // ===== MULTI-COLUMN CASE =====
+    println!("\n=== Barycentric Verification: Multi-Column ({} columns) ===", poly_col_len);
+
+    // Parse proof structure
+    if proof_bytes.len() < 4 {
+        println!("Error: Proof too short (less than 4 bytes)");
+        return false;
+    }
+
+    let num_columns = u32::from_le_bytes([
+        proof_bytes[0], proof_bytes[1], proof_bytes[2], proof_bytes[3]
+    ]) as usize;
+
+    println!("  Proof contains {} columns", num_columns);
+
+    if num_columns != poly_col_len {
+        println!("Error: Proof has {} columns but expected {}", num_columns, poly_col_len);
+        return false;
+    }
+
+    // Extract individual column proofs
+    let mut offset = 4;
+    let mut column_proofs = Vec::new();
+
+    for col_idx in 0..num_columns {
+        if offset + 4 > proof_bytes.len() {
+            println!("Error: Incomplete proof at column {} (offset={})", col_idx, offset);
+            return false;
+        }
+
+        let proof_len = u32::from_le_bytes([
+            proof_bytes[offset],
+            proof_bytes[offset + 1],
+            proof_bytes[offset + 2],
+            proof_bytes[offset + 3],
+        ]) as usize;
+        offset += 4;
+
+        if offset + proof_len > proof_bytes.len() {
+            println!("Error: Incomplete proof data at column {} (need {} more bytes)",
+                     col_idx, (offset + proof_len) - proof_bytes.len());
+            return false;
+        }
+
+        column_proofs.push(&proof_bytes[offset..offset + proof_len]);
+        println!("  Column {} proof: {} bytes", col_idx, proof_len);
+        offset += proof_len;
+    }
+
+    // Verify each column
+    let mut all_verified = true;
+
+    for col_idx in 0..poly_col_len {
+        println!("\n--- Verifying column {}/{} ---", col_idx + 1, poly_col_len);
+
+        let verified = bary_verify_ipa_single_column(
+            column_proofs[col_idx],
+            poly_com_vec[col_idx],
+            poly_com_blind_vec[col_idx],
+            poly_advice_com_vec[col_idx],
+            beta,
+            rho_vec[col_idx],
+            poly_params,
+            domain.clone(),
+        );
+
+        if !verified {
+            println!("  Column {} verification: FAIL ✗", col_idx);
+            all_verified = false;
+        } else {
+            println!("  Column {} verification: PASS ✓", col_idx);
+        }
+    }
+
+    println!("\n=== Multi-column Verification Summary ===");
+    println!("  Overall result: {}", if all_verified { "PASS ✓" } else { "FAIL ✗" });
+
+    all_verified
 }

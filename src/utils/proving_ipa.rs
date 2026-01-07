@@ -426,215 +426,108 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
   // Barycentric commitment (if enabled)
   if barycentric {
-    println!("Running barycentric commitment...");
-    println!("DEBUG: Total advice columns: {}", advice_lagrange.len());
-    println!("DEBUG: poly_col_len = {}, col_idx would be = {}", poly_col_len, if pedersen {poly_col_len * 2} else {poly_col_len});
+    println!("\n=== Barycentric IPA ({} columns) ===", poly_col_len);
 
-    // Print sizes of first few advice columns
-    for i in 0..advice_lagrange.len().min(5) {
-      println!("DEBUG: advice_lagrange[{}].len() = {}", i, advice_lagrange[i].values.len());
-    }
-    let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
-
-      // Get domain for omega
+    // Get domain for omega
     let domain = pk.get_vk().get_domain();
 
-    // Try to find which column contains the witness by checking matches
-    println!("\nDEBUG: Checking which advice column matches poly best:");
-    println!("DEBUG: poly_col_len = {}, so witness should be split across first {} columns", poly_col_len, poly_col_len);
-    let mut poly_as_lagrange_test = poly.values.clone();
-    while poly_as_lagrange_test.len() < domain.get_n() as usize {
-        poly_as_lagrange_test.push(Fp::ZERO);
-    }
-
-    let mut best_col = 0;
-    let mut best_matches = 0;
-
-    for col_idx in 0..advice_lagrange.len() {
-        let mut matches = 0;
-        for i in 0..poly.values.len() {
-            if poly_as_lagrange_test[i] == advice_lagrange[col_idx].values[i] {
-                matches += 1;
-            }
-        }
-        println!("  Column {}: {}/{} matches ({:.2}%)", col_idx, matches, poly.values.len(),
-                 100.0 * matches as f64 / poly.values.len() as f64);
-
-        if matches > best_matches {
-            best_matches = matches;
-            best_col = col_idx;
-        }
-    }
-
-    println!("\nDEBUG: Best matching column is {} with {}/{} matches", best_col, best_matches, poly.values.len());
-
-    // Check if witness is split across multiple columns (columns_poly[0..poly_col_len])
-    println!("\nDEBUG: Checking if witness is split across first {} columns:", poly_col_len);
-    for col_idx in 0..poly_col_len.min(advice_lagrange.len()) {
+    // Prepare inputs as vectors
+    let advice_lagrange_vec: Vec<_> = if poly_col_len == 1 {
+        // Single column: reconstruct as before
         let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
-        let start_idx = col_idx * chunk_size;
-        let end_idx = (start_idx + chunk_size).min(poly.values.len());
-
-        let mut chunk_matches = 0;
-        for i in 0..(end_idx - start_idx) {
-            let poly_idx = start_idx + i;
-            if poly_idx < poly.values.len() && poly_as_lagrange_test[poly_idx] == advice_lagrange[col_idx].values[i] {
-                chunk_matches += 1;
+        let mut reconstructed = vec![Fp::ZERO; domain.get_n() as usize];
+        for col_idx in 0..poly_col_len {
+            let start_idx = col_idx * chunk_size;
+            let end_idx = (start_idx + chunk_size).min(poly.values.len());
+            for i in 0..(end_idx - start_idx) {
+                reconstructed[start_idx + i] = advice_lagrange[col_idx].values[i];
             }
         }
-        println!("  Column {} (chunk {}): {}/{} matches", col_idx, col_idx, chunk_matches, end_idx - start_idx);
-    }
-
-    // Reconstruct the full witness polynomial from split columns
-    println!("\nDEBUG: Reconstructing full witness from columns 0..{}", poly_col_len);
-    let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
-
-    // Check if blinding is consistent across columns
-    println!("DEBUG: Checking blinding consistency across columns:");
-    for row in (domain.get_n() as usize - 6)..(domain.get_n() as usize) {
-        print!("  Row {}: ", row);
-        for col in 0..poly_col_len {
-            print!("col{}={:?} ", col, advice_lagrange[col].values[row] == Fp::ZERO);
+        for i in poly.values.len()..(domain.get_n() as usize) {
+            reconstructed[i] = advice_lagrange[0].values[i];
         }
-        println!();
-    }
+        vec![domain.lagrange_from_vec(reconstructed)]
+    } else {
+        // Multi-column: pass columns directly
+        advice_lagrange[0..poly_col_len].to_vec()
+    };
 
-    let mut reconstructed_lagrange = vec![Fp::ZERO; domain.get_n() as usize];
-    for col_idx in 0..poly_col_len {
-        let start_idx = col_idx * chunk_size;
-        let end_idx = (start_idx + chunk_size).min(poly.values.len());
+    let advice_com_vec: Vec<EqAffine> = advice_com[0..poly_col_len]
+        .iter().map(|c| (*c).into()).collect();
+    let advice_blind_vec: Vec<Fp> = advice_blind[0..poly_col_len].to_vec();
 
-        for i in 0..(end_idx - start_idx) {
-            let poly_idx = start_idx + i;
-            reconstructed_lagrange[poly_idx] = advice_lagrange[col_idx].values[i];
-        }
-    }
+    // Pre-compute polynomial chunks and commitments (exclude from proving time)
+    // This is preprocessing - the witness is already chunked in the circuit
+    let (poly_chunks, poly_com_vec): (Vec<_>, Vec<_>) = if poly_col_len == 1 {
+        let poly_com = params.commit(&poly, Blind::default()).to_affine();
+        (vec![poly.clone()], vec![poly_com])
+    } else {
+        let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
+        (0..poly_col_len).map(|col_idx| {
+            let start_idx = col_idx * chunk_size;
+            let end_idx = (start_idx + chunk_size).min(poly.values.len());
+            let chunk_len = end_idx - start_idx;
 
-    // Copy blinding values from first column
-    for i in poly.values.len()..(domain.get_n() as usize) {
-        reconstructed_lagrange[i] = advice_lagrange[0].values[i];
-    }
+            let mut poly_chunk_values = vec![Fp::ZERO; domain.get_n() as usize];
+            for i in 0..chunk_len {
+                poly_chunk_values[i] = poly.values[start_idx + i];
+            }
+            let poly_chunk = Polynomial::from_coefficients_vec(poly_chunk_values);
+            let poly_com_chunk = params.commit(&poly_chunk, Blind::default()).to_affine();
 
-    let poly_advice_lagrange = domain.lagrange_from_vec(reconstructed_lagrange);
+            (poly_chunk, poly_com_chunk)
+        }).unzip()
+    };
 
-    println!("DEBUG: Reconstructed witness polynomial from {} columns", poly_col_len);
-    println!("DEBUG: Verifying reconstruction matches poly:");
-    let mut recon_matches = 0;
-    for i in 0..poly.values.len() {
-        if poly_as_lagrange_test[i] == poly_advice_lagrange.values[i] {
-            recon_matches += 1;
-        }
-    }
-    println!("  Reconstruction: {}/{} matches ({:.2}%)", recon_matches, poly.values.len(),
-             100.0 * recon_matches as f64 / poly.values.len() as f64);
-
-    // Run prover with both polynomials at beta
-    // Pass the blinding factor from the first column (or reconstructed column)
-    let blind_value = advice_blind[0];  // For single column case, use first blind
-    println!("DEBUG: Using blind value: {:?}", blind_value);
-
-    let (bary_proof_bytes, bary_ptime, _bary_vtime, bary_size, poly_com_blind, rho_bary) =
-        bary_ipa(poly.clone(), poly_advice_lagrange, poly_com.clone(), beta, &poly_params, domain.clone(), alpha, blind_value);
+    // Call unified bary_ipa function with pre-computed chunks
+    // IMPORTANT: Use params (not poly_params) because barycentric works with domain size
+    // poly_params has larger degree for multi-column polynomial commitments
+    let (bary_proof_bytes, bary_ptime, _, bary_size,
+         poly_com_blind_vec, rho_vec) = bary_ipa(
+        poly_chunks,
+        poly_com_vec.clone(),
+        advice_lagrange_vec,
+        advice_com_vec.clone(),
+        beta,
+        &params,
+        domain.clone(),
+        alpha,
+        advice_blind_vec,
+        poly_col_len,
+    );
 
     proving_time += bary_ptime;
     proof_size += bary_size;
 
-    println!("Barycentric: Proof size: {} bytes (includes IPA + Bulletproof)", bary_size);
-    println!("Barycentric: Evaluation from prover: {:?}", rho_bary);
-    println!("Barycentric: Verifier will compute combined commitment as poly_com + poly_com_blind");
+    println!("Barycentric: Proof size: {} bytes", bary_size);
+    println!("Barycentric: Evaluations: {:?}", rho_vec);
 
-    // For verification, we need:
-    // 1. Commitment to the witness polynomial (from halo2's advice_com)
-    // 2. Evaluation at beta (with blinding contribution)
-    // The verifier will extract the blinding commitment from the proof
+    // poly_com_vec is already computed above before the proving timer
+    // Use it for verification
 
-    // Use the halo2-generated commitment for the witness column
-    // For single-column case (poly_col_len=1), witness is in column 0
-    let poly_witness_com: EqAffine = advice_com[0].into();
-
-    println!("\nDEBUG: Verifier will use witness commitment from advice_com[0]: {:?}", poly_witness_com);
-
-    // Compute evaluation: <poly, b_coeffs> + blinding_contribution
-    // This was already computed in bary_ipa as rho_poly_blinded
-    // We need to recompute it here for the verifier
-
-    // Precompute omega powers for barycentric coefficients
-    let mut omega_powers = Vec::with_capacity(domain.get_n() as usize);
-    omega_powers.push(Fp::ONE);
-    for i in 1..(domain.get_n() as usize) {
-        omega_powers.push(domain.rotate_omega(omega_powers[i - 1], Rotation(1)));
-    }
-
-    // Compute barycentric coefficients
-    let beta_d = beta.pow([domain.get_n() as u64]);
-    let numerator = beta_d - Fp::ONE;
-    let d_inv = Fp::from(domain.get_n() as u64).invert().unwrap();
-    let scaling_factor = numerator * d_inv;
-
-    let mut b_coeffs = Vec::with_capacity(domain.get_n() as usize);
-    for i in 0..(domain.get_n() as usize) {
-        let omega_i = omega_powers[i];
-        let denominator = beta - omega_i;
-        if denominator == Fp::ZERO {
-            b_coeffs.push(Fp::ZERO);
-        } else {
-            let b_i = scaling_factor * omega_i * denominator.invert().unwrap();
-            b_coeffs.push(b_i);
-        }
-    }
-
-    // Compute <poly, b_coeffs>
-    let mut rho = Fp::ZERO;
-    for i in 0..poly.values.len() {
-        rho += poly.values[i] * b_coeffs[i];
-    }
-
-    // Add blinding contribution from reconstructed poly_advice
-    let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
-    let mut reconstructed_lagrange = vec![Fp::ZERO; domain.get_n() as usize];
-    for col_idx in 0..poly_col_len {
-        let start_idx = col_idx * chunk_size;
-        let end_idx = (start_idx + chunk_size).min(poly.values.len());
-        for i in 0..(end_idx - start_idx) {
-            let poly_idx = start_idx + i;
-            reconstructed_lagrange[poly_idx] = advice_lagrange[col_idx].values[i];
-        }
-    }
-    for i in poly.values.len()..(domain.get_n() as usize) {
-        reconstructed_lagrange[i] = advice_lagrange[0].values[i];
-    }
-
-    let mut blinding_contribution = Fp::ZERO;
-    for i in poly.values.len()..(domain.get_n() as usize) {
-        blinding_contribution += reconstructed_lagrange[i] * b_coeffs[i];
-    }
-
-    rho += blinding_contribution;
-
-    // Run verifier
+    // Run unified verifier
     println!("Running barycentric verifier...");
     for i in 0..num_runs {
-      let verify_start = Instant::now();
+        let verify_start = Instant::now();
 
-      let verified = bary_verify_ipa(
-          &bary_proof_bytes,
-          poly_com,
-          poly_com_blind,
-          poly_witness_com,
-          beta,
-          rho,
-          &poly_params,
-          domain.clone(),
-      );
+        let verified = bary_verify_ipa(
+            &bary_proof_bytes,
+            poly_com_vec.clone(),
+            poly_com_blind_vec.clone(),
+            advice_com_vec.clone(),
+            beta,
+            rho_vec.clone(),
+            &params,
+            domain.clone(),
+            poly_col_len,
+        );
 
-      let vfy_time = verify_start.elapsed();
-      verifying_time[i] += vfy_time;
-      println!("Barycentric IPA + Bulletproof vfy time: {:?}", vfy_time);
+        let vfy_time = verify_start.elapsed();
+        verifying_time[i] += vfy_time;
 
-      if !verified {
-          println!("Barycentric: Verification FAILED ✗");
-          panic!("Barycentric verification failed!");
-      }
+        if !verified {
+            panic!("Barycentric verification failed!");
+        }
     }
     println!("Barycentric: All verifications PASSED ✓");
   }
@@ -647,7 +540,6 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   // Create a CSV writer
   let mut wtr = Writer::from_writer(file);
 
-  // Write the header row
   wtr.write_record(&["Prover time", "Verifier time", "Proof size"]).unwrap();
   // Write some rows of data
   let proving_time_str = format!("{:?}", proving_time);
