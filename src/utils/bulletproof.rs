@@ -82,7 +82,7 @@ use halo2_proofs::{
     },
 };
 use ff::Field;
-use group::Curve;
+use group::{Curve, ff::BatchInvert};
 use rand_core::OsRng;
 
 /// Parameters for the Bulletproof inner product argument
@@ -195,6 +195,48 @@ fn fold_points<C: CurveAffine>(
     }
 
     result
+}
+
+/// Compute scalar coefficients for each original generator in the final folded generator.
+/// This allows us to express G'[0] = sum(coef[i] * G[i]) without materializing intermediate vectors.
+///
+/// The coefficient for generator G[i] depends on which half it falls into at each round:
+/// - Left half (index < n/2): multiply by e_inv
+/// - Right half (index >= n/2): multiply by e
+fn compute_folded_generator_coefficients<C: CurveAffine>(
+    n: usize,
+    challenges: &[(C::Scalar, C::Scalar)],  // (e, e_inv) pairs
+) -> Vec<C::Scalar> {
+    let mut coefficients = vec![C::Scalar::ZERO; n];
+    let num_rounds = challenges.len();
+
+    // For each original generator, compute its coefficient in the final folded generator
+    for i in 0..n {
+        let mut coef = C::Scalar::ONE;
+        let mut index = i;
+        let mut size = n;
+
+        // Trace through each folding round to see which multiplier applies
+        for round in 0..num_rounds {
+            let (e, e_inv) = challenges[round];
+            let half = size / 2;
+
+            if index < half {
+                // This generator was in the left half -> multiply by e_inv
+                coef *= e_inv;
+            } else {
+                // This generator was in the right half -> multiply by e
+                coef *= e;
+                index -= half;  // Adjust index for next round
+            }
+
+            size = half;
+        }
+
+        coefficients[i] = coef;
+    }
+
+    coefficients
 }
 
 /// Bulletproof inner product argument - Prover
@@ -335,9 +377,12 @@ where
     (proof_bytes, prover_time, proof_size)
 }
 
-/// Bulletproof inner product argument - Verifier
+/// Bulletproof inner product argument - Verifier (Single MSM Optimization)
 ///
 /// Verifies a proof that commitment C opens to witness a satisfying <a, b> = c.
+///
+/// This optimized version uses a single multi-scalar multiplication check instead
+/// of computing MSMs in every round, following the pattern from halo2's IPA verifier.
 ///
 /// # Arguments
 /// * `params` - Bulletproof parameters (same as prover)
@@ -367,80 +412,89 @@ where
     // Initialize read transcript
     let mut transcript = Blake2bRead::<&[u8], C, Challenge255<C>>::init(proof);
 
-    // Initialize verification state
-    // CRITICAL: Start with commitment adjusted by claimed inner product
-    // P = C + c * U (where c is the claimed inner product <a, b>)
-    // Use multiexp for efficient computation
-    let scalars = vec![C::Scalar::ONE, c];
-    let points = vec![commitment, params.u];
-    let mut commitment_acc = best_multiexp(&scalars, &points).to_affine();
-    let mut b_vec = b.to_vec();
-    let mut g_vec = params.g_vec.clone();
-
     // Number of rounds
     let num_rounds = (n as f64).log2() as usize;
 
-    println!("Bulletproof Verifier: n={}, rounds={}", n, num_rounds);
+    println!("Bulletproof Verifier (Single MSM): n={}, rounds={}", n, num_rounds);
 
-    // Preallocate buffers for commitment folding (reused across all rounds)
-    let mut commitment_fold_scalars = vec![C::Scalar::ZERO; 3];
-    let mut commitment_fold_points = vec![commitment; 3];
-
-    // Process each round
-    for round in 0..num_rounds {
-        let half = b_vec.len() / 2;
-
-        println!("  Round {}: vector size = {}", round, b_vec.len());
-
-        // Read L, R from proof
-        let l_commitment = transcript.read_point().expect("Failed to read L");
-        let r_commitment = transcript.read_point().expect("Failed to read R");
-
-        // Get challenge (must match prover's transcript)
-        let challenge: C::Scalar = *transcript.squeeze_challenge_scalar::<()>();
-        let challenge_inv = challenge.invert().unwrap();
-
-        // Fold commitment: C' = L * e^2 + C + R * e^{-2}
-        // Use preallocated buffers for efficient batch computation
-        let challenge_sq = challenge.square();
-        let challenge_inv_sq = challenge_inv.square();
-        commitment_fold_scalars[0] = challenge_sq;
-        commitment_fold_scalars[1] = C::Scalar::ONE;
-        commitment_fold_scalars[2] = challenge_inv_sq;
-        commitment_fold_points[0] = l_commitment;
-        commitment_fold_points[1] = commitment_acc;
-        commitment_fold_points[2] = r_commitment;
-        commitment_acc = best_multiexp(&commitment_fold_scalars, &commitment_fold_points).to_affine();
-
-        // Fold b vector
-        let (b_l, b_r) = b_vec.split_at(half);
-        b_vec = fold_scalars(b_l, b_r, challenge_inv, challenge);
-
-        // Fold generator vector
-        let (g_l, g_r) = g_vec.split_at(half);
-        g_vec = fold_points(g_l, g_r, challenge, challenge_inv);
+    // Phase 1: Read all L, R, and challenges (don't compute MSMs yet!)
+    let mut rounds = Vec::with_capacity(num_rounds);
+    for _ in 0..num_rounds {
+        let l = transcript.read_point().expect("Failed to read L");
+        let r = transcript.read_point().expect("Failed to read R");
+        let e: C::Scalar = *transcript.squeeze_challenge_scalar::<()>();
+        rounds.push((l, r, e, e)); // duplicate e for batch_invert
     }
+
+    // Phase 2: Batch invert all challenges at once (O(k) instead of k×O(1))
+    rounds.iter_mut()
+        .map(|(_, _, _, e_inv)| e_inv)
+        .batch_invert();
+
+    // Phase 3: Fold b vector only (cheap scalar operations, no MSMs!)
+    let mut b_vec = b.to_vec();
+
+    for (_, _, e, e_inv) in &rounds {
+        let half = b_vec.len() / 2;
+        let (b_l, b_r) = b_vec.split_at(half);
+        b_vec = fold_scalars(b_l, b_r, *e_inv, *e);
+    }
+
+    let b_final = b_vec[0];
 
     // Read final values
     let a_final = transcript.read_scalar().expect("Failed to read a_final");
     let alpha_final = transcript.read_scalar().expect("Failed to read alpha_final");
 
-    println!("  Final: a={:?}, alpha={:?}", a_final, alpha_final);
+    println!("  Final: a={:?}, b={:?}, alpha={:?}", a_final, b_final, alpha_final);
 
-    // Verify final equation: C' == a_final * G'[0] + (a_final * b'[0]) * U + alpha_final * H
-    assert_eq!(g_vec.len(), 1, "Final generator vector should have size 1");
-    assert_eq!(b_vec.len(), 1, "Final b vector should have size 1");
+    // Phase 4: Compute coefficients for folded generator G'[0] = sum(coef[i] * G[i])
+    // This avoids materializing intermediate folded generators (no MSMs!)
+    let challenge_pairs: Vec<(C::Scalar, C::Scalar)> = rounds.iter()
+        .map(|(_, _, e, e_inv)| (*e, *e_inv))
+        .collect();
+    let g_coefficients = compute_folded_generator_coefficients::<C>(n, &challenge_pairs);
 
-    let g_final = g_vec[0];
-    let b_final = b_vec[0];
+    // Phase 5: Build single MSM equation with ALL terms
+    // Equation: 0 = P' + Σ[e_i²]L_i + Σ[e_i⁻²]R_i - a*G' - (a*b)*U - α*H
+    // Where P' = C + c*U, and G' = sum(coef[i] * G[i])
 
-    // Compute expected commitment
-    let expected_commitment = best_multiexp(
-        &[a_final, a_final * b_final, alpha_final],
-        &[g_final, params.u, params.h],
-    ).to_affine();
+    let mut msm_scalars = Vec::with_capacity(2 + 2 * num_rounds + n + 2);
+    let mut msm_points = Vec::with_capacity(2 + 2 * num_rounds + n + 2);
 
-    let verified = commitment_acc == expected_commitment;
+    // Add initial commitment terms: C + c*U
+    msm_scalars.push(C::Scalar::ONE);
+    msm_points.push(commitment);
+    msm_scalars.push(c);
+    msm_points.push(params.u);
+
+    // Add all L and R terms with their challenge coefficients
+    for (l, r, e, e_inv) in rounds {
+        msm_scalars.push(e.square());
+        msm_points.push(l);
+        msm_scalars.push(e_inv.square());
+        msm_points.push(r);
+    }
+
+    // Add folded generator terms: -a * G'[0] = -a * sum(coef[i] * G[i])
+    // This replaces the single g_final term with n terms, but it's still just ONE MSM total!
+    for (i, &coef) in g_coefficients.iter().enumerate() {
+        msm_scalars.push(-a_final * coef);
+        msm_points.push(params.g_vec[i]);
+    }
+
+    // Add final terms: -(a*b)*U - α*H
+    msm_scalars.push(-a_final * b_final);
+    msm_points.push(params.u);
+    msm_scalars.push(-alpha_final);
+    msm_points.push(params.h);
+
+    // Phase 6: Single MSM check - should equal identity (zero point)
+    let result = best_multiexp(&msm_scalars, &msm_points);
+
+    // Compare to identity using the Group trait
+    use group::Group;
+    let verified = result == <C::Curve as Group>::identity();
 
     let verify_time = timer.elapsed();
     println!("Bulletproof Verifier: Result = {}, time = {:?}", verified, verify_time);
@@ -654,5 +708,32 @@ mod tests {
         let verified = verify(&params, commitment, &b, c, &proof);
 
         assert!(verified, "Proof should verify for zero witness");
+    }
+
+    #[test]
+    fn test_bulletproof_large_sizes() {
+        println!("\n=== Test: Large Vector Sizes (for Phase 3 measurement) ===");
+
+        for k in 8..12 {  // 256, 512, 1024, 2048
+            let n = 1 << k;
+            println!("\n  Testing n = {}", n);
+
+            let params = create_test_params(n);
+
+            let a: Vec<Fp> = (0..n).map(|_| Fp::random(OsRng)).collect();
+            let b: Vec<Fp> = (0..n).map(|_| Fp::random(OsRng)).collect();
+            let alpha = Fp::random(OsRng);
+
+            let c = inner_product(&a, &b);
+            let commitment = commit(&params, &a, alpha);
+
+            let (proof, prover_time, proof_size) = prove(&params, &a, &b, alpha);
+            let verified = verify(&params, commitment, &b, c, &proof);
+
+            println!("    n={}: proof_size={} bytes, prover_time={:?}, verified={}",
+                     n, proof_size, prover_time, verified);
+
+            assert!(verified, "Proof should verify for n={}", n);
+        }
     }
 }
