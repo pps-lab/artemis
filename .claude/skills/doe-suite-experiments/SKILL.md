@@ -112,19 +112,18 @@ source .envrc && make run suite=<suite-name> id=new
 **Continuously monitor** to detect issues early:
 
 ```bash
-source .envrc && make status suite=<suite-name> id=last
+source .envrc && make run suite=<suite-name> id=last
 ```
 
-**Output shows:**
+This script terminates once all results are done. 
+It keeps checking status of the experiments and downloading results, up until a timeout. 
+Then the script can be re-invoked to continue monitoring.
+
+**Output at the end shows:**
 - Total jobs completed/remaining (e.g., "3/3 jobs")
 - Progress percentage
 - ETL pipeline warnings/errors
 - Current job status (queued/running/finished)
-
-**Check frequency**:
-- Small models: every 5-10 minutes
-- Medium models: every 15-30 minutes
-- Large models: every 30-60 minutes
 
 ### 4. Review Raw Results
 
@@ -335,10 +334,13 @@ Each experiment produces files based on the commands executed and ETL extractors
 🐛 **Debugging**:
 - Use `make design suite=<suite-name>` to validate before running
 - Check `doe-suite-results/<suite>_<id>/` for stdout/stderr logs
-- Use `make run-keep` to keep instances alive for debugging (remember to clean up!)
+- Use `make run-keep` to keep instances alive for debugging (remember to clean up!). 
+This is particularly useful when running new code, where we might have bugs that require re-runs.
 
 **Other tips**:
 - Check the docs in `doe-suite/docs/` for more details on how to edit ETL workflows, server provisioning and other doe-suite syntax.
+- It is possible to run multiple suites in parallel. Just run them in different sub-processes or agents.
+- Do not run bash commands with sleep to monitor. `make run suite=<suite-name> id=last` is the correct way to monitor progress.
 
 ## Example Workflow
 

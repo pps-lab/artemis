@@ -140,13 +140,15 @@ fn bary_ipa_single_column(
     // poly.values contains: [0..witness_end): witness+padding, [witness_end..dim): zeros (for blinding)
     // poly_advice.values contains: [0..witness_end): witness+padding, [witness_end..dim): blinding
     // Find witness_end by scanning forward to find where blinding starts
-    let witness_end = (0..dim)
+    // Note: poly.values.len() might be < dim in single-column case
+    let poly_len = poly.values.len();
+    let witness_end = (0..poly_len.min(dim))
         .find(|&i| poly.values[i] == Fp::ZERO && poly_advice.values[i] != Fp::ZERO)
-        .unwrap_or(dim);
+        .unwrap_or(poly_len.min(dim));
 
     let mut combined_lag = vec![Fp::ZERO; dim];
-    // Copy witness + padding section from poly
-    for i in 0..witness_end {
+    // Copy witness + padding section from poly (up to poly length)
+    for i in 0..witness_end.min(poly_len) {
         combined_lag[i] = poly.values[i];
     }
     // Copy blinding section from poly_advice
@@ -217,29 +219,29 @@ fn bary_ipa_single_column(
     // We need to interpret the same data consistently!
 
     // Option 1: Convert poly (coeff) to Lagrange, then back to coeff - should match poly_advice_coeff
-    let poly_as_lagrange = domain.coeff_to_lagrange(poly.clone());
-    let poly_reinterpreted_coeff = domain.lagrange_to_coeff(poly_as_lagrange);
-
-    println!("\nDEBUG: Checking coefficient interpretation:");
-    println!("  poly (original coeff) commitment:");
-    let poly_com_original = poly_params.commit(&poly, Blind::default()).to_affine();
-    println!("    {:?}", poly_com_original);
-
-    println!("  poly (coeff->lag->coeff) commitment:");
-    let poly_com_reinterp = poly_params.commit(&poly_reinterpreted_coeff, Blind::default()).to_affine();
-    println!("    {:?}", poly_com_reinterp);
-
-    println!("  poly_advice_coeff commitment:");
-    let poly_advice_com = poly_params.commit(&poly_advice_coeff, Blind::default()).to_affine();
-    println!("    {:?}", poly_advice_com);
-
-    println!("\nDEBUG: Checking if poly.values (as Lagrange) matches poly_advice:");
-    let poly_as_lagrange_direct = domain.lagrange_from_vec(poly.values.clone());
-    let poly_from_lag_coeff = domain.lagrange_to_coeff(poly_as_lagrange_direct.clone());
-    let poly_from_lag_com = poly_params.commit(&poly_from_lag_coeff, Blind::default()).to_affine();
-    println!("  poly.values as Lagrange, then to coeff commitment:");
-    println!("    {:?}", poly_from_lag_com);
-    println!("  Match with poly_advice: {}", poly_from_lag_com == poly_advice_com);
+    // let poly_as_lagrange = domain.coeff_to_lagrange(poly.clone());
+    // let poly_reinterpreted_coeff = domain.lagrange_to_coeff(poly_as_lagrange);
+    //
+    // println!("\nDEBUG: Checking coefficient interpretation:");
+    // println!("  poly (original coeff) commitment:");
+    // let poly_com_original = poly_params.commit(&poly, Blind::default()).to_affine();
+    // println!("    {:?}", poly_com_original);
+    //
+    // println!("  poly (coeff->lag->coeff) commitment:");
+    // let poly_com_reinterp = poly_params.commit(&poly_reinterpreted_coeff, Blind::default()).to_affine();
+    // println!("    {:?}", poly_com_reinterp);
+    //
+    // println!("  poly_advice_coeff commitment:");
+    // let poly_advice_com = poly_params.commit(&poly_advice_coeff, Blind::default()).to_affine();
+    // println!("    {:?}", poly_advice_com);
+    //
+    // println!("\nDEBUG: Checking if poly.values (as Lagrange) matches poly_advice:");
+    // let poly_as_lagrange_direct = domain.lagrange_from_vec(poly.values.clone());
+    // let poly_from_lag_coeff = domain.lagrange_to_coeff(poly_as_lagrange_direct.clone());
+    // let poly_from_lag_com = poly_params.commit(&poly_from_lag_coeff, Blind::default()).to_affine();
+    // println!("  poly.values as Lagrange, then to coeff commitment:");
+    // println!("    {:?}", poly_from_lag_com);
+    // println!("  Match with poly_advice: {}", poly_from_lag_com == poly_advice_com);
 
     // Use the blinded evaluation for both (they should match)
     // let rho = rho_poly_blinded;
@@ -265,7 +267,8 @@ fn bary_ipa_single_column(
     println!("  external commitment with blinding:   {:?}", (poly_com + poly_com_blind).to_affine());
     // println!("  external commitment with blinding:   {:?}", (poly_com + poly_com_blind).to_affine());
     // verify coefficients match in witness section only (blinding section differs)
-    for i in 0..witness_end {
+    // Note: only check up to poly_len since poly might be shorter than witness_end
+    for i in 0..witness_end.min(poly_len) {
         assert_eq!(
             combined_lag_poly.values[i], poly.values[i],
             "Combined polynomial does not match external polynomial at index {}",
