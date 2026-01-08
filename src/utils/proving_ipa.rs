@@ -482,7 +482,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     // Call unified bary_ipa function with pre-computed chunks
     // IMPORTANT: Use params (not poly_params) because barycentric works with domain size
     // poly_params has larger degree for multi-column polynomial commitments
-    let (bary_proof_bytes, bary_ptime, _, bary_size,
+    let (bary_proof_bytes, bary_ptime, bary_size,
          poly_com_blind_vec, rho_vec) = bary_ipa(
         poly_chunks,
         poly_com_vec.clone(),
