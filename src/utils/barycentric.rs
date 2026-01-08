@@ -137,13 +137,30 @@ fn bary_ipa_single_column(
     // println!("  Blinding contribution = {:?}", blinding_contribution);
 
     // Create the combined polynomial for the IPA proof (witness + blinding)
+    // poly.values contains: [0..witness_end): witness+padding, [witness_end..dim): zeros (for blinding)
+    // poly_advice.values contains: [0..witness_end): witness+padding, [witness_end..dim): blinding
+    // Find witness_end by scanning forward to find where blinding starts
+    let witness_end = (0..dim)
+        .find(|&i| poly.values[i] == Fp::ZERO && poly_advice.values[i] != Fp::ZERO)
+        .unwrap_or(dim);
+
     let mut combined_lag = vec![Fp::ZERO; dim];
-    for i in 0..poly.values.len() {
+    // Copy witness + padding section from poly
+    for i in 0..witness_end {
         combined_lag[i] = poly.values[i];
     }
-    for i in poly.values.len()..dim {
+    // Copy blinding section from poly_advice
+    for i in witness_end..dim {
         combined_lag[i] = poly_advice.values[i];
     }
+
+    // Compute commitment to blinding-only polynomial for verifier
+    let mut poly_only_blind = vec![Fp::ZERO; dim];
+    for i in witness_end..dim {
+        poly_only_blind[i] = poly_advice.values[i];
+    }
+    let poly_com_blind = poly_params.commit(&Polynomial::from_coefficients_vec(poly_only_blind), Blind::default()).to_affine();
+
     // inner product between combined_lag and b_coeffs
     // let rho_poly_blinded = {
     //     let mut acc = Fp::ZERO;
@@ -235,13 +252,6 @@ fn bary_ipa_single_column(
     // Create transcript for Fiat-Shamir
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
 
-    // Create the combined polynomial for the IPA proof (witness + blinding)
-    let mut poly_only_blind = vec![Fp::ZERO; dim];
-    for i in poly.values.len()..dim {
-        poly_only_blind[i] = poly_advice.values[i];
-    }
-    let poly_com_blind = poly_params.commit(&Polynomial::from_coefficients_vec(poly_only_blind), Blind::default()).to_affine();
-
     // Verify that our combined commitment matches halo2's advice commitment
     println!("\nBarycentric IPA: Verifying commitment matches halo2's advice commitment");
     let combined_lag_poly = Polynomial::from_coefficients_vec(combined_lag);
@@ -254,8 +264,8 @@ fn bary_ipa_single_column(
     println!("  combined commitment: {:?}", poly_com_combined);
     println!("  external commitment with blinding:   {:?}", (poly_com + poly_com_blind).to_affine());
     // println!("  external commitment with blinding:   {:?}", (poly_com + poly_com_blind).to_affine());
-    // verify coefficients match
-    for i in 0..poly.values.len() {
+    // verify coefficients match in witness section only (blinding section differs)
+    for i in 0..witness_end {
         assert_eq!(
             combined_lag_poly.values[i], poly.values[i],
             "Combined polynomial does not match external polynomial at index {}",

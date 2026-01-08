@@ -463,15 +463,22 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
         (vec![poly.clone()], vec![poly_com])
     } else {
         let chunk_size = (poly.values.len() + poly_col_len - 1) / poly_col_len;
+        // Number of blinding rows at the end of the domain
+        let num_blinding = domain.get_n() as usize - poly.values.len();
+        let witness_end = domain.get_n() as usize - num_blinding;
+
         (0..poly_col_len).map(|col_idx| {
             let start_idx = col_idx * chunk_size;
             let end_idx = (start_idx + chunk_size).min(poly.values.len());
             let chunk_len = end_idx - start_idx;
 
+            // Allocate full domain size, fill witness data up to witness_end, leave blinding space
             let mut poly_chunk_values = vec![Fp::ZERO; domain.get_n() as usize];
-            for i in 0..chunk_len {
+            // Fill witness data (up to witness_end to leave room for blinding)
+            for i in 0..chunk_len.min(witness_end) {
                 poly_chunk_values[i] = poly.values[start_idx + i];
             }
+            // Positions [witness_end .. domain.get_n()) stay zero for blinding values
             let poly_chunk = Polynomial::from_coefficients_vec(poly_chunk_values);
             let poly_com_chunk = params.commit(&poly_chunk, Blind::default()).to_affine();
 
