@@ -47,30 +47,33 @@ class AddSyntheticBaselineTransformer(Transformer):
     """
 
     def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
-        # Find zkfft entries that only have IPA data
-        zkfft_ipa = df[(df['cpsnark'] == 'zkfft') & (df['pc_type'] == 'ipa')]
+        # Find IPA-only schemes (zkfft, bary, etc.) that don't have KZG data
+        ipa_only_schemes = ['zkfft', 'bary']
 
-        if len(zkfft_ipa) == 0:
-            return df
-
-        # Create synthetic KZG entries with 0 values
         synthetic_rows = []
-        for _, row in zkfft_ipa.iterrows():
-            synthetic_row = row.copy()
-            synthetic_row['pc_type'] = 'kzg'
-            # Set metric values to 0 for synthetic baseline
-            if 'prover_time_sec' in synthetic_row:
-                synthetic_row['prover_time_sec'] = 0.0
-            if 'proof_size_bytes' in synthetic_row:
-                synthetic_row['proof_size_bytes'] = 0
-            if 'mean(verifier_time_sec)' in synthetic_row:
-                synthetic_row['mean(verifier_time_sec)'] = 0.0
-            if 'stddev(verifier_time_sec)' in synthetic_row:
-                synthetic_row['stddev(verifier_time_sec)'] = 0.0
-            if 'max_rss' in synthetic_row:
-                synthetic_row['max_rss'] = 0
+        for scheme in ipa_only_schemes:
+            scheme_ipa = df[(df['cpsnark'] == scheme) & (df['pc_type'] == 'ipa')]
 
-            synthetic_rows.append(synthetic_row)
+            if len(scheme_ipa) == 0:
+                continue
+
+            # Create synthetic KZG entries with 0 values
+            for _, row in scheme_ipa.iterrows():
+                synthetic_row = row.copy()
+                synthetic_row['pc_type'] = 'kzg'
+                # Set metric values to 0 for synthetic baseline
+                if 'prover_time_sec' in synthetic_row:
+                    synthetic_row['prover_time_sec'] = 0.0
+                if 'proof_size_bytes' in synthetic_row:
+                    synthetic_row['proof_size_bytes'] = 0
+                if 'mean(verifier_time_sec)' in synthetic_row:
+                    synthetic_row['mean(verifier_time_sec)'] = 0.0
+                if 'stddev(verifier_time_sec)' in synthetic_row:
+                    synthetic_row['stddev(verifier_time_sec)'] = 0.0
+                if 'max_rss' in synthetic_row:
+                    synthetic_row['max_rss'] = 0
+
+                synthetic_rows.append(synthetic_row)
 
         if synthetic_rows:
             df_synthetic = pd.DataFrame(synthetic_rows)

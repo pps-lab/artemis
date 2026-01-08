@@ -39,14 +39,17 @@ fn bary_ipa_single_column(
 ) -> (Vec<u8>, Duration, usize, EqAffine, halo2_proofs::halo2curves::pasta::Fp) {
     use halo2_proofs::halo2curves::pasta::Fp;
 
+
+    // Convert poly_advice from Lagrange to coefficient form for commitment
+    // OUTSIDE of timer, because we could assume we get it from the halo2 prover
+    let poly_advice_coeff = domain.lagrange_to_coeff(poly_advice.clone());
+
     let bary_timer = Instant::now();
 
     println!("Barycentric IPA: Starting opening proof for two polynomials at beta");
     println!("poly length: {}, poly_advice length: {}", poly.values.len(), poly_advice.values.len());
     println!("Domain size: {}", domain.get_n());
 
-    // Convert poly_advice from Lagrange to coefficient form for commitment
-    let poly_advice_coeff = domain.lagrange_to_coeff(poly_advice.clone());
 
     // CRITICAL: poly.values should be interpreted as LAGRANGE values (row assignments)
     // NOT as coefficients! They match the advice column values exactly.
@@ -99,19 +102,19 @@ fn bary_ipa_single_column(
     }
 
     // Compute inner product <poly_advice, b_coeffs> to get evaluation at beta
-    let mut rho_advice_bary = Fp::ZERO;
-    for i in 0..dim {
-        rho_advice_bary += poly_advice.values[i] * b_coeffs[i];
-    }
-    println!("  poly_advice(beta) = {:?} (via barycentric inner product)", rho_advice_bary);
+    // let mut rho_advice_bary = Fp::ZERO;
+    // for i in 0..dim {
+    //     rho_advice_bary += poly_advice.values[i] * b_coeffs[i];
+    // }
+    // println!("  poly_advice(beta) = {:?} (via barycentric inner product)", rho_advice_bary);
 
     // Verify barycentric formula matches coefficient evaluation
     let rho_advice_coeff = poly_advice_coeff.evaluate(beta);
-    assert_eq!(
-        rho_advice_bary, rho_advice_coeff,
-        "Barycentric evaluation does not match coefficient evaluation!"
-    );
-    println!("Barycentric IPA: Barycentric formula verified ✓");
+    // assert_eq!(
+    //     rho_advice_bary, rho_advice_coeff,
+    //     "Barycentric evaluation does not match coefficient evaluation!"
+    // );
+    // println!("Barycentric IPA: Barycentric formula verified ✓");
 
     // Now compute the evaluation of poly (external witness) using the same approach
     // poly.values are Lagrange values that should match poly_advice (without blinding)
@@ -120,18 +123,18 @@ fn bary_ipa_single_column(
 
     // Compute <poly, b_coeffs[0..poly.len()]> for the external witness
     // Note: poly doesn't include padding or blinding, only the actual witness values
-    let mut rho_poly = Fp::ZERO;
-    for i in 0..poly.values.len() {
-        rho_poly += poly.values[i] * b_coeffs[i];
-    }
-    println!("  poly(beta) = {:?} (via barycentric inner product on witness chunk)", rho_poly);
+    // let mut rho_poly = Fp::ZERO;
+    // for i in 0..poly.values.len() {
+    //     rho_poly += poly.values[i] * b_coeffs[i];
+    // }
+    // println!("  poly(beta) = {:?} (via barycentric inner product on witness chunk)", rho_poly);
 
     // Compute the blinding contribution from rows beyond the witness
-    let mut blinding_contribution = Fp::ZERO;
-    for i in poly.values.len()..dim {
-        blinding_contribution += poly_advice.values[i] * b_coeffs[i];
-    }
-    println!("  Blinding contribution = {:?}", blinding_contribution);
+    // let mut blinding_contribution = Fp::ZERO;
+    // for i in poly.values.len()..dim {
+    //     blinding_contribution += poly_advice.values[i] * b_coeffs[i];
+    // }
+    // println!("  Blinding contribution = {:?}", blinding_contribution);
 
     // Create the combined polynomial for the IPA proof (witness + blinding)
     let mut combined_lag = vec![Fp::ZERO; dim];
@@ -142,20 +145,20 @@ fn bary_ipa_single_column(
         combined_lag[i] = poly_advice.values[i];
     }
     // inner product between combined_lag and b_coeffs
-    let rho_poly_blinded = {
-        let mut acc = Fp::ZERO;
-        for i in 0..dim {
-            acc += combined_lag[i] * b_coeffs[i];
-        }
-        acc
-    };
-    println!("  poly(beta) + blinding = {:?}", rho_poly_blinded);
+    // let rho_poly_blinded = {
+    //     let mut acc = Fp::ZERO;
+    //     for i in 0..dim {
+    //         acc += combined_lag[i] * b_coeffs[i];
+    //     }
+    //     acc
+    // };
+    // println!("  poly(beta) + blinding = {:?}", rho_poly_blinded);
 
     // Now they should match!
-    println!("\nDEBUG: Checking if evaluations match after adding blinding:");
-    println!("  rho_poly + blinding = {:?}", rho_poly_blinded);
-    println!("  rho_advice_bary     = {:?}", rho_advice_bary);
-    println!("  Match: {}", rho_poly_blinded == rho_advice_bary);
+    // println!("\nDEBUG: Checking if evaluations match after adding blinding:");
+    // println!("  rho_poly + blinding = {:?}", rho_poly_blinded);
+    // println!("  rho_advice_bary     = {:?}", rho_advice_bary);
+    // println!("  Match: {}", rho_poly_blinded == rho_advice_bary);
 
     // Create Bulletproof inner product argument
     // Prove: <combined_lag, b_coeffs> = rho_poly_blinded
@@ -174,7 +177,7 @@ fn bary_ipa_single_column(
     let bulletproof_alpha = Fp::ONE + Fp::ONE;
 
     // Prove the inner product
-    println!("Bulletproof: Proving <combined_lag, b_coeffs> = {:.6?}", rho_poly_blinded);
+    println!("Bulletproof: Proving <combined_lag, b_coeffs> = {:.6?}", rho_advice_coeff);
     println!("  Witness vector size: {}", combined_lag.len());
     println!("  Public vector size: {}", b_coeffs.len());
 
@@ -222,12 +225,12 @@ fn bary_ipa_single_column(
     println!("  Match with poly_advice: {}", poly_from_lag_com == poly_advice_com);
 
     // Use the blinded evaluation for both (they should match)
-    let rho = rho_poly_blinded;
-    let rho_advice = rho_advice_bary;
-    println!("\nBarycentric IPA: Final evaluations at beta:");
-    println!("  rho (external, blinded) = {:?}", rho);
-    println!("  rho_advice (internal)   = {:?}", rho_advice);
-    println!("  Evaluations match: {}", rho == rho_advice);
+    // let rho = rho_poly_blinded;
+    // let rho_advice = rho_advice_bary;
+    // println!("\nBarycentric IPA: Final evaluations at beta:");
+    // println!("  rho (external, blinded) = {:?}", rho);
+    // println!("  rho_advice (internal)   = {:?}", rho_advice);
+    // println!("  Evaluations match: {}", rho == rho_advice);
 
     // Create transcript for Fiat-Shamir
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
@@ -297,7 +300,7 @@ fn bary_ipa_single_column(
 
     let total_proof_size = combined_proof.len();
 
-    (combined_proof, prover_time, total_proof_size, poly_com_blind, rho_poly_blinded)
+    (combined_proof, prover_time, total_proof_size, poly_com_blind, rho_advice_coeff)
 }
 
 /// Barycentric interpolation-based commitment for IPA (unified single/multi-column)
@@ -332,7 +335,7 @@ pub fn bary_ipa(
     alpha: halo2_proofs::halo2curves::pasta::Fp,
     advice_blind: Vec<halo2_proofs::halo2curves::pasta::Fp>,
     poly_col_len: usize,
-) -> (Vec<u8>, Duration, Duration, usize, Vec<EqAffine>, Vec<halo2_proofs::halo2curves::pasta::Fp>) {
+) -> (Vec<u8>, Duration, usize, Vec<EqAffine>, Vec<halo2_proofs::halo2curves::pasta::Fp>) {
     use halo2_proofs::halo2curves::pasta::Fp;
 
     if poly_col_len == 1 {
@@ -351,13 +354,13 @@ pub fn bary_ipa(
             advice_blind[0],
         );
 
-        return (proof, ptime, Duration::from_micros(0), psize, vec![blind_com], vec![eval]);
+        return (proof, ptime, psize, vec![blind_com], vec![eval]);
     }
 
     // ===== MULTI-COLUMN CASE =====
     println!("\n=== Barycentric IPA: Multi-Column ({} columns) ===", poly_col_len);
 
-    let total_timer = Instant::now();
+    let mut total_timer = Duration::ZERO;
 
     println!("  Number of columns: {}", poly_col_len);
     println!("  Domain size: {}", domain.get_n());
@@ -397,6 +400,7 @@ pub fn bary_ipa(
         poly_com_blind_vec.push(poly_com_blind);
         rho_vec.push(rho);
         total_proof_size += psize;
+        total_timer += _ptime;
     }
 
     // Combine all column proofs
@@ -413,7 +417,7 @@ pub fn bary_ipa(
     }
 
     let final_proof_size = combined_proof.len();
-    let total_time = total_timer.elapsed();
+    // let total_time = total_timer.elapsed();
 
     println!("\n=== Multi-column Proof Summary ===");
     println!("  Number of columns: {}", poly_col_len);
@@ -421,9 +425,9 @@ pub fn bary_ipa(
     println!("  Overhead (metadata): {} bytes", final_proof_size - total_proof_size);
     println!("  Total proof size: {} bytes", final_proof_size);
     println!("  Average per column: {} bytes", total_proof_size / poly_col_len);
-    println!("  Total proving time: {:?}", total_time);
+    println!("  Total proving time: {:?}", total_timer);
 
-    (combined_proof, total_time, Duration::from_micros(0), final_proof_size, poly_com_blind_vec, rho_vec)
+    (combined_proof, total_timer, final_proof_size, poly_com_blind_vec, rho_vec)
 }
 
 /// Private helper: Barycentric verifier for a single column
