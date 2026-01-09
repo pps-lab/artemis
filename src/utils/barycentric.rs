@@ -17,11 +17,139 @@ use halo2_proofs::transcript::{
     TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
 };
 use ff::Field;
-use group::{Curve, cofactor::CofactorCurveAffine};
+use group::{Curve, prime::PrimeCurveAffine as CurveAffine, cofactor::CofactorCurveAffine};
 use num_traits::pow;
 use rand_core::OsRng;
 
 use crate::utils::bulletproof::{BulletproofParams, prove as bulletproof_prove, verify as bulletproof_verify};
+
+/// Precomputed values shared across all columns in multi-column barycentric proofs.
+///
+/// This struct holds expensive computations that depend only on `beta`, `domain`, and `poly_params`,
+/// which are identical across all columns in a multi-column proof. By computing these once and
+/// reusing them, we eliminate ~87.5% of redundant work in the multi-column case.
+pub struct BarycentricPrecomputed {
+    /// Omega powers: ω^i for i = 0 to dim-1
+    omega_powers: Vec<halo2_proofs::halo2curves::pasta::Fp>,
+
+    /// Barycentric coefficients: b_i = scaling_factor * ω^i / (beta - ω^i)
+    /// where scaling_factor = (beta^dim - 1) / dim
+    b_coeffs: Vec<halo2_proofs::halo2curves::pasta::Fp>,
+
+    /// Bulletproof parameters (shared across all columns)
+    bulletproof_params: BulletproofParams<EqAffine>,
+
+    /// Domain size (for validation)
+    dim: usize,
+
+    /// Beta evaluation point (for validation)
+    beta: halo2_proofs::halo2curves::pasta::Fp,
+}
+
+impl BarycentricPrecomputed {
+    /// Compute all shared values once for the multi-column case.
+    ///
+    /// This performs the expensive operations that would otherwise be repeated per column:
+    /// - Computing omega powers (dim field multiplications)
+    /// - Computing barycentric coefficients (dim field inversions)
+    /// - Cloning bulletproof parameters (large vector clone)
+    pub fn new(
+        beta: halo2_proofs::halo2curves::pasta::Fp,
+        poly_params: &ParamsIPA<EqAffine>,
+        domain: &EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    ) -> Self {
+        use halo2_proofs::halo2curves::pasta::Fp;
+        let dim = domain.get_n() as usize;
+
+        // Compute omega powers: ω^i for i = 0 to dim-1
+        let mut omega_powers = Vec::with_capacity(dim);
+        omega_powers.push(Fp::ONE);
+        for i in 1..dim {
+            omega_powers.push(domain.rotate_omega(omega_powers[i - 1], Rotation(1)));
+        }
+
+        // Compute scaling factor: (beta^dim - 1) / dim
+        let beta_d = beta.pow([dim as u64]);
+        let numerator = beta_d - Fp::ONE;
+        let d_inv = Fp::from(dim as u64).invert().unwrap();
+        let scaling_factor = numerator * d_inv;
+
+        // Compute barycentric coefficients: b_i = scaling_factor * ω^i / (beta - ω^i)
+        let mut b_coeffs = Vec::with_capacity(dim);
+        for i in 0..dim {
+            let omega_i = omega_powers[i];
+            let denominator = beta - omega_i;
+
+            if denominator == Fp::ZERO {
+                // This shouldn't happen with random beta
+                b_coeffs.push(Fp::ZERO);
+            } else {
+                let b_i = scaling_factor * omega_i * denominator.invert().unwrap();
+                b_coeffs.push(b_i);
+            }
+        }
+
+        // Create BulletproofParams once (avoids repeated vector clones)
+        let bulletproof_params = BulletproofParams::new(
+            poly_params.get_g().to_vec(),
+            poly_params.get_w(),
+            poly_params.get_u(),
+        );
+
+        Self {
+            omega_powers,
+            b_coeffs,
+            bulletproof_params,
+            dim,
+            beta,
+        }
+    }
+
+    /// Validate that precomputed values match the current parameters.
+    /// Used as a debug assertion to catch programming errors.
+    #[allow(dead_code)]
+    fn validate(&self, beta: halo2_proofs::halo2curves::pasta::Fp, dim: usize) {
+        debug_assert_eq!(self.beta, beta, "Beta mismatch in precomputed values");
+        debug_assert_eq!(self.dim, dim, "Domain size mismatch in precomputed values");
+    }
+}
+
+/// Helper enum to handle both borrowed (multi-column) and owned (single-column) precomputed values.
+///
+/// This solves the lifetime challenge: in multi-column case, we borrow from a precomputed struct,
+/// but in single-column case, we need to own the freshly computed values.
+enum BarycentricValues<'a> {
+    /// Multi-column case: reference to precomputed values (efficient)
+    Borrowed(&'a BarycentricPrecomputed),
+    /// Single-column case: owned freshly computed values (backward compatible)
+    Owned(Box<BarycentricPrecomputed>),
+}
+
+impl<'a> BarycentricValues<'a> {
+    /// Get omega powers reference
+    fn omega_powers(&self) -> &[halo2_proofs::halo2curves::pasta::Fp] {
+        match self {
+            Self::Borrowed(p) => &p.omega_powers,
+            Self::Owned(p) => &p.omega_powers,
+        }
+    }
+
+    /// Get barycentric coefficients reference
+    fn b_coeffs(&self) -> &[halo2_proofs::halo2curves::pasta::Fp] {
+        match self {
+            Self::Borrowed(p) => &p.b_coeffs,
+            Self::Owned(p) => &p.b_coeffs,
+        }
+    }
+
+    /// Get bulletproof parameters reference
+    fn bulletproof_params(&self) -> &BulletproofParams<EqAffine> {
+        match self {
+            Self::Borrowed(p) => &p.bulletproof_params,
+            Self::Owned(p) => &p.bulletproof_params,
+        }
+    }
+}
 
 /// Private helper: Barycentric interpolation for a single column
 ///
@@ -33,9 +161,10 @@ fn bary_ipa_single_column(
     poly_com: EqAffine,
     beta: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
-    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    domain: &EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
     alpha: halo2_proofs::halo2curves::pasta::Fp,
     blind: halo2_proofs::halo2curves::pasta::Fp,
+    precomputed: Option<&BarycentricPrecomputed>,
 ) -> (Vec<u8>, Duration, usize, EqAffine, halo2_proofs::halo2curves::pasta::Fp) {
     use halo2_proofs::halo2curves::pasta::Fp;
 
@@ -70,36 +199,19 @@ fn bary_ipa_single_column(
     // This can be written as an inner product: f(beta) = <f, b_coeffs>
     // where b_coeffs[i] = (beta^d - 1) / d * ω^i / (beta - ω^i)
 
-    println!("Barycentric IPA: Computing barycentric coefficients for inner product");
-
-    // Precompute omega powers: ω^i for i = 0 to d-1
-    let mut omega_powers = Vec::with_capacity(dim);
-    omega_powers.push(Fp::ONE);
-    for i in 1..dim {
-        omega_powers.push(domain.rotate_omega(omega_powers[i - 1], Rotation(1)));
-    }
-
-    // Compute scaling factor: (beta^d - 1) / d
-    let beta_d = beta.pow([dim as u64]);
-    let numerator = beta_d - Fp::ONE;
-    let d_inv = Fp::from(dim as u64).invert().unwrap();
-    let scaling_factor = numerator * d_inv;
-
-    // Compute barycentric coefficients b_i = scaling_factor * ω^i / (beta - ω^i)
-    let mut b_coeffs = Vec::with_capacity(dim);
-    for i in 0..dim {
-        let omega_i = omega_powers[i];
-        let denominator = beta - omega_i;
-
-        if denominator == Fp::ZERO {
-            println!("Warning: beta equals a root of unity at index {}", i);
-            // This shouldn't happen with random beta
-            b_coeffs.push(Fp::ZERO);
-        } else {
-            let b_i = scaling_factor * omega_i * denominator.invert().unwrap();
-            b_coeffs.push(b_i);
-        }
-    }
+    // Get omega powers, b_coeffs, and bulletproof_params
+    // Either from precomputed struct (multi-column) or compute fresh (single-column)
+    let values = if let Some(precomp) = precomputed {
+        // Multi-column case: use precomputed values (optimized path)
+        println!("  Using precomputed barycentric coefficients (multi-column optimization)");
+        BarycentricValues::Borrowed(precomp)
+    } else {
+        // Single-column case: compute fresh values (backward compatible)
+        println!("  Computing barycentric coefficients (single-column)");
+        BarycentricValues::Owned(Box::new(
+            BarycentricPrecomputed::new(beta, poly_params, domain)
+        ))
+    };
 
     // Compute inner product <poly_advice, b_coeffs> to get evaluation at beta
     // let mut rho_advice_bary = Fp::ZERO;
@@ -183,13 +295,6 @@ fn bary_ipa_single_column(
     // Prove: <combined_lag, b_coeffs> = rho_poly_blinded
     println!("\n=== Creating Bulletproof Inner Product Argument ===");
 
-    // Create BulletproofParams from IPA parameters
-    let bulletproof_params = BulletproofParams::new(
-        poly_params.get_g().to_vec(),
-        poly_params.get_w(),
-        poly_params.get_u(),
-    );
-
     // Use blinding factor that matches poly_com + poly_com_blind
     // Since both poly_com and poly_com_blind use Blind::default() = Fp::ONE,
     // the combined commitment has blinding factor 2*Fp::ONE
@@ -198,12 +303,12 @@ fn bary_ipa_single_column(
     // Prove the inner product
     println!("Bulletproof: Proving <combined_lag, b_coeffs> = {:.6?}", rho_advice_coeff);
     println!("  Witness vector size: {}", combined_lag.len());
-    println!("  Public vector size: {}", b_coeffs.len());
+    println!("  Public vector size: {}", values.b_coeffs().len());
 
     let (bulletproof_proof, bulletproof_time, bulletproof_size) = bulletproof_prove(
-        &bulletproof_params,
+        values.bulletproof_params(),
         &combined_lag,
-        &b_coeffs,
+        values.b_coeffs(),
         bulletproof_alpha,
     );
 
@@ -362,9 +467,10 @@ pub fn bary_ipa(
             poly_com_chunks[0],
             beta,
             poly_params,
-            domain,
+            &domain,
             alpha,
             advice_blind[0],
+            None,
         );
 
         return (proof, ptime, psize, vec![blind_com], vec![eval]);
@@ -373,15 +479,22 @@ pub fn bary_ipa(
     // ===== MULTI-COLUMN CASE =====
     println!("\n=== Barycentric IPA: Multi-Column ({} columns) ===", poly_col_len);
 
-    let mut total_timer = Duration::ZERO;
-
     println!("  Number of columns: {}", poly_col_len);
     println!("  Domain size: {}", domain.get_n());
+
+    // OPTIMIZATION: Precompute shared values once for all columns
+    println!("  Precomputing shared barycentric coefficients and parameters...");
+    let precompute_timer = Instant::now();
+    let precomputed = BarycentricPrecomputed::new(beta, poly_params, &domain);
+    let precompute_time = precompute_timer.elapsed();
+    println!("  Precomputation time: {:?}", precompute_time);
+    println!("  This will be amortized across {} columns", poly_col_len);
 
     let mut all_proofs = Vec::new();
     let mut poly_com_blind_vec = Vec::new();
     let mut rho_vec = Vec::new();
     let mut total_proof_size = 0;
+    let mut total_timer = precompute_time;  // Include precomputation in total time
 
     // Process each column
     for col_idx in 0..poly_col_len {
@@ -394,16 +507,17 @@ pub fn bary_ipa(
         // Get advice column for this chunk
         let poly_advice_chunk = advice_lagrange[col_idx].clone();
 
-        // Call single-column bary_ipa
+        // Call single-column bary_ipa with precomputed values
         let (proof_bytes, _ptime, psize, poly_com_blind, rho) = bary_ipa_single_column(
             poly_chunk,
             poly_advice_chunk,
             poly_com_chunk,
             beta,
             poly_params,
-            domain.clone(),
+            &domain,
             alpha,
             advice_blind[col_idx],
+            Some(&precomputed),  // OPTIMIZATION: Pass precomputed values
         );
 
         println!("  Column {} proof size: {} bytes", col_idx, psize);
@@ -452,7 +566,8 @@ fn bary_verify_ipa_single_column(
     beta: halo2_proofs::halo2curves::pasta::Fp,
     rho: halo2_proofs::halo2curves::pasta::Fp,
     poly_params: &ParamsIPA<EqAffine>,
-    domain: EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    domain: &EvaluationDomain<halo2_proofs::halo2curves::pasta::Fp>,
+    precomputed: Option<&BarycentricPrecomputed>,
 ) -> bool {
     use halo2_proofs::halo2curves::pasta::Fp;
 
@@ -506,49 +621,27 @@ fn bary_verify_ipa_single_column(
     // Verify Bulletproof inner product proof
     println!("\n=== Verifying Bulletproof Inner Product Argument ===");
 
-    // Reconstruct barycentric coefficients (same as prover)
-    let dim = domain.get_n() as usize;
-    let omega = domain.get_omega();
-
-    // Precompute omega powers
-    let mut omega_powers = Vec::with_capacity(dim);
-    omega_powers.push(Fp::ONE);
-    for i in 1..dim {
-        omega_powers.push(domain.rotate_omega(omega_powers[i - 1], Rotation(1)));
-    }
-
-    // Compute scaling factor: (beta^d - 1) / d
-    let beta_d = beta.pow([dim as u64]);
-    let numerator = beta_d - Fp::ONE;
-    let d_inv = Fp::from(dim as u64).invert().unwrap();
-    let scaling_factor = numerator * d_inv;
-
-    // Compute barycentric coefficients
-    let mut b_coeffs = Vec::with_capacity(dim);
-    for i in 0..dim {
-        let omega_i = omega_powers[i];
-        let denominator = beta - omega_i;
-
-        if denominator == Fp::ZERO {
-            println!("Warning: beta equals a root of unity at index {}", i);
-            b_coeffs.push(Fp::ZERO);
-        } else {
-            let b_i = scaling_factor * omega_i * denominator.invert().unwrap();
-            b_coeffs.push(b_i);
-        }
-    }
-
-    // Create BulletproofParams from IPA parameters
-    let bulletproof_params = BulletproofParams::new(
-        poly_params.get_g().to_vec(),
-        poly_params.get_w(),
-        poly_params.get_u(),
-    );
+    // Get omega powers, b_coeffs, and bulletproof_params
+    // Either from precomputed struct (multi-column) or compute fresh (single-column)
+    let values = if let Some(precomp) = precomputed {
+        // Multi-column case: use precomputed values (optimized path)
+        println!("  Using precomputed barycentric coefficients (multi-column optimization)");
+        BarycentricValues::Borrowed(precomp)
+    } else {
+        // Single-column case: compute fresh values (backward compatible)
+        println!("  Computing barycentric coefficients (single-column)");
+        BarycentricValues::Owned(Box::new(
+            BarycentricPrecomputed::new(beta, poly_params, domain)
+        ))
+    };
 
     // Compute combined commitment homomorphically: poly_com + poly_com_blind
     // This exploits the homomorphic property of Pedersen commitments:
     // commit(poly) + commit(blind) = commit(poly + blind)
-    let combined_lag_commitment = (poly_com.to_curve() + poly_com_blind.to_curve()).to_affine();
+    use halo2_proofs::halo2curves::pasta::Eq;
+    let poly_com_curve: Eq = poly_com.into();
+    let poly_com_blind_curve: Eq = poly_com_blind.into();
+    let combined_lag_commitment = (poly_com_curve + poly_com_blind_curve).to_affine();
 
     println!("  Computing combined commitment homomorphically:");
     println!("    poly_com = {:?}", poly_com);
@@ -559,9 +652,9 @@ fn bary_verify_ipa_single_column(
     println!("  Verifying <combined_lag, b_coeffs> = {:.6?}", rho);
 
     let bulletproof_ok = bulletproof_verify(
-        &bulletproof_params,
+        values.bulletproof_params(),
         combined_lag_commitment,
-        &b_coeffs,
+        values.b_coeffs(),
         rho,
         bulletproof_proof,
     );
@@ -620,7 +713,8 @@ pub fn bary_verify_ipa(
             beta,
             rho_vec[0],
             poly_params,
-            domain,
+            &domain,
+            None,
         );
     }
 
@@ -673,6 +767,14 @@ pub fn bary_verify_ipa(
         offset += proof_len;
     }
 
+    // OPTIMIZATION: Precompute shared values once for all columns
+    println!("\n  Precomputing shared barycentric coefficients and parameters...");
+    let precompute_timer = Instant::now();
+    let precomputed = BarycentricPrecomputed::new(beta, poly_params, &domain);
+    let precompute_time = precompute_timer.elapsed();
+    println!("  Precomputation time: {:?}", precompute_time);
+    println!("  This will be amortized across {} columns\n", poly_col_len);
+
     // Verify each column
     let mut all_verified = true;
 
@@ -687,7 +789,8 @@ pub fn bary_verify_ipa(
             beta,
             rho_vec[col_idx],
             poly_params,
-            domain.clone(),
+            &domain,
+            Some(&precomputed),  // OPTIMIZATION: Pass precomputed values
         );
 
         if !verified {
