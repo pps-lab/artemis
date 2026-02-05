@@ -324,99 +324,104 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
   // zkFFT commitment (if enabled)
   if zkfft {
-    println!("Running zkFFT commitment...");
+    println!("Running zkFFT commitment for {} columns...", poly_col_len);
 
     // Get domain for omega
     let domain = pk.get_vk().get_domain();
-
-    // Prepare witness and generators for computing initial commitment P
     let omega = domain.get_omega();
-    let poly_advice_coeff = domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
-    let mut a: Vec<Fp> = poly_advice_coeff.values.clone();
-    let n = a.len();
-    let next_pow2 = n.next_power_of_two();
-    if n < next_pow2 {
-        a.resize(next_pow2, Fp::ZERO);
-    }
-    let n = a.len();
-    let k = n;
 
-    println!("Creating lazy b matrix");
+    // Loop over each polynomial column
+    for col_idx in 0..poly_col_len {
+      println!("\n=== zkFFT Column {} ===", col_idx);
 
-    // Use lazy representation to save memory (2MB vs 32GB for n=32K)
-    let b_lazy = LazyBMatrix::new(omega, n);
-
-    // Get generators (same as prover)
-    let generators_g: Vec<EqAffine> = poly_params.get_g()
-        .iter().take(n).copied().collect();
-    let generator_g = generators_g.clone();
-    let generator_h = poly_params.get_w();
-
-    // Generate alpha (blinding factor)
-    let alpha = Fp::random(OsRng);
-
-    // Compute initial commitment P = sum(a[i]*g[i]) + sum(inner_products[i]*g'[i]) + alpha*h
-    println!("Computing initial commitment P...");
-
-    // Compute all inner products using FFT: O(k log k) instead of O(k²)
-    let inner_products = b_lazy.compute_all_inner_products_fft(&a);
-
-    // Build multiexp terms for P
-    use halo2_proofs::arithmetic::best_multiexp;
-    let mut P_terms: Vec<(Fp, EqAffine)> = Vec::new();
-
-    // Add a[i] * generators_g[i] terms
-    for i in 0..n {
-        P_terms.push((a[i], generators_g[i]));
-    }
-
-    // Add inner_products[i] * generator_g[i] terms
-    for i in 0..k {
-        P_terms.push((inner_products[i], generator_g[i]));
-    }
-
-    // Add alpha * generator_h term
-    P_terms.push((alpha, generator_h));
-
-    // Compute P using multiexp
-    let (coeffs, bases): (Vec<_>, Vec<_>) = P_terms.iter().cloned().unzip();
-    let commitment_P: EqAffine = best_multiexp(&coeffs, &bases).into();
-
-    println!("Initial commitment P computed");
-
-    // Run prover with alpha
-    let (zkfft_proof_bytes, zkfft_ptime, _zkfft_vtime, zkfft_size) =
-        zkfft_commit_ipa_fft(poly_advice_coeff.clone(), &poly_params, domain.clone(), alpha);
-
-    proving_time += zkfft_ptime;
-    proof_size += zkfft_size;
-
-    println!("zkFFT: Proof size: {} bytes", zkfft_size);
-
-    // Run verifier
-    println!("Running zkFFT verifier...");
-      for i in 0..num_runs {
-          let verify_start = Instant::now();
-
-          let verified = zkfft_verify_ipa(
-              &zkfft_proof_bytes,
-              b_lazy.clone(),
-              generators_g.clone(),
-              generator_g.clone(),
-              generator_h,
-              commitment_P,
-          );
-
-          let vfy_time = verify_start.elapsed();
-
-          if verified {
-              println!("zkFFT: Verification PASSED ✓");
-              verifying_time[i] += vfy_time;
-          } else {
-              println!("zkFFT: Verification FAILED ✗");
-              panic!("zkFFT verification failed!");
-          }
+      // Prepare witness and generators for computing initial commitment P
+      let poly_advice_coeff = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
+      let mut a: Vec<Fp> = poly_advice_coeff.values.clone();
+      let n = a.len();
+      let next_pow2 = n.next_power_of_two();
+      if n < next_pow2 {
+          a.resize(next_pow2, Fp::ZERO);
       }
+      let n = a.len();
+      let k = n;
+
+      println!("Creating lazy b matrix");
+
+      // Use lazy representation to save memory (2MB vs 32GB for n=32K)
+      let b_lazy = LazyBMatrix::new(omega, n);
+
+      // Get generators (same as prover)
+      let generators_g: Vec<EqAffine> = poly_params.get_g()
+          .iter().take(n).copied().collect();
+      let generator_g = generators_g.clone();
+      let generator_h = poly_params.get_w();
+
+      // Generate alpha (blinding factor)
+      let alpha = Fp::random(OsRng);
+
+      // Compute initial commitment P = sum(a[i]*g[i]) + sum(inner_products[i]*g'[i]) + alpha*h
+      println!("Computing initial commitment P...");
+
+      // Compute all inner products using FFT: O(k log k) instead of O(k²)
+      let inner_products = b_lazy.compute_all_inner_products_fft(&a);
+
+      // Build multiexp terms for P
+      use halo2_proofs::arithmetic::best_multiexp;
+      let mut P_terms: Vec<(Fp, EqAffine)> = Vec::new();
+
+      // Add a[i] * generators_g[i] terms
+      for i in 0..n {
+          P_terms.push((a[i], generators_g[i]));
+      }
+
+      // Add inner_products[i] * generator_g[i] terms
+      for i in 0..k {
+          P_terms.push((inner_products[i], generator_g[i]));
+      }
+
+      // Add alpha * generator_h term
+      P_terms.push((alpha, generator_h));
+
+      // Compute P using multiexp
+      let (coeffs, bases): (Vec<_>, Vec<_>) = P_terms.iter().cloned().unzip();
+      let commitment_P: EqAffine = best_multiexp(&coeffs, &bases).into();
+
+      println!("Initial commitment P computed");
+
+      // Run prover with alpha
+      let (zkfft_proof_bytes, zkfft_ptime, _zkfft_vtime, zkfft_size) =
+          zkfft_commit_ipa_fft(poly_advice_coeff.clone(), &poly_params, domain.clone(), alpha);
+
+      proving_time += zkfft_ptime;
+      proof_size += zkfft_size;
+
+      println!("zkFFT: Column {}: Proof size: {} bytes", col_idx, zkfft_size);
+
+      // Run verifier
+      println!("Running zkFFT verifier...");
+        for i in 0..num_runs {
+            let verify_start = Instant::now();
+
+            let verified = zkfft_verify_ipa(
+                &zkfft_proof_bytes,
+                b_lazy.clone(),
+                generators_g.clone(),
+                generator_g.clone(),
+                generator_h,
+                commitment_P,
+            );
+
+            let vfy_time = verify_start.elapsed();
+
+            if verified {
+                println!("zkFFT: Column {} Verification PASSED ✓", col_idx);
+                verifying_time[i] += vfy_time;
+            } else {
+                println!("zkFFT: Column {} Verification FAILED ✗", col_idx);
+                panic!("zkFFT verification failed for column {}!", col_idx);
+            }
+        }
+    } // end for col_idx
   }
 
   // Barycentric commitment (if enabled)
