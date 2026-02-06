@@ -1,0 +1,9 @@
+- debug:
+    msg: "-> common"
+  tags: [print_action]
+
+- name: Update repositories cache and install required packages
+  become: True
+  apt:
+    pkg:
+    # TODO: add other required packages (for all host types)

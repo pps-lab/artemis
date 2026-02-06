@@ -1,0 +1,9 @@
+---
+
+- name: Load variables for all groups of the host
+  include_vars:
+    dir: "{{ external_group_vars_dir }}/{{ group_name }}"
+    ignore_unknown_extensions: True
+  loop: "{{ groups_to_load }}"
+  loop_control:
+    loop_var: group_name

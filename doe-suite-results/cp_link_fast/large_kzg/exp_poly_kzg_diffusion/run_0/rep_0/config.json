@@ -1,0 +1,15 @@
+{
+    "$CMD$": {
+        "large": [
+            {
+                "main": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-large/code/src/bin/test.zsh diffusion kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-large/code"
+            }
+        ]
+    },
+    "cmd": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-large/code/src/bin/test.zsh diffusion kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-large/code",
+    "cmd_time": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml",
+    "cpsnark": "cp_link_fast",
+    "model": "diffusion",
+    "num_verifier_reps": 5,
+    "pc_type": "kzg"
+}

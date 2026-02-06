@@ -1,0 +1,20 @@
+exp_poly_kzg_mobilenet:
+- model: mobilenet
+  cpsnark: no_com
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-med/code/src/bin/test.zsh mobilenet kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-med/code"
+  $CMD$:
+    medium:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-med/code/src/bin/test.zsh mobilenet kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-med/code"
+exp_poly_kzg_vgg:
+- model: vgg
+  cpsnark: no_com
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-med/code/src/bin/test.zsh vgg kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-med/code"
+  $CMD$:
+    large:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-med/code/src/bin/test.zsh vgg kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-med/code"

@@ -1,0 +1,283 @@
+---
+
+
+##########################################################################
+#   Load Experiment State and Setup AWS                                  #
+##########################################################################
+- name: Load group_vars from non-standard location
+  hosts: localhost
+
+  tasks:
+
+    - debug:
+        msg: "Project Directory: {{ does_project_dir }}"
+      tags: [print_action]
+
+    - include_vars:
+        dir: "{{ external_group_vars_dir }}/all"
+        ignore_unknown_extensions: True
+
+    - fail:
+        msg: "environment variable: DOES_PROJECT_ID_SUFFIX is not set"
+      when: does_project_id_suffix | length == 0
+
+    - fail:
+        msg: "environment variable(s) for aws: DOES_SSH_KEY_NAME is not set"
+      when: cloud == 'aws' and (ssh_key_name | length == 0 or aws_user  | length == 0)
+
+    - fail:
+        msg: "environment variable(s) for docker: DOES_DOCKER_SSH_PUBLIC_KEY and/or DOES_DOCKER_USER not set"
+      when: cloud == 'docker' and (docker_public_key | length == 0 or docker_user | length == 0)
+
+    - debug:
+        msg: "Project Id: {{ prj_id }}"
+      tags: [print_action]
+
+##########################################################################
+#   Load Experiment State and Setup AWS                                  #
+##########################################################################
+
+- name: Set and print configuration
+  hosts: localhost
+  tasks:
+  - name: Set config
+    set_fact:
+      any_errors_fatal_setup: "{{ lookup('ini', 'any_errors_fatal_setup', section='defaults', file=ansible_config_file) }}"
+      any_errors_fatal_experiments: "{{ lookup('ini', 'any_errors_fatal_experiments', section='defaults', file=ansible_config_file) }}"
+
+  - name: Print any_errors_fatal
+    debug:
+      msg: "any_errors_fatal_setup: {{ any_errors_fatal_setup }}, any_errors_fatal_experiments: {{ any_errors_fatal_experiments }}"
+
+
+- name: Load Experiment State and Setup AWS
+  hosts: localhost
+
+  tasks:
+
+    - name: resolve suite_id, load and validate suite design, fill default values, and prepare variables
+      include_role:
+        name: suite-load-pre-cloud-setup
+
+    - name: set the inventory source directory
+      set_fact:
+        does_inventory_source: "{{ ansible_inventory_sources | first }}"
+
+    - name: Create a directory if it does not exist
+      ansible.builtin.file:
+        path: "{{ does_inventory_source }}"
+        state: directory
+        mode: '0755'
+
+    - name: prepare dynamic inventory
+      include_role:
+        name: suite-cloud-inventory-setup
+        tasks_from: "{{ 'suite-cloud-inventory-setup' | multiplex_tasks(cloud) }}"
+      vars:
+        prj_clear: False
+
+    - assert:
+        that:
+        - suite_id is defined
+        - my_suite_design is defined
+        - host_types is defined
+        - common_roles is defined
+
+    - debug:
+        msg: "Setup AWS..."
+      tags: [print_action]
+      when: id == 'new'
+
+    - name: Setup Cloud Network
+      include_role:
+        name: suite-cloud-network-create
+        tasks_from: "{{ 'suite-cloud-network-create' | multiplex_tasks(cloud) }}"
+
+    - name: Setup cloud instances
+      include_role:
+        name: suite-cloud-instances-create
+        tasks_from: "{{ 'suite-cloud-instances-create' | multiplex_tasks(cloud) }}"
+
+    - name: above
+      assert:
+        that:
+          - suite_hosts_lst is defined
+          - my_suite_design is defined
+
+    - name: Set variables for different hosts
+      set_fact:
+        suite_id: "{{ hostvars['localhost'].suite_id }}"
+        exp_name: "{{ host_info.exp_name }}"
+        host_type: "{{ host_info.host_type }}"
+        is_controller: "{{ host_info.is_controller }}"
+        exp_host_type_idx: "{{ host_info.exp_host_type_idx }}"
+        exp_host_type_n: "{{ host_info.exp_host_type_n }}"
+        setup_roles: "{{ ['setup-suite'] + hostvars['localhost'].common_roles[host_info.exp_name] + host_info.init_roles }}"
+      delegate_facts: True
+      delegate_to: "{{ host_info.ansible_host_id }}"
+      loop: "{{ suite_hosts_lst }}"
+      loop_control:
+        loop_var: host_info
+
+
+
+    - debug:
+        msg: "Setup Host Machines..."
+      tags: [print_action]
+
+
+- name: Setup registered host types (part 2) -> apply
+  hosts: all  # intersection of hosts in project and in suite (via aws_ec2 dynamic inventory plugin)
+  strategy: free
+  tasks:
+
+  - name: Setup Part 2
+    block:
+
+    - name: Load group variables for host
+      include_role:
+        name: load-group-vars
+      vars:
+        groups_to_load:
+          - all
+          - "{{ host_type }}"
+
+    - name: Execute init roles (incl. common roles for all hosts)
+      include_role:
+        name: "{{ role_name }}"
+        tasks_from: "{{ role_name | multiplex_tasks(cloud) }}"
+      loop: "{{ setup_roles }}"
+      loop_control:
+        loop_var: role_name
+      when: id == 'new' # only setup if it is a new experiment
+
+    rescue:
+    - name: Set fact that setup has failed
+      set_fact:
+        failed_task: "Host name: {{ inventory_hostname }}, Task name: {{ ansible_failed_task.name }}, Action: {{ ansible_failed_task.action }}"
+
+
+- name: Check for any errors during setup, and terminate all hosts if any error is detected
+  hosts: all  # intersection of hosts in project and in suite (via aws_ec2 dynamic inventory plugin)
+  strategy: linear
+  any_errors_fatal: true
+  tasks:
+   # via https://stackoverflow.com/questions/64208241/how-to-get-variables-from-all-hosts-in-ansible
+  - name: Check if any host failed
+    set_fact:
+      failed_tasks: "{{ hostvars | dict2items | selectattr('value.failed_task', 'defined') | map(attribute='value.failed_task') }}"
+
+  - name: End execution if any host failed
+    fail:
+      msg: "Setup failed on at least one host: {{ failed_tasks }}"
+    when:
+      - (failed_tasks | length>0)
+      - hostvars['localhost']['any_errors_fatal_setup']
+
+##########################################################################
+#   Run Experiment Jobs                                                  #
+##########################################################################
+
+- name: Start different experiments in parallel (but each experiment itself synchronized)
+  hosts: is_controller_yes # (filter prj_id and suite via aws_ec2 dynamic inventory plugin)
+  strategy: free
+  tasks:
+    - name: extending the experiment config + for new suite create the job lists
+      include_role:
+        name: suite-load-post-cloud-setup
+
+    - debug:
+        msg: "running experiment jobs for experiment {{ exp_name }}"
+      tags: [print_action]
+
+    - block:
+      - name: start jobs for experiment {{ exp_name }}
+        include_role:
+          name: experiment-job
+        loop: "{{ range(0, (exp_job_ids_unfinished | length), 1) | list }}" # TODO [nku] this is not optimal because of the multi job ids per
+        loop_control:
+          loop_var: unfinished_job_idx
+
+      # TODO: for easier debugging if a job failed, it would be good to download all the results. At the moment if there is a syntax error in the tsp command, no output is downloaded.
+      #       -> could maybe be solved when multi-command setup with comeback of service files is implemented
+      rescue:
+
+      - name: Set fact an unexpected error happened
+        set_fact:
+          failed_task: "Host name: {{ inventory_hostname }}, Task name: {{ ansible_failed_task.name }}, Action: {{ ansible_failed_task.action }}"
+        when: is_expected_error is not defined or not is_expected_error
+
+      - name: handle unexpected error
+        fail:
+          msg: unexpected error occured in experiment = {{ exp_name }}
+        when: is_expected_error is not defined or not is_expected_error
+
+#      - name: Save the updated state of the experiment run (save job ids)
+#        include_role:
+#          name: experiment-state
+#        vars:
+#          expstate: save
+
+      # the loop until task in `experiment-job` throws an error if the number of tries are exceeded.
+      # here we catch this error and handle this gracefully. (every other error is handled by the previous task)
+      - name: handle expected error if number of tries exceeded
+        ansible.builtin.debug:
+          msg: number of tries exceeded -> experiment = {{ exp_name }}
+        # when: is_expected_error
+
+
+
+##########################################################################
+#   Cleanup Cloud (terminate instances, remove vpc)                        #
+##########################################################################
+
+- name: Cleanup and Utility
+  hosts: localhost
+  tasks:
+
+  - name: compute overview of progress in different experiments in suite
+    set_fact:
+      suite_progress_info: "{{ suite_progress_info | default({}) | combine({my_exp_name: {'require_suite_to_finish': my_require_suite ,'n_finished': my_n_finished | int, 'n_unfinished': my_n_unfinished | int, 'progress':  (my_n_finished | int / (my_n_finished | int + my_n_unfinished | int) * 100) | round(2) | string + ' %' }})}}"
+    vars:
+      my_exp_name: "{{ hostvars[my_controller_host].exp_name }}"
+      my_n_unfinished: "{{ hostvars[my_controller_host].exp_job_ids_unfinished | length }}"
+      my_require_suite: "{{ hostvars[my_controller_host].exp_job_ids_pending | length > 0 }}"
+      my_n_finished: "{{ hostvars[my_controller_host].exp_job_ids_finished | length }}"
+    loop: "{{ groups['is_controller_yes'] }}"
+    loop_control:
+      loop_var: my_controller_host
+
+  - set_fact:
+      is_suite_finished: "{{ suite_progress_info | json_query('*.n_unfinished') | sum  == 0 }}"
+
+  - block:
+    - debug:
+        msg: "cleanup AWS..."
+      tags: [print_action]
+
+    - name: Cleanup AWS
+      include_role:
+        name: suite-cloud-instances-delete
+        tasks_from: "{{ 'suite-cloud-instances-delete' | multiplex_tasks(cloud) }}"
+      vars:
+        filter_by_suite: True
+
+    #- name: Remove Cloud Network
+    #  include_role:
+    #    name: suite-cloud-network-delete
+    #    tasks_from: "{{ 'suite-cloud-network-delete' | multiplex_tasks(cloud) }}"
+    #  when: exp_base.skip_network_delete is undefined or  exp_base.skip_network_delete == false
+
+    # cleanup aws if suite is finished (unless the explicit flag is set to keep the aws environment)
+    when: awsclean | default(true) | bool and is_suite_finished
+
+  - name: output suite id (for convenience)
+    debug:
+      msg: "suite={{ suite }}    suite_id={{ suite_id }}    finished={{ is_suite_finished }}"
+    tags: [print_action]
+
+  - name: output progress information of experiments
+    debug:
+      msg: "{{ suite_progress_info[item] }}"
+    loop: "{{ suite_progress_info.keys() | sort }}"
+    tags: [print_action]

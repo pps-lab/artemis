@@ -1,0 +1,15 @@
+{
+    "$CMD$": {
+        "small": [
+            {
+                "main": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/poly-small-ipa/code/src/bin/test.zsh resnet18 ipa poly 5 /home/ubuntu/doe-suite/artemis_NA/poly-small-ipa/code"
+            }
+        ]
+    },
+    "cmd": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/poly-small-ipa/code/src/bin/test.zsh resnet18 ipa poly 5 /home/ubuntu/doe-suite/artemis_NA/poly-small-ipa/code",
+    "cmd_time": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml",
+    "cpsnark": "poly",
+    "model": "resnet18",
+    "num_verifier_reps": 5,
+    "pc_type": "ipa"
+}

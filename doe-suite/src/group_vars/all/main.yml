@@ -1,0 +1,18 @@
+does_project_dir: "{{ lookup('env', 'DOES_PROJECT_DIR') }}"
+does_project_id_suffix: "{{ lookup('env', 'DOES_PROJECT_ID_SUFFIX') }}"
+does_config_dir: "{{ does_project_dir }}/doe-suite-config"
+external_group_vars_dir: "{{ does_config_dir }}/group_vars"
+external_roles_dir: "{{ does_config_dir }}/roles"
+
+ssh_key_name: "{{ lookup('env', 'DOES_SSH_KEY_NAME') }}"
+
+euler_user: "{{ lookup('env', 'DOES_EULER_USER') }}"
+aws_user: "{{ lookup('env', 'DOES_AWS_USER', default='ubuntu') }}"
+docker_user: "{{ lookup('env', 'DOES_DOCKER_USER', default='ubuntu') }}"
+docker_public_key: "{{ lookup('env', 'DOES_DOCKER_SSH_PUBLIC_KEY') }}"
+docker_host: "{{ lookup('env', 'DOCKER_HOST', default='unix:///var/run/docker.sock') }}"
+
+euler_base_env: "python/3.9.9" # needed for multi command jobs
+cloud: "aws"
+
+_job_scheduler: "{{ job_scheduler | default('tsp') }}"

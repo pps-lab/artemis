@@ -1,0 +1,24 @@
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+# NOTE: This experiment cannot be run currently as it results in an error with the evaluation domain.
+
+exp_xlarge_poseidon_diffusion:
+  n_repetitions: 1
+  host_types: {small: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    cpsnark: pedersen
+    pc_type: kzg
+    model: mnist
+
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

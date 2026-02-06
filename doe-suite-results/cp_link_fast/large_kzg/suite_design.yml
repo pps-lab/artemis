@@ -1,0 +1,65 @@
+exp_poly_kzg_diffusion:
+  n_repetitions: 1
+  common_roles: []
+  host_types:
+    large:
+      n: 1
+      check_status: true
+      init_roles:
+      - setup-base
+      $CMD$:
+      - main: '[% my_run.cmd %]'
+  base_experiment:
+    model: diffusion
+    cpsnark: cp_link_fast
+    pc_type: kzg
+    num_verifier_reps: 5
+    cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+    cmd: "[% my_run.cmd_time %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]/src/bin/test.zsh [% my_run.model %] [% my_run.pc_type %] [% my_run.cpsnark %] [% my_run.num_verifier_reps %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]"
+  factor_levels:
+  - {}
+  except_filters: []
+exp_poly_kzg_gpt2:
+  n_repetitions: 1
+  common_roles: []
+  host_types:
+    large:
+      n: 1
+      check_status: true
+      init_roles:
+      - setup-base
+      $CMD$:
+      - main: '[% my_run.cmd %]'
+  base_experiment:
+    model: gpt2
+    cpsnark: cp_link_fast
+    pc_type: kzg
+    num_verifier_reps: 5
+    cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+    cmd: "[% my_run.cmd_time %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]/src/bin/test.zsh [% my_run.model %] [% my_run.pc_type %] [% my_run.cpsnark %] [% my_run.num_verifier_reps %] [% 'exp_code_dir' | at_runtime(exp_host_lst) %]"
+  factor_levels:
+  - {}
+  except_filters: []
+$ETL$:
+  overview:
+    experiments:
+    - exp_poly_kzg_diffusion
+    - exp_poly_kzg_gpt2
+    extractors:
+      ErrorExpectedFileExtractor:
+        file_regex:
+        - ^stderr.log$
+        expected_file:
+        - output.csv
+      IgnoreExtractor:
+        file_regex:
+        - stdout.log
+      CsvExtractor:
+        file_regex:
+        - output.csv
+        delimiter: ','
+        has_header: true
+    transformers: []
+    loaders:
+      CsvSummaryLoader:
+        skip_empty: true

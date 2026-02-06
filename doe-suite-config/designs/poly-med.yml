@@ -1,0 +1,31 @@
+# POLY IPA [mnist, resnet, dlrm, mobilenet, vgg] needs to be re-run because of a faster verifier implementation
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+exp_poly_kzg_mobilenet:
+  n_repetitions: 1
+  host_types: {medium: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: mobilenet
+    cpsnark: poly
+    pc_type: kzg
+
+exp_poly_kzg_vgg:
+  n_repetitions: 1
+  host_types: {large: {n: 1, init_roles: setup-base, $CMD$: "[% my_run.cmd %]"}}
+  base_experiment:
+    model: vgg
+    cpsnark: poly
+    pc_type: kzg
+
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

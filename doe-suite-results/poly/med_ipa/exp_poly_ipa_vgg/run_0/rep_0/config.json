@@ -1,0 +1,15 @@
+{
+    "$CMD$": {
+        "large": [
+            {
+                "main": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/poly-med-ipa/code/src/bin/test.zsh vgg ipa poly 5 /home/ubuntu/doe-suite/artemis_NA/poly-med-ipa/code"
+            }
+        ]
+    },
+    "cmd": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/poly-med-ipa/code/src/bin/test.zsh vgg ipa poly 5 /home/ubuntu/doe-suite/artemis_NA/poly-med-ipa/code",
+    "cmd_time": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml",
+    "cpsnark": "poly",
+    "model": "vgg",
+    "num_verifier_reps": 5,
+    "pc_type": "ipa"
+}

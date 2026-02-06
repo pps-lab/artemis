@@ -1,0 +1,28 @@
+.ipynb_checkpoints
+
+src/inventory/
+
+docs/build
+_build
+
+remote/
+
+### Ansible ###
+*.retry
+.boto
+
+doespy/docs/build
+
+# Python
+Pipfile.lock
+
+*.pyc
+
+# MacOS
+.DS_Store
+
+
+.vscode/targets.log
+.vscode/pinned-files.json
+.vscode/configurationCache.log
+.vscode/dryrun.log

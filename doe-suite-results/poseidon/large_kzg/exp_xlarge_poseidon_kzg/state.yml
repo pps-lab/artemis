@@ -1,0 +1,8 @@
+---
+
+exp_job_ids: [{'suite': 'xlarge-poseidon_kzg', 'suite_id': '1748511438', 'exp_name': 'exp_xlarge_poseidon_kzg', 'exp_run': 0, 'exp_run_rep': 0}]
+exp_job_ids_unfinished: [] # pending + queued + running
+exp_job_ids_pending: []
+exp_job_ids_queued: []
+exp_job_ids_running: []
+exp_job_ids_finished: [{'suite': 'xlarge-poseidon_kzg', 'suite_id': '1748511438', 'exp_name': 'exp_xlarge_poseidon_kzg', 'exp_run': 0, 'exp_run_rep': 0}]

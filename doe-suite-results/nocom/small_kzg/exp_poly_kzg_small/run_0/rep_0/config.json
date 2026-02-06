@@ -1,0 +1,15 @@
+{
+    "$CMD$": {
+        "small": [
+            {
+                "main": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-small/code/src/bin/test.zsh mnist kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-small/code"
+            }
+        ]
+    },
+    "cmd": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-small/code/src/bin/test.zsh mnist kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-small/code",
+    "cmd_time": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml",
+    "cpsnark": "no_com",
+    "model": "mnist",
+    "num_verifier_reps": 5,
+    "pc_type": "kzg"
+}

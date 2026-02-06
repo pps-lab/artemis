@@ -1,0 +1,20 @@
+exp_poly_kzg_diffusion:
+- model: diffusion
+  cpsnark: no_com
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-large/code/src/bin/test.zsh diffusion kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-large/code"
+  $CMD$:
+    large:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-large/code/src/bin/test.zsh diffusion kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-large/code"
+exp_poly_kzg_gpt2:
+- model: gpt2
+  cpsnark: no_com
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-large/code/src/bin/test.zsh gpt2 kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-large/code"
+  $CMD$:
+    large:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/nocom-large/code/src/bin/test.zsh gpt2 kzg no_com 5 /home/ubuntu/doe-suite/artemis_NA/nocom-large/code"

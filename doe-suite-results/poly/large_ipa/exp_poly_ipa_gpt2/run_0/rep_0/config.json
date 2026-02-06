@@ -1,0 +1,15 @@
+{
+    "$CMD$": {
+        "large": [
+            {
+                "main": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/poly-large-ipa/code/src/bin/test.zsh gpt2 ipa poly 5 /home/ubuntu/doe-suite/artemis_NA/poly-large-ipa/code"
+            }
+        ]
+    },
+    "cmd": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/poly-large-ipa/code/src/bin/test.zsh gpt2 ipa poly 5 /home/ubuntu/doe-suite/artemis_NA/poly-large-ipa/code",
+    "cmd_time": "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml",
+    "cpsnark": "poly",
+    "model": "gpt2",
+    "num_verifier_reps": 5,
+    "pc_type": "ipa"
+}

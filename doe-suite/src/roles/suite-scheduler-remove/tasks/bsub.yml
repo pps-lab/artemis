@@ -1,0 +1,12 @@
+---
+# NOTE: At the moment `bsub` (LSF) is not used for scheduling tasks
+#       but we leave the scheduler if we want to add a cloud later that uses LSF
+
+- assert:
+    that:
+      - exp_job_ids_completing is defined
+      - exp_name is defined
+
+- name: Noop
+  debug:
+    msg: "Noop operation"

@@ -1,0 +1,24 @@
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+exp_test_shutdown:
+  n_repetitions: 1
+  host_types:
+    small:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "sleep 600"
+  base_experiment:
+    model: mnist
+    cpsnark: zkfft
+    pc_type: ipa
+
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      IgnoreExtractor: {file_regex: [".*"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

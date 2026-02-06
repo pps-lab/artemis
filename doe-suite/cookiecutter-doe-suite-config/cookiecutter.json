@@ -1,0 +1,21 @@
+{
+    "project_id": "example",
+    "suite": "getting-started",
+    "experiment_name": "exp1",
+    "host_name": "base",
+    "host_ec2_instance_type": "t2.medium",
+    "host_ec2_volume_size": 16,
+    "host_ec2_ami": "<LATEST-AMI>",
+    "host_ec2_volume_snapshot": "<LATEST-VOLUME-SNAPSHOT>",
+    "euler_job_minutes": 120,
+    "euler_cpu_cores": 4,
+    "euler_cpu_mem_per_core_mb": 3072,
+    "euler_gpu_number": 0,
+    "euler_gpu_min_mem_per_gpu_mb": 0,
+    "euler_env": "gcc/8.2.0 python/3.9.9",
+    "custom_cloud": "custom",
+    "custom_cloud_host": "<IP ADDRESS or DNS>",
+    "custom_cloud_user": "<ENV:DOES_CUSTOM_CLOUD_USER>",
+    "repo": "git@github.com:nicolas-kuechler/doe-suite.git",
+    "relative_path_does_config_to_doespy": "<AUTO-PATH>"
+}

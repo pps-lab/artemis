@@ -1,0 +1,117 @@
+---
+
+
+# This role deletes the VPC of the suite.
+
+# TODO [nku] since we don't have a VPC per suite and instead have one per project it could be problematic to delete it here.
+# (it will just fail because there are other instances attached, so not a big deal)
+
+- debug:
+    msg: "-> deleting VPC.."
+  tags: [print_action]
+
+- name: Get VPC ID
+  amazon.aws.ec2_vpc_net_info:
+    filters:
+      "tag:Name": "{{ exp_base.vpc_name }}"
+    region: "{{ exp_base.aws_region }}"
+  register: vpc_result
+
+- name: Extract Vpc id
+  set_fact:
+    vpc_id: "{{ vpc_result.vpcs[0].vpc_id | default('undefined') }}"
+
+
+- name: collect eni's
+  amazon.aws.ec2_eni_info:
+    filters:
+      vpc-id: "{{ vpc_id }}"
+    region: "{{ exp_base.aws_region }}"
+  register: my_eni
+  when: vpc_id != 'undefined'
+
+- debug:
+    msg="res = {{ my_eni }}"
+
+- name: delete available eni's
+  amazon.aws.ec2_eni:
+    eni_id: "{{ eni_id }}"
+    state: absent
+    region: "{{ exp_base.aws_region }}"
+  loop: "{{ eni_ids | default([]) | list }}"
+  loop_control:
+    loop_var: eni_id
+  when: eni_ids is iterable and vpc_id != 'undefined'
+  vars:
+    eni_ids: "{{ my_eni | json_query('network_interfaces[*].id')  }}"
+
+
+
+- name: find security groups of vpc
+  amazon.aws.ec2_group_info:
+    filters:
+      vpc-id: "{{ vpc_id }}"
+    region: "{{ exp_base.aws_region }}"
+  register: security_group_result
+  when: vpc_id != 'undefined'
+
+- ansible.builtin.set_fact:
+    security_group_ids: "{{ security_group_result | json_query('security_groups[?group_name!=`default`].group_id') }}"
+  when: vpc_id != 'undefined'
+
+- name: Remove All Routes from Security Group
+  amazon.aws.ec2_group:
+    group_id: "{{ sg_id }}"
+    region: "{{ exp_base.aws_region }}"
+    purge_rules: true
+    state: absent
+  when: security_group_ids is iterable  and vpc_id != 'undefined'
+  loop: "{{ security_group_ids | default([]) | list }}"
+  loop_control:
+    loop_var: sg_id
+
+# Delete Subnet
+- name: Delete Subnet AZ1
+  amazon.aws.ec2_vpc_subnet:
+    state: absent
+    vpc_id: "{{ vpc_id }}"
+    cidr: "{{ exp_base.vpc_subnet_cidr }}"
+    region: "{{ exp_base.aws_region }}"
+  when: vpc_id != 'undefined'
+
+# Delete Internet Gateway
+- name: Delete Server Internet Gateway
+  community.aws.ec2_vpc_igw:
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ exp_base.aws_region }}"
+    state: absent
+  when: vpc_id != 'undefined'
+
+
+# Delete Route Table
+- name: Delete Server Route Table
+  community.aws.ec2_vpc_route_table:
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ exp_base.aws_region }}"
+    tags:
+      Name: "Public"
+    routes: []
+    purge_tags: True
+    state: absent
+  when: vpc_id != 'undefined'
+
+# Delete VPC
+- name: Delete the Server VPC
+  amazon.aws.ec2_vpc_net:
+    name: "{{ exp_base.vpc_name }}"
+    cidr_block: "{{ exp_base.vpc_cidr_block }}"
+    region: "{{exp_base.aws_region }}"
+    state: absent
+    purge_cidrs: yes
+    purge_tags: True
+  register: vpc_delete
+  retries: 10
+  delay: 5
+  until: vpc_delete is not failed
+
+- debug: msg="VPC Delete {{ vpc_delete }}"

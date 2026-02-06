@@ -1,0 +1,13 @@
+---
+
+- debug:
+    msg: "-> server only"
+  tags: [print_action]
+
+- name: Update repositories cache and install required packages
+  become: True
+  apt:
+    pkg:
+    - ncat
+    # TODO: add other required packages (only for server)
+    update_cache: yes

@@ -1,0 +1,28 @@
+exp_apollo_kzg_small:
+- model: mnist
+  cpsnark: cp_link_fast
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code/src/bin/test.zsh mnist kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code"
+  $CMD$:
+    small:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code/src/bin/test.zsh mnist kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code"
+- model: resnet18
+  cpsnark: cp_link_fast
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code/src/bin/test.zsh resnet18 kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code"
+  $CMD$:
+    small:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code/src/bin/test.zsh resnet18 kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code"
+- model: dlrm
+  cpsnark: cp_link_fast
+  pc_type: kzg
+  num_verifier_reps: 5
+  cmd_time: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml"
+  cmd: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code/src/bin/test.zsh dlrm kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code"
+  $CMD$:
+    small:
+    - main: "/usr/bin/time -f '{wall_time: %E, max_rss: %M}' -o results/runtime_info.yaml /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code/src/bin/test.zsh dlrm kzg cp_link_fast 5 /home/ubuntu/doe-suite/artemis_NA/cplink_fast-small/code"
