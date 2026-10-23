@@ -100,6 +100,11 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   constant, and `acc_0 = p(β)` is the cell opened by the KZG/IPA proof (row 0). `MOCK_VERIFY=1` makes
   `time_circuit` run `MockProver::verify` on the circuit (cross-region "cell not assigned" reports for the
   Artemis gate, which reads the weight columns in place, are filtered).
+- Artemis weight-polynomial params: the smallest power of two ≥ the number of weights (the circuit params are
+  reused when large enough), not 2^(k+⌈log₂ ℓ⌉). An IPA opening costs O(params.n) independent of the polynomial's
+  degree (≈4 MSMs of n plus n scalar multiplications for the generator folding), so the old rule inflated the
+  Artemis-IPA opening 16× on mnist and 2× on mobilenet. The two extra openings use `thread_rng` like halo2's
+  prover; `OsRng` samples one syscall per coefficient (≈6 µs each on macOS, 0.8 s at 2^17).
 
 ## Complete Experiment Inventory
 

@@ -151,15 +151,6 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   //println!("poly coeff len: {}", poly_coeff.len());
   //println!("sum: {}", circuit.k as u32 + poly_col_len as u32);
 
-  // Params for the weight polynomial (degree up to poly_col_len * 2^k). Only loaded when needed; otherwise the
-  // circuit params are reused by reference (an unconditional clone used to double the params memory).
-  let poly_params_big;
-  let poly_params: &ParamsIPA<EqAffine> = if poly_col_len > 1 {
-    poly_params_big = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
-    &poly_params_big
-  } else {
-    &params
-  };
 
   // while poly_coeff.len() < 2usize.pow(poly_params.k() as u32) {
   //   poly_coeff.push(Fp::ZERO);
@@ -168,6 +159,25 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32 + poly_col_len as u32) - poly_coeff.len()]);
 
   let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
+
+  // Params for the weight polynomial: the smallest power of two >= its length (the number of weights). The
+  // circuit params are reused by reference when they are large enough. The IPA opening (prover and verifier)
+  // costs O(params.n) regardless of the polynomial's degree, so the previous rule, 2^(k + ceil(log2 ell)),
+  // oversized it by 16x on mnist and 2x on mobilenet. zkfft keeps the previous sizing.
+  let poly_params_big;
+  let poly_params: &ParamsIPA<EqAffine> = {
+    let k_weights = if zkfft {
+      if poly_col_len > 1 { degree + (poly_col_len - 1).ilog2() + 1 } else { degree }
+    } else {
+      (poly.len().max(2) as u64).next_power_of_two().trailing_zeros()
+    };
+    if k_weights > degree {
+      poly_params_big = get_ipa_params(format!("{}/params_ipa", directory).as_str(), k_weights);
+      &poly_params_big
+    } else {
+      &params
+    }
+  };
 
   let rho = eval_polynomial(&poly, beta);
 
@@ -263,7 +273,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     let ipa_proof_timer = Instant::now();
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
     ProverIPA::new(poly_params)
-      .create_proof(&mut OsRng, &mut transcript_ipa_proof, [ProverQuery { point: beta, poly: &poly, blind: Blind::default() }])
+      .create_proof(&mut rand::thread_rng(), &mut transcript_ipa_proof, [ProverQuery { point: beta, poly: &poly, blind: Blind::default() }])
       .unwrap();
     let proof_ipa = transcript_ipa_proof.finalize();
     let ipa_proof_time = ipa_proof_timer.elapsed();
@@ -287,7 +297,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     let poly_advice = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
     ProverIPA::new(&params)
-      .create_proof(&mut OsRng, &mut transcript_ipa_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: advice_col_blind }])
+      .create_proof(&mut rand::thread_rng(), &mut transcript_ipa_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: advice_col_blind }])
       .unwrap();
     let proof_ipa_advice = transcript_ipa_proof.finalize();
     let ipa_proof_time = ipa_proof_timer.elapsed();

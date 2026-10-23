@@ -122,15 +122,6 @@ pub fn time_circuit_kzg<
 
   let degree = circuit.k as u32;
   let params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree);
-  // SRS for the weight polynomial (degree up to poly_col_len * 2^k). Only loaded when needed; otherwise the
-  // circuit SRS is reused by reference (an unconditional clone used to double the SRS memory).
-  let poly_params_big;
-  let poly_params: &ParamsKZG<E> = if commit_poly && poly_col_len > 1 {
-    poly_params_big = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
-    &poly_params_big
-  } else {
-    &params
-  };
   let circuit_duration = start.elapsed();
   println!(
     "Time elapsed in params construction: {:?}",
@@ -156,6 +147,21 @@ pub fn time_circuit_kzg<
   }
 
   let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
+
+  // SRS for the weight polynomial: the smallest power of two >= its length (the number of weights). The circuit
+  // SRS is reused by reference when it is large enough. (The previous rule, 2^(k + ceil(log2 ell)), is only equal
+  // to this when the weights fill the poly columns; it oversized the IPA opening, whose cost is linear in the
+  // params size, by 16x on mnist and 2x on mobilenet.)
+  let poly_params_big;
+  let poly_params: &ParamsKZG<E> = {
+    let k_weights = (poly.len().max(2) as u64).next_power_of_two().trailing_zeros();
+    if commit_poly && k_weights > degree {
+      poly_params_big = get_kzg_params(format!("{}/params_kzg", directory).as_str(), k_weights);
+      &poly_params_big
+    } else {
+      &params
+    }
+  };
 
   if commit_poly {
     let beta_pows = (0..poly_col_len + 1).map(|i| beta.pow([i as u64])).rev().collect::<Vec<_>>();
@@ -525,7 +531,7 @@ pub fn time_circuit_kzg<
     let kzg_proof_timer = Instant::now();
     let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
     ProverGWC::new(poly_params)
-      .create_proof(&mut OsRng, &mut transcript_kzg_proof, [ProverQuery { point: beta, poly: &poly, blind }])
+      .create_proof(&mut rand::thread_rng(), &mut transcript_kzg_proof, [ProverQuery { point: beta, poly: &poly, blind }])
       .unwrap();
     let proof_kzg = transcript_kzg_proof.finalize();
     let kzg_proof_time = kzg_proof_timer.elapsed();
@@ -547,7 +553,7 @@ pub fn time_circuit_kzg<
     let poly_advice = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
     let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
     ProverGWC::new(&params)
-      .create_proof(&mut OsRng, &mut transcript_kzg_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: Blind::default() }])
+      .create_proof(&mut rand::thread_rng(), &mut transcript_kzg_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: Blind::default() }])
       .unwrap();
     let proof_kzg_advice = transcript_kzg_proof.finalize();
     let kzg_proof_time = kzg_proof_timer.elapsed();
