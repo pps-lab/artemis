@@ -5,7 +5,7 @@ trap "exit" INT TERM
 
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
-# arg3: cp_snark = ['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus', 'zkfft']
+# arg3: cp_snark = ['no_com', 'poly', 'pedersen', 'cp_link', 'cp_link+', 'cp_link_fast', 'poseidon', 'zkfft', 'bary', 'cp_link_lego']
 # arg4: num_runs - int
 # arg5: code directory
 # example: ./test.zsh mnist kzg nocom 5 .
@@ -17,7 +17,9 @@ cp_snark="$3"
 num_runs="$4"
 dir="$5"
 
-cargo +nightly build --release --manifest-path $dir'/Cargo.toml' --bin time_circuit
+# NOTE: no '+nightly' here: the toolchain is pinned by rust-toolchain.toml (nightly-2024-05-09);
+# '+nightly' would pick whatever 'nightly' points to on the machine, which may not build the deps.
+cargo build --release --manifest-path $dir'/Cargo.toml' --bin time_circuit
 mkdir -p results
 mkdir -p $dir'/params_ipa'
 mkdir -p $dir'/params_kzg_Bls12'
@@ -32,6 +34,7 @@ pedersen=false
 slow=true
 zkfft=false
 bary=false
+lego=false
 
 case "$name" in
     mnist)
@@ -212,6 +215,15 @@ case "$cp_snark" in
         poly_com=false
         bary=true
         ;;
+
+    cp_link_lego)
+        # LegoSNARK CP_link (Kiltz-Wee QA-NIZK for linear subspaces) between a Pedersen
+        # commitment to the weights and the halo2/KZG advice-column commitments.
+        # Uses the same circuit layout as Apollo (weights copied into poly_cols columns).
+        cp_link=true
+        poly_com=false
+        lego=true
+        ;;
     *)
         echo "Error: Unknown case '$case'"
         echo "Available cases: mnist, resnet, dlrm, mobilenet, vgg, gpt2, diffusion"
@@ -219,4 +231,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft $bary
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft $bary $lego

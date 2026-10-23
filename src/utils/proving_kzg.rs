@@ -3,6 +3,7 @@ use std::{
   cmp::min, fmt::Debug, fs::File, io::{BufReader, Write}, path::{self, Path}, time::{Duration, Instant}
 };
 use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanishing_on_set, verify1, verify1_lite};
+use crate::utils::lego_cplink::{lego_cplink_prove, lego_cplink_setup, lego_cplink_verify, lego_pedersen_commit};
 use bitvec::{domain::Domain, order::verify};
 use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
 use group::{Group, prime::PrimeCurveAffine};
@@ -81,7 +82,7 @@ pub fn time_circuit_kzg<
     G2Affine: SerdeCurveAffine,
     Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3> + SerdeObject,
   > + Debug + MultiMillerLoop
->(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, pedersen: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize, slow: bool) {
+>(circuit: ModelCircuit<E::G1Affine>, commit_poly: bool, pedersen: bool, poly_col_len: usize, cp_link: bool, num_runs: usize, directory: String, c: usize, slow: bool, lego: bool) {
   let rng = rand::thread_rng();
   //println!("Num of total columns: {}, advice: {}, instance: {}, fixed: {}", total_columns, cs.num_advice_columns, cs.num_instance_columns, cs.num_fixed_columns);
   let start = Instant::now();
@@ -228,8 +229,53 @@ pub fn time_circuit_kzg<
     advice_com.push(proof_transcript.read_point().unwrap().to_curve());
   }
   //let slow = false;
-  //CPLink proof: 
-  if cp_link {
+  // LegoSNARK CP_link (see utils/lego_cplink.rs). Same circuit layout as Apollo: the weights are
+  // copied into the first `poly_col_len` advice columns, `size` rows each (column-major).
+  if lego {
+    let ell = poly_col_len;
+    assert!(ell >= 1, "cp_link_lego needs poly_cols >= 1 (the columns holding the weights)");
+    let n = params.n() as usize;
+    let size = (poly_coeff.len() + ell - 1) / ell;
+    println!("LegoSNARK CP_link: {} weights in {} columns x {} rows (2^{} rows per column)", poly_coeff.len(), ell, size, circuit.k);
+
+    // Sanity: the linked advice columns really hold the weights at the expected positions, and the
+    // commitments read from the transcript are the commitments to those columns.
+    for (idx, w) in poly_coeff.iter().enumerate() {
+      assert_eq!(advice_lagrange[idx / size][idx % size], *w, "weight {} not found in advice column {} row {}", idx, idx / size, idx % size);
+    }
+    for i in 0..ell {
+      assert_eq!(params.commit_lagrange(&advice_lagrange[i], Blind::default()), advice_com[i], "advice commitment {} does not match the transcript", i);
+    }
+
+    let setup_timer = Instant::now();
+    let crs = lego_cplink_setup::<E>(&params, ell, size, poly_coeff.len());
+    println!("LegoSNARK CP_link setup time (not counted): {:?}", setup_timer.elapsed());
+
+    // Pedersen commitment to the weights. Counted towards proving time, like the KZG commitment to
+    // the weights in the Artemis (`poly`) path.
+    let r = E::Scalar::random(rand::thread_rng());
+    let commit_timer = Instant::now();
+    let weight_com = lego_pedersen_commit::<E>(&crs, r, &poly_coeff).to_affine();
+    let commit_time = commit_timer.elapsed();
+    println!("LegoSNARK CP_link weight commitment time: {:?}", commit_time);
+    proving_time += commit_time;
+
+    let prove_timer = Instant::now();
+    let pi = lego_cplink_prove::<E>(&crs, r, &advice_lagrange[..ell]).to_affine();
+    let prove_time = prove_timer.elapsed();
+    println!("LegoSNARK CP_link proof time: {:?}", prove_time);
+    proving_time += prove_time;
+    proof_size += pi.to_raw_bytes().len();
+
+    let advice_coms_affine: Vec<E::G1Affine> = advice_com[..ell].iter().map(|c| c.to_affine()).collect();
+    for i in 0..num_runs {
+      let vfy_timer = Instant::now();
+      assert!(lego_cplink_verify::<E>(&crs, pi, weight_com, &advice_coms_affine), "LegoSNARK CP_link proof did not verify");
+      let vfy_time = vfy_timer.elapsed();
+      println!("LegoSNARK CP_link verify time: {:?}", vfy_time);
+      verifying_time[i] += vfy_time;
+    }
+  } else if cp_link {
     if poly_col_len < 1 && slow {
       // slow
       println!("Slow CPLINK");

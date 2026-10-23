@@ -250,7 +250,7 @@ class FactorPerModelLoader(Loader):
         res.sort_values(by=["pc_type", "model", "cpsnark"], inplace=True)
 
         # filter out temp
-        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+"))]
+        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+") | (res["cpsnark"] == "cp_link_lego"))]
         res = res.filter(["model", "cpsnark", "max_rss_rel_factor_vs_nocom (no_com=1)", "prover_time_sec_rel_factor_vs_nocom (no_com=1)"])
 
         res.to_html(f"{output_dir}/model_rel_factor_vs_nocom.html")
@@ -260,7 +260,7 @@ class FactorPerModelLoader(Loader):
         res.sort_values(by=["pc_type", "model", "cpsnark"], inplace=True)
 
         # filter out temp
-        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+"))]
+        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+") | (res["cpsnark"] == "cp_link_lego"))]
         res = res.filter(["model", "cpsnark", "max_rss_abs_factor_vs_nocom", "prover_time_sec_abs_factor_vs_nocom"])
 
         res.to_html(f"{output_dir}/model_abs_factor_vs_nocom.html")
@@ -269,7 +269,7 @@ class FactorPerModelLoader(Loader):
         res.sort_values(by=["pc_type", "model", "cpsnark"], inplace=True)
 
         # filter out temp
-        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+"))]
+        res = res[(res["pc_type"] == "kzg") & ((res["cpsnark"] == "poly") | (res["cpsnark"] == "pedersen") | (res["cpsnark"] == "no_com") | (res["cpsnark"] == "poseidon") | (res["cpsnark"] == "cp_link+") | (res["cpsnark"] == "cp_link_lego"))]
         res = res.filter(["model", "cpsnark", "max_rss_rel_factor_vs_nocom (poly=1)", "prover_time_sec_rel_factor_vs_nocom (poly=1)"])
 
         res.to_html(f"{output_dir}/model_rel_factor_vs_nocom.html")
@@ -350,12 +350,13 @@ class ProofSizeTableLoader(Loader):
             'poly': 'Artemis',
             'cp_link+': 'Apollo',
             'cp_link': 'Lunar',
+            'cp_link_lego': 'LegoSNARK',
             'poseidon': 'Poseidon'
         }
 
         df1['cpsnark'] = df1['cpsnark'].replace(replace_dict)
 
-        custom_order = ['no_com', 'poly', 'cp_link+', 'cp_link', 'poseidon']
+        custom_order = ['no_com', 'poly', 'cp_link+', 'cp_link', 'cp_link_lego', 'poseidon']
         custom_order = [replace_dict[x] for x in custom_order]
         df1['cpsnark'] = pd.Categorical(df1['cpsnark'], categories=custom_order, ordered=True)
 
@@ -407,7 +408,7 @@ class LargeTableLoader(Loader):
         df1['model'] = pd.Categorical(df1['model'], categories=[model_map[m] for m in model_order], ordered=True)
 
         # Rename and order SNARKs
-        snark_map = {'no_com': 'No Com.', 'poly': 'Artemis', 'cp_link+': 'Apollo', 'cp_link_fast': 'Lunar', 'poseidon': 'Poseidon'}
+        snark_map = {'no_com': 'No Com.', 'poly': 'Artemis', 'cp_link+': 'Apollo', 'cp_link_fast': 'Lunar', 'cp_link_lego': 'LegoSNARK', 'poseidon': 'Poseidon'}
         snark_order = list(snark_map.keys())
         df1['cpsnark'] = df1['cpsnark'].replace(snark_map)
         df1['cpsnark'] = pd.Categorical(df1['cpsnark'], categories=[snark_map[s] for s in snark_order], ordered=True)

@@ -196,6 +196,11 @@ where
         self.g2
     }
 
+    /// Returns the Lagrange-basis commitment key `[L_i(tau)]_1` (used by CP_link).
+    pub fn g_lagrange(&self) -> &[E::G1Affine] {
+        &self.g_lagrange
+    }
+
     /// Returns first power of secret on G2
     pub fn s_g2(&self) -> E::G2Affine {
         self.s_g2

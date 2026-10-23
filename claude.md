@@ -73,6 +73,7 @@ Where:
 | `cp_link+`      | Apollo                   | Enhanced CP-Link construction            |
 | `cp_link_fast`  | Lunar (Multi-column)     | Fast CP-Link with multi-column optimization |
 | `poseidon`      | Poseidon                 | Poseidon hash-based commitment           |
+| `cp_link_lego`  | LegoSNARK                | LegoSNARK CP_link (Kiltz-Wee QA-NIZK) linking a Pedersen weight commitment to the KZG advice commitments; KZG only, same circuit as Apollo. Designs: `lego-{small,med,large}.yml` |
 
 ## Complete Experiment Inventory
 
@@ -380,6 +381,8 @@ cargo build --release
 # Example: Artemis with MNIST on KZG
 ./src/bin/test.zsh mnist kzg poly 5 .
 ```
+
+Local-run notes (Apple Silicon): build with the toolchain pinned in `rust-toolchain.toml` (plain `cargo build`, not `cargo +nightly`, which may resolve to a newer nightly that fails to build `pathfinder_simd`). Model files are fetched with `aws s3 sync s3://pps-artemis-artifacts/examples/models examples/cifar --no-sign-request`.
 
 ### Remote Execution with DoE-Suite
 

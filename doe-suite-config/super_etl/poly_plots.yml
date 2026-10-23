@@ -35,6 +35,10 @@ $SUITE_ID$:
   cplink_fast-med: "1748784094" #"1748600477"doe-suite-results/cplink_fast-med_
   cplink_fast-small: "1748779025" #"1748600551"doe-suite-results/cplink_fast-small_
   zkfft-small: "1767690436"
+  # LegoSNARK CP_link baseline (designs/lego-*.yml): fill in the suite ids after running them
+  #lego-small: "TODO"
+  #lego-med: "TODO"
+  #lego-large: "TODO"
 #  cplink: "1725423229" # "1725379289"
 #  poly-ipa: "1725483589"   # "1725441369" <- the old one
 $ETL$:
@@ -73,6 +77,9 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
+      #lego-small: "*"
+      #lego-med: "*"
+      #lego-large: "*"
       zkfft-small: "*"
     extractors:
       ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
@@ -117,6 +124,9 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
+      #lego-small: "*"
+      #lego-med: "*"
+      #lego-large: "*"
       zkfft-small: "*"  # Re-enabled with synthetic KZG baseline
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
@@ -135,7 +145,7 @@ $ETL$:
         data_filter:
           allowed:
             model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
-            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, cp_link, poseidon, zkfft]
+            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, cp_link, poseidon, zkfft, cp_link_lego]
             pc_type: [kzg, ipa]
 
         fig_foreach:
@@ -216,6 +226,8 @@ $ETL$:
           # colors from: https://davidmathlogic.com/colorblind/#%23000000-%23E69F00-%2356B4E9-%23009E73-%23F0E442-%230072B2-%23D55E00-%23CC79A7
           - color: "#D8D7D2" # "#000000"
             jp_query: starts_with(cpsnark, 'no_com')
+          - color: "#E69F00" # orange for LegoSNARK CP_link
+            jp_query: starts_with(cpsnark, 'cp_link_lego')
           - color: "#C5DA3F" #"#D55E00"
             jp_query: starts_with(cpsnark, 'cp_link_fast')
           - color: "#009E73" #"#D55E00"
@@ -242,6 +254,7 @@ $ETL$:
             poseidon: Poseidon
             pedersen: Artemis (Inner Product)
             cp_link_fast: Lunar (Multi-column)
+            cp_link_lego: LegoSNARK
             zkfft: zkFFT
 
             mnist: MNIST ~8k
@@ -298,6 +311,9 @@ $ETL$:
       cplink_fast-large: "*"
       cplink_fast-med: "*"
       cplink_fast-small: "*"
+      #lego-small: "*"
+      #lego-med: "*"
+      #lego-large: "*"
       zkfft-small: "*"  # Re-enabled with synthetic KZG baseline
     extractors:
       CsvExtractor: {file_regex: ["output.csv"]} # with default file_regex
@@ -312,7 +328,7 @@ $ETL$:
         data_filter:
           allowed:
             model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
-            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, poseidon, zkfft]
+            cpsnark: [no_com, poly, pedersen, cp_link+, cp_link_fast, poseidon, zkfft, cp_link_lego]
             pc_type: [kzg, ipa]
 
         fig_foreach:
@@ -383,6 +399,8 @@ $ETL$:
           # colors from: https://davidmathlogic.com/colorblind/#%23000000-%23E69F00-%2356B4E9-%23009E73-%23F0E442-%230072B2-%23D55E00-%23CC79A7
           - color: "#D8D7D2" # "#000000"
             jp_query: starts_with(cpsnark, 'no_com')
+          - color: "#E69F00" # orange for LegoSNARK CP_link
+            jp_query: starts_with(cpsnark, 'cp_link_lego')
           - color: "#99d8c7" #"#D55E00"
             jp_query: starts_with(cpsnark, 'cp_link_fast')
           - color: "#009E73" #"#D55E00"
@@ -409,6 +427,7 @@ $ETL$:
             poseidon: Poseidon
             pedersen: Artemis (Inner Product)
             cp_link_fast: Lunar
+            cp_link_lego: LegoSNARK
             zkfft: zkFFT 
 
             mnist: MNIST ~8k
@@ -465,6 +484,9 @@ $ETL$:
         cplink_fast-large: "*"
         cplink_fast-med: "*"
         cplink_fast-small: "*"
+      #lego-small: "*"
+      #lego-med: "*"
+      #lego-large: "*"
         zkfft-small: "*"  # Re-enabled with robust aggregation handling
       extractors:
         CsvExtractor: { file_regex: [ "output.csv" ] } # with default file_regex
@@ -482,7 +504,7 @@ $ETL$:
           data_filter:
             allowed:
               model: [mnist, resnet18, dlrm, mobilenet, vgg, diffusion, gpt2]
-              cpsnark: [no_com, poly, pedersen, cp_link+, cp_link, poseidon, cp_link_fast, zkfft]
+              cpsnark: [no_com, poly, pedersen, cp_link+, cp_link, poseidon, cp_link_fast, zkfft, cp_link_lego]
               pc_type: [kzg, ipa]
 
           fig_foreach:
@@ -532,6 +554,8 @@ $ETL$:
                 # colors from: https://davidmathlogic.com/colorblind/#%23000000-%23E69F00-%2356B4E9-%23009E73-%23F0E442-%230072B2-%23D55E00-%23CC79A7
                 - color: "#D8D7D2" # "#000000"
                   jp_query: starts_with(cpsnark, 'no_com')
+                - color: "#E69F00" # orange for LegoSNARK CP_link
+                  jp_query: starts_with(cpsnark, 'cp_link_lego')
                 - color: "#C5DA3F" #"#D55E00"
                   jp_query: starts_with(cpsnark, 'cp_link_fast')
                 - color: "#009E73" #"#D55E00"
@@ -559,6 +583,7 @@ $ETL$:
                 poseidon: Poseidon
                 pedersen: Artemis (Inner Product)
                 cp_link_fast: Lunar (Multi-column)
+                cp_link_lego: LegoSNARK
                 zkfft: zkFFT
 
                 mnist: MNIST ~8k
