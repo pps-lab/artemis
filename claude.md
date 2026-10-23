@@ -93,6 +93,13 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   generation on first use, keygen and a `MockProver::run` used to populate the public values.
 - The Lunar/Apollo CP_link₁ prover time is dominated by `poly_divmod` (Newton division with FFT
   multiplication); this is the baseline implementation as evaluated and is intentionally left unchanged.
+- Artemis circuit (`poly`/`pedersen`): the Horner / inner-product region (`src/gadgets/poly_5.rs`,
+  `poly_2.rs`) is assigned in every synthesize pass so its selectors exist at keygen (before Oct 2026 the
+  chip only ran when β was known, i.e. never at keygen, and the gate was vacuous). Weights are laid out
+  row-major in the `poly_ell` columns, the accumulator runs bottom-up with `acc_R = 0` anchored to the zero
+  constant, and `acc_0 = p(β)` is the cell opened by the KZG/IPA proof (row 0). `MOCK_VERIFY=1` makes
+  `time_circuit` run `MockProver::verify` on the circuit (cross-region "cell not assigned" reports for the
+  Artemis gate, which reads the weight columns in place, are filtered).
 
 ## Complete Experiment Inventory
 
