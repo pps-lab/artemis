@@ -8,7 +8,7 @@ use bitvec::{domain::Domain, order::verify};
 use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
 use group::{Group, prime::PrimeCurveAffine};
 use halo2_proofs::{
-  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverSHPLONK, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery}, transcript::{
+  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }, SerdeFormat
 };
@@ -74,6 +74,39 @@ pub fn verify_kzg<
     .is_ok(),
     "proof did not verify"
   );
+}
+
+/// Index of advice column `col` among the advice commitments in the proof transcript: halo2 commits
+/// phase by phase, and within a phase in column order.
+pub fn advice_transcript_index(phases: &[u8], col: usize) -> usize {
+  let phase = phases[col];
+  phases.iter().enumerate().filter(|(i, p)| **p < phase || (**p == phase && *i < col)).count()
+}
+
+/// Verifies a single-query KZG (GWC) opening proof: `com` opens to `eval` at `point`.
+/// Unlike a bare `Verifier::verify_proof`, this runs the final pairing check (`SingleStrategy`).
+pub fn verify_kzg_opening<
+    E: Engine<
+      G1Affine: SerdeCurveAffine,
+      G2Affine: SerdeCurveAffine,
+      Scalar: FromUniformBytes<64> + Ord + WithSmallOrderMulGroup<3>,
+    > + Debug + MultiMillerLoop
+  >(
+  params: &ParamsKZG<E>,
+  proof: &[u8],
+  com: &E::G1Affine,
+  point: E::Scalar,
+  eval: E::Scalar,
+) -> bool {
+  let verifier = VerifierGWC::new(params);
+  let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(proof);
+  let queries = std::iter::once(VerifierQuery::new_commitment(com, point, eval));
+  let strategy = SingleStrategy::new(params);
+  <SingleStrategy<'_, E> as VerificationStrategy<'_, KZGCommitmentScheme<E>, VerifierGWC<'_, E>>>::process(
+    strategy,
+    |msm| verifier.verify_proof(&mut transcript, queries, msm).map_err(|_| Error::Opening),
+  )
+  .is_ok()
 }
 
 pub fn time_circuit_kzg<
@@ -164,15 +197,13 @@ pub fn time_circuit_kzg<
   );
   drop(pk_circuit);
 
-  let fill_duration = start.elapsed();
   let proof_circuit = circuit.clone();
   let mut public_vals = vec![vec![]];
-  // if commit_poly {
-  //   public_vals.push(vec![]);
-  // }
+  // MockProver::run is only used to synthesize once and populate PUBLIC_VALS.
   let _prover = MockProver::run(degree, &proof_circuit, public_vals.clone()).unwrap();
+  let fill_duration = start.elapsed();
   println!(
-    "Time elapsed in filling circuit: {:?}",
+    "Time elapsed in filling circuit (MockProver): {:?}",
     fill_duration - pk_duration
   );
 
@@ -455,114 +486,73 @@ pub fn time_circuit_kzg<
     }
   }
 
-  // KZG Commit proof
-
+  // Artemis (`poly`): two KZG openings link the committed weight polynomial p to the in-circuit value:
+  //  (1) p opens to rho at the Fiat-Shamir challenge beta;
+  //  (2) the Poly5/Poly2 accumulator column opens to rho at omega^row_idx (the last Horner row).
+  // Both are single-query GWC openings (one MSM each) and are verified with a real pairing check.
   if commit_poly {
     let col_idx = if pedersen {poly_col_len * 2} else {poly_col_len};
     let row_idx = (poly_coeff.len() + poly_col_len - 1) / poly_col_len - 1;
     let beta = public_valss[0];
-    
+
     let rho_advice = advice_lagrange[col_idx][row_idx];
     let rho = poly.evaluate(beta);
     println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
-    println!("public vals len: {:?}", public_vals.iter().map(|vec| vec.len()).fold(0, |a, b| a + b));
-    
     assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
 
-    let kzg_proof_timer = Instant::now();
-    println!("Tensor len: {}", tensor_len);
-  
-    let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
+    // (1) Weight polynomial at beta. The commitment is the "commit" phase of the CP-SNARK; it is timed
+    // separately and counted towards the prover time (same convention as cp_link_lego).
+    let commit_timer = Instant::now();
     let poly_com = poly_params.commit(&poly, blind).to_affine();
-    // let poly_coms: Vec<E::G1Affine> = polys.iter().map(|poly| params.commit(poly, blind).to_affine()).collect::<Vec<_>>();
-    // let poly_com_sum = poly_coms.iter().fold(E::G1Affine::identity(), |a, b| (a + b).into());
-    let queries = [
-      ProverQuery {
-          point: beta,
-          poly: &poly,
-          blind,
-      }
-    ].to_vec();
-    //let (q, r) = poly_divmod::<E::Scalar>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, E::Scalar::one()]));
-    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, E::Scalar::ONE])).unwrap();
-    //assert!(r.is_zero());
-    let prover = ProverSHPLONK::new(&poly_params);
-    prover
-        .create_proof(&mut OsRng, &mut transcript_kzg_proof, queries)
-        .unwrap();
-  
-    let proof_kzg = transcript_kzg_proof.finalize();
-    proof_size += proof_kzg.len();
-    //let pi = params.commit(&q, blind);
-    println!("KZG proof time: {:?}", kzg_proof_timer.elapsed());
-    proving_time += kzg_proof_timer.elapsed();
+    let commit_time = commit_timer.elapsed();
+    println!("Weight commitment time: {:?}", commit_time);
+    proving_time += commit_time;
 
     let kzg_proof_timer = Instant::now();
-    println!("Tensor len: {}", tensor_len);
-    
-    // Advice rho proof
     let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
-    let domain = pk.get_vk().get_domain();
-    let poly_com_advice = advice_com[poly_col_len + 1].to_affine();
-    let poly_advice = &domain.lagrange_to_coeff(advice_lagrange[poly_col_len + 1].clone());
-
-    let queries = [
-      ProverQuery {
-          point: domain.rotate_omega(E::Scalar::ONE, Rotation((row_idx) as i32)),
-          poly: &poly_advice,
-          blind: Blind::default(),
-      }
-    ].to_vec();
-    //let (q, r) = poly_divmod::<E::Scalar>(&poly, &Polynomial::from_coefficients_vec(vec![-rho, E::Scalar::one()]));
-    //let (q, r) = (poly - &Polynomial::from_coefficients_vec(vec![rho])).divide_with_q_and_r(&Polynomial::from_coefficients_vec(vec![-beta, E::Scalar::ONE])).unwrap();
-    //assert!(r.is_zero());
-    let prover = ProverSHPLONK::new(&poly_params);
-    prover
-        .create_proof(&mut OsRng, &mut transcript_kzg_proof, queries)
-        .unwrap();
-  
-    let proof_kzg_advice = transcript_kzg_proof.finalize();
+    ProverGWC::new(&poly_params)
+      .create_proof(&mut OsRng, &mut transcript_kzg_proof, [ProverQuery { point: beta, poly: &poly, blind }])
+      .unwrap();
+    let proof_kzg = transcript_kzg_proof.finalize();
+    let kzg_proof_time = kzg_proof_timer.elapsed();
+    println!("KZG proof time (weights at beta): {:?}", kzg_proof_time);
+    proving_time += kzg_proof_time;
     proof_size += proof_kzg.len();
-    // //let pi = params.commit(&q, blind);
-    println!("KZG proof time: {:?}", kzg_proof_timer.elapsed());
-    proving_time += kzg_proof_timer.elapsed();
-    //KZG Commit vfy
+
+    // (2) Accumulator column at omega^row_idx (degree 2^k, so the circuit SRS suffices).
+    let kzg_proof_timer = Instant::now();
+    let domain = pk.get_vk().get_domain();
+    let open_point = domain.rotate_omega(E::Scalar::ONE, Rotation(row_idx as i32));
+    // halo2 writes the advice commitments to the transcript phase by phase (column order within a
+    // phase), so the transcript index of the SecondPhase accumulator column differs from its column index.
+    let com_idx = advice_transcript_index(&pk.get_vk().cs().advice_column_phase(), col_idx);
+    let poly_com_advice = advice_com[com_idx].to_affine();
+    assert_eq!(params.commit_lagrange(&advice_lagrange[col_idx], Blind::default()).to_affine(), poly_com_advice,
+      "transcript commitment {} is not the commitment to advice column {}", com_idx, col_idx);
+    let poly_advice = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
+    let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
+    ProverGWC::new(&params)
+      .create_proof(&mut OsRng, &mut transcript_kzg_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: Blind::default() }])
+      .unwrap();
+    let proof_kzg_advice = transcript_kzg_proof.finalize();
+    let kzg_proof_time = kzg_proof_timer.elapsed();
+    println!("KZG proof time (advice cell): {:?}", kzg_proof_time);
+    proving_time += kzg_proof_time;
+    proof_size += proof_kzg_advice.len();
     println!("Proving time: {:?}", proving_time);
+
     for i in 0..num_runs {
       let kzg_vfy_timer = Instant::now();
-      // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
-      // let rhs = pairing(&pi.into(), &(&params.s_g2() - &params.g2() * beta).into());
-      // assert_eq!(lhs, rhs);
-      let verifier_params = poly_params.verifier_params();
-      let verifier = VerifierSHPLONK::new(&verifier_params);
-      let mut transcript_kzg_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_kzg.as_slice());
-    
-      let queries = std::iter::empty()
-          .chain(Some(VerifierQuery::new_commitment(&poly_com, beta, rho)));
-    
-      let msm = DualMSM::new(&poly_params);
-      assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());
+      assert!(verify_kzg_opening::<E>(&poly_params, &proof_kzg, &poly_com, beta, rho), "weight-polynomial opening did not verify");
       let vfy_time = kzg_vfy_timer.elapsed();
       verifying_time[i] += vfy_time;
-      println!("KZG vfy time: {:?}", vfy_time);
-      
-      // For advice
+      println!("KZG vfy time (weights at beta): {:?}", vfy_time);
+
       let kzg_vfy_timer = Instant::now();
-      // let lhs = pairing(&(poly_com - (params.get_g()[0] * rho)).into(), &params.g2());
-      // let rhs = pairing(&pi.into(), &(&params.s_g2() - &params.g2() * beta).into());
-      // assert_eq!(lhs, rhs);
-      let verifier_params = poly_params.verifier_params();
-      let verifier = VerifierSHPLONK::new(&verifier_params);
-      let mut transcript_kzg_verify = Blake2bRead::<_, _, Challenge255<_>>::init(proof_kzg_advice.as_slice());
-    
-      let queries = std::iter::empty()
-          .chain(Some(VerifierQuery::new_commitment(&poly_com_advice, domain.rotate_omega(E::Scalar::ONE, Rotation((row_idx) as i32)), rho)));
-    
-      let msm = DualMSM::new(&poly_params);
-      assert!(verifier.verify_proof(&mut transcript_kzg_verify, queries, msm).is_ok());
+      assert!(verify_kzg_opening::<E>(&params, &proof_kzg_advice, &poly_com_advice, open_point, rho), "advice-cell opening did not verify");
       let vfy_time = kzg_vfy_timer.elapsed();
       verifying_time[i] += vfy_time;
-      println!("KZG vfy time: {:?}", vfy_time);
+      println!("KZG vfy time (advice cell): {:?}", vfy_time);
     }
   }
 
