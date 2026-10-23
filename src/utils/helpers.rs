@@ -21,7 +21,7 @@ use halo2_proofs::poly::commitment::ParamsProver;
 use halo2_proofs::{
   circuit::{AssignedCell, Value}, halo2curves::ff::PrimeField, helpers::SerdeCurveAffine, poly::{kzg::commitment::ParamsKZG, Coeff, EvaluationDomain, Polynomial}
 };
-use halo2curves::pairing::{Engine, MultiMillerLoop};
+use halo2curves::pairing::{Engine, MillerLoopResult, MultiMillerLoop};
 use halo2curves::serde::SerdeObject;
 use kzg::commitment::KZGCommitmentScheme;
 use kzg::multiopen::ProverSHPLONK;
@@ -207,7 +207,7 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
   let l = thetas.len();
   let betas = (0..l).map(|_| Polynomial::<E::Scalar, Coeff>::from_coefficients_vec(vec![E::Scalar::random(rng.clone()); 3])).collect::<Vec<_>>();
   let us = vec![u.clone(); thetas.len()];
-  // theta shifts
+  // theta shifts: u'_j(X) = u(X / theta_j), i.e. coefficient i is scaled by theta_j^{-i}
   let theta_pows = thetas.iter().map(|theta| {
       let mut pows = vec![E::Scalar::ONE];
       for i in 1..HH.get_n() as usize {
@@ -215,14 +215,18 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
       }
       pows
   }).collect::<Vec<_>>();
-  //println!("Theta pows: {:?}", theta_pows);
+  let theta_inv_pows = thetas.iter().map(|theta| {
+      let theta_inv = theta.invert().unwrap();
+      let mut pows = vec![E::Scalar::ONE];
+      for i in 1..HH.get_n() as usize {
+          pows.push(pows[i - 1] * theta_inv);
+      }
+      pows
+  }).collect::<Vec<_>>();
 
-  //let urands: Vec<Polynomial<E::Scalar, Coeff>> = us.iter().zip(betas).map(|(u, beta)| u.clone() + &(beta * &z_v)).collect::<Vec<_>>();
-  let uprimes: Vec<Polynomial<E::Scalar, Coeff>> = theta_pows.iter().map(|pows| {
-      let coeffs = u.clone().values;
-      let shifted_coeffs = coeffs.iter().zip(pows.clone()).map(|(coeff, pow)| coeff.mul(pow.invert().unwrap())).collect::<Vec<_>>();
-      let uprime = Polynomial::from_coefficients_vec(shifted_coeffs);
-      uprime
+  let uprimes: Vec<Polynomial<E::Scalar, Coeff>> = theta_inv_pows.iter().map(|pows| {
+      let shifted_coeffs = u.values.iter().zip(pows.iter()).map(|(coeff, pow)| *coeff * pow).collect::<Vec<_>>();
+      Polynomial::from_coefficients_vec(shifted_coeffs)
   }).collect::<Vec<_>>();
 
   let hs: Vec<Polynomial<E::Scalar, Coeff>> = us.iter().zip(uprimes.clone()).zip(theta_pows).map(|((u, uprime), pow)| {
@@ -237,7 +241,8 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
 
   let h_coms = hs.iter().map(|h| params.commit_g1(&h)).collect::<Vec<_>>();
   let zv_com = params.commit_g1(&z_v);
-  let u_coms = us.iter().map(|u| params.commit_g1(&u)).collect::<Vec<_>>();
+  // All u_j are the same polynomial u: commit once and reuse the commitment.
+  let u_coms = vec![u_com; us.len()];
   let uprime_coms = uprimes.iter().map(|uprime| params.commit_g1(&uprime).to_affine()).collect::<Vec<_>>();
   // eval hjs on rho 
   // eval zv on rho
@@ -285,8 +290,13 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
       Blake2bRead<_, _, Challenge255<_>>,
       AccumulatorStrategy<_>,
   >(verifier_params, &proof_1[..], poly_coms_affine.clone(), vec![rho; polys.len()], rho_evals.clone());
-  let mut proof_size = poly_coms_affine.iter().map(|com| com.to_raw_bytes().len()).sum::<usize>();
-  proof_size += rho_evals.iter().map(|eval| eval.to_raw_bytes().len()).sum::<usize>();
+  // Proof elements (compressed points, like the halo2 transcript): the l commitments to h_j and the l
+  // commitments to u'_j, the evaluations h_j(rho), u(rho), u'_j(rho*theta_j) (z_v(rho) is recomputed by
+  // the verifier; u's commitment is part of the statement) and the two batched opening proofs.
+  let point_len = E::G1Affine::identity().to_bytes().as_ref().len();
+  let scalar_len = E::Scalar::ZERO.to_raw_bytes().len();
+  let mut proof_size = hs.len() * point_len + h_evals.len() * scalar_len + scalar_len;
+  proof_size += proof_1.len() + proof_2.len();
   verify::<
       KZGCommitmentScheme<E>,
       VerifierSHPLONK<_>,
@@ -294,10 +304,10 @@ pub fn cplink2<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord + FromUniformBy
       Blake2bRead<_, _, Challenge255<_>>,
       AccumulatorStrategy<_>,
   >(verifier_params, &proof_2[..], uprime_coms.clone(), rho_thetas, uprime_evals.clone());
-  proof_size += uprime_coms.iter().map(|eval| eval.to_raw_bytes().len()).sum::<usize>();
-  proof_size += uprime_evals.iter().map(|eval| eval.to_raw_bytes().len()).sum::<usize>();
+  proof_size += uprime_coms.len() * point_len + uprime_evals.len() * scalar_len;
 
-  let uprime_evals = uprimes.iter().zip(thetas).map(|(uprime, theta)| uprime.evaluate(rho*theta)).collect::<Vec<_>>();
+  // The verifier checks the relation on the evaluations contained in the proof (it must not evaluate
+  // the degree-2^k polynomials itself).
   for i in 0..hs.len() {
       let lhs = h_evals[i] * zv_eval;
       let rhs: E::Scalar = u_evals[i] - uprime_evals[i];
@@ -595,42 +605,30 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   (*chat, d_small, cprime, wcom, *bigc, d, x, zz, proving_time)
 }
 
-pub fn verify1_lite<P: Engine + Debug> (
+pub fn verify1_lite<P: MultiMillerLoop + Debug> (
   cprime: P::G1,
   chat: P::G1,
   d_small: P::G1,
-  params: ParamsKZG<P>,
+  params: &ParamsKZG<P>,
   z_com: P::G2,
-  wcom: P::G1,
   bigc: P::G1,
   d: P::G1,
-  x: P::Scalar,
-  z: P::Scalar,
 ) -> Duration {
   let verifier_timer = Instant::now();
-  // First CPlink1 check:
-  // chat = d_small * z + cprime
-  // 
-  let term1 = P::pairing(&chat.to_affine(), &params.g2());
-  let term2 = P::pairing(&d_small.to_affine(), &z_com.to_affine());
-  let term3 = P::pairing(&cprime.to_affine(), &params.g2());
-  assert_eq!(term1, term2 + term3);
-
-  // Second CPLink1 check:
-  let term1 = P::pairing(&wcom.to_affine(), &params.commit_g2(&Polynomial::from_coefficients_vec(vec![-x, P::Scalar::ONE])).to_affine());
-  let term2 = P::pairing(&bigc.to_affine(), &params.g2());
-  let term3 = P::pairing(&d.to_affine(), &z_com.to_affine());
-
-  let term4 = P::pairing(&cprime.to_affine(), &params.g2());
-
-  let term5 = P::pairing(&params.commit_g1(&Polynomial::from_coefficients_vec(vec![z])).to_affine(), &params.s_g2());
-
-  //let lhs = term1 + term3 + term4 + term5;
-  let lhs = term3 + term4;
-  let rhs = term2;
-  assert_eq!(lhs, rhs);
-  println!("CPLINK1: Verifier time: {:?}", verifier_timer.elapsed());
-  verifier_timer.elapsed()
+  // Check 1 (weight chunk):      e(chat, g2) == e(d_small, z_com) * e(cprime, g2)
+  // Check 2 (advice column):     e(bigc, g2) == e(d, z_com) * e(cprime, g2)
+  // Rewritten as  e(chat - cprime, g2) * e(-d_small, z_com) == 1  (and likewise for check 2) and batched
+  // with a random scalar r into a single 2-pairing multi-Miller loop with one final exponentiation.
+  let r = P::Scalar::random(OsRng);
+  let a = (chat - cprime + (bigc - cprime) * r).to_affine();
+  let b = (-(d_small + d * r)).to_affine();
+  let g2 = P::G2Prepared::from(params.g2());
+  let z_com = P::G2Prepared::from(z_com.to_affine());
+  let ok = P::multi_miller_loop(&[(&a, &g2), (&b, &z_com)]).final_exponentiation() == P::Gt::identity();
+  assert!(ok, "CPLINK1: verification failed");
+  let elapsed = verifier_timer.elapsed();
+  println!("CPLINK1: Verifier time: {:?}", elapsed);
+  elapsed
 }
 
 // Helper function for zkFFT: split vector in half

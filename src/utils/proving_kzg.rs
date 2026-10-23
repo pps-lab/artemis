@@ -6,7 +6,7 @@ use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanis
 use crate::utils::lego_cplink::{lego_cplink_prove, lego_cplink_setup, lego_cplink_verify, lego_pedersen_commit};
 use bitvec::{domain::Domain, order::verify};
 use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
-use group::{Group, prime::PrimeCurveAffine};
+use group::{Group, GroupEncoding, prime::PrimeCurveAffine};
 use halo2_proofs::{
   arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
@@ -296,7 +296,7 @@ pub fn time_circuit_kzg<
     let prove_time = prove_timer.elapsed();
     println!("LegoSNARK CP_link proof time: {:?}", prove_time);
     proving_time += prove_time;
-    proof_size += pi.to_raw_bytes().len();
+    proof_size += pi.to_bytes().as_ref().len(); // compressed, like the halo2 transcript
 
     let advice_coms_affine: Vec<E::G1Affine> = advice_com[..ell].iter().map(|c| c.to_affine()).collect();
     for i in 0..num_runs {
@@ -330,6 +330,10 @@ pub fn time_circuit_kzg<
       let u_com = params.commit_g1(&u);
       let (uprimes, uprime_coms, cp2_prove, cp2_vfy, cp2_proof_size) = cplink2(thetas, HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
       proof_size += cp2_proof_size;
+      proving_time += cp2_prove;
+      for i in 0..num_runs {
+        verifying_time[i] += cp2_vfy;
+      }
       for i in 0..uprimes.len() {
         //let (q, mut uhat) = poly_divmod(poly, &z);   
         let poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
@@ -338,11 +342,11 @@ pub fn time_circuit_kzg<
         let polycom = params.commit_g1(&poly_coeff);
         let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &poly_coeff, &params, &HH);
         proving_time += cplink_time;
-        proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
-        proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
-        proof_size += zz.to_raw_bytes().len();  
+        // Proof elements per column (compressed): c', d_small, d. chat (weight commitment) and bigc (advice
+        // commitment) are statement elements; the zeroed ZK elements (wcom, zz) are not sent.
+        proof_size += 3 * cprime.to_affine().to_bytes().as_ref().len();
         for i in 0..num_runs {
-          verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_v_com, wcom, bigc, d, x, zz);
+          verifying_time[i] += verify1_lite(cprime, chat, d_small, &params, z_v_com, bigc, d);
         }
       }
       // let (chats, ds, cprimes, wcom, bigc, d, x, zz, cp1_prove) = cplink1(uprimes, zs, zhats, u, params.clone(), z_last, HH);
@@ -381,14 +385,17 @@ pub fn time_circuit_kzg<
         let poly_coeff = domain.lagrange_to_coeff(advice_lagrange[i].clone());//polys[i].clone();
 
        //let chat = E::G1::identity();///advice_com[i];
-        let polycom = params.commit_g1(&poly_coeff);
+        // The advice commitment the proof links to is the one in the halo2 transcript (first-phase
+        // columns 0..poly_col_len come first in the transcript).
+        let polycom = advice_com[i];
+        debug_assert_eq!(params.commit_g1(&poly_coeff), polycom);
         let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z, &poly_coeff, &params, &domain);
         proving_time += cplink_time;
-        proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
-        proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
-        proof_size += zz.to_raw_bytes().len();  
+        // Proof elements per column (compressed): c', d_small, d. chat (weight commitment) and bigc (advice
+        // commitment) are statement elements; the zeroed ZK elements (wcom, zz) are not sent.
+        proof_size += 3 * cprime.to_affine().to_bytes().as_ref().len();
         for i in 0..num_runs {
-          verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+          verifying_time[i] += verify1_lite(cprime, chat, d_small, &params, z_com, bigc, d);
         }
       }
     } else {
@@ -429,6 +436,10 @@ pub fn time_circuit_kzg<
         let u_com = params.commit_g1(&u);
         let (uprimes, uprime_coms, cp2_prove, cp2_vfy, cp2_proof_size) = cplink2(thetas[..chunks_left].to_vec().clone(), HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
         proof_size += cp2_proof_size;
+        proving_time += cp2_prove;
+        for i in 0..num_runs {
+          verifying_time[i] += cp2_vfy;
+        }
         for i in 0..uprimes.len() {
           //let (q, mut uhat) = poly_divmod(poly, &z);   
           let witness_poly_coeff = HH.lagrange_to_coeff(advice_lagrange[i + j*chunks_per_column].clone());//polys[i].clone();
@@ -437,11 +448,11 @@ pub fn time_circuit_kzg<
           let polycom = params.commit_g1(&witness_poly_coeff);
           let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &witness_poly_coeff, &params, &HH);
           proving_time += cplink_time;
-          proof_size += cprime.to_affine().to_raw_bytes().len() + chat.to_affine().to_raw_bytes().len() + d_small.to_affine().to_raw_bytes().len();
-          proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
-          proof_size += zz.to_raw_bytes().len();  
+          // Proof elements per column (compressed): c', d_small, d. chat (weight commitment) and bigc (advice
+          // commitment) are statement elements; the zeroed ZK elements (wcom, zz) are not sent.
+          proof_size += 3 * cprime.to_affine().to_bytes().as_ref().len();
           for i in 0..num_runs {
-            verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_v_com, wcom, bigc, d, x, zz);
+            verifying_time[i] += verify1_lite(cprime, chat, d_small, &params, z_v_com, bigc, d);
           }
         }
       }
@@ -480,7 +491,7 @@ pub fn time_circuit_kzg<
       //   proof_size += wcom.to_affine().to_raw_bytes().len() + bigc.to_affine().to_raw_bytes().len() + d.to_affine().to_raw_bytes().len();
       //   proof_size += zz.to_raw_bytes().len();  
       //   for i in 0..num_runs {
-      //     verifying_time[i] += verify1_lite(cprime, chat, d_small, params.clone(), z_com, wcom, bigc, d, x, zz);
+      //     verifying_time[i] += verify1_lite(cprime, chat, d_small, &params, z_com, bigc, d);
       //   }
       // }
     }
