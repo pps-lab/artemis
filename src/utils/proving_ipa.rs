@@ -272,17 +272,18 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     proof_size += proof_ipa.len();
 
     // (2) Accumulator column at omega^row_idx (degree 2^k, so the circuit params suffice).
-    let ipa_proof_timer = Instant::now();
-    let domain = pk.get_vk().get_domain();
-    let open_point = domain.rotate_omega(Fp::ONE, Rotation(row_idx as i32));
     // halo2 writes the advice commitments to the transcript phase by phase (column order within a
     // phase), so the transcript index of the SecondPhase accumulator column differs from its column index.
     // IPA commitments are blinded, so the opening must use the column's blinding factor.
+    // The recommitment below is a sanity check only (one extra MSM of size 2^k) and is kept outside the timer.
     let com_idx = advice_transcript_index(&pk.get_vk().cs().advice_column_phase(), col_idx);
     let poly_com_advice = advice_com[com_idx].to_affine();
     let advice_col_blind = Blind(advice_blind[col_idx]);
     assert_eq!(params.commit_lagrange(&advice_lagrange[col_idx], advice_col_blind).to_affine(), poly_com_advice,
       "transcript commitment {} is not the commitment to advice column {}", com_idx, col_idx);
+    let ipa_proof_timer = Instant::now();
+    let domain = pk.get_vk().get_domain();
+    let open_point = domain.rotate_omega(Fp::ONE, Rotation(row_idx as i32));
     let poly_advice = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
     ProverIPA::new(&params)
