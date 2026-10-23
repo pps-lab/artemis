@@ -79,9 +79,9 @@ Where:
 
 What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, Oct 2026 audit):
 
-- **Prover time** = halo2 `create_proof` + the scheme's own CP-SNARK work. The commitment to the weights is
-  *included* for Artemis (`poly`, `pedersen`) and LegoSNARK (`cp_link_lego`); Lunar/Apollo compute their
-  weight-chunk commitments and the IFFTs of the advice columns outside the timer. Lunar (`cp_link`,
+- **Prover time** = halo2 `create_proof` + the scheme's own CP-SNARK proving work. The commitment to the
+  weights (the CP-SNARK's input, "commit" phase) is timed and printed but **not counted** for any scheme:
+  Artemis (`poly`, `pedersen`), LegoSNARK (`cp_link_lego`), Apollo and Lunar alike. Lunar (`cp_link`,
   `cp_link_fast`) counts both CP_link₁ (per column) and CP_link₂. Setup/CRS generation is never counted.
 - **Verifier time** = halo2 `verify_proof` + the scheme's own checks, 5 back-to-back in-process repetitions
   (warm cache). All checks are real: the Artemis opening proofs go through `SingleStrategy` (pairing check /

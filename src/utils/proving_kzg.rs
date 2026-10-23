@@ -273,14 +273,12 @@ pub fn time_circuit_kzg<
     let crs = lego_cplink_setup::<E>(&params, ell, size, poly_coeff.len());
     println!("LegoSNARK CP_link setup time (not counted): {:?}", setup_timer.elapsed());
 
-    // Pedersen commitment to the weights. Counted towards proving time, like the KZG commitment to
-    // the weights in the Artemis (`poly`) path.
+    // Pedersen commitment to the weights: the "commit" phase (input of CP_link), timed and printed but not
+    // counted towards the prover time (same convention as poly, cp_link+ and cp_link).
     let r = E::Scalar::random(rand::thread_rng());
     let commit_timer = Instant::now();
     let weight_com = lego_pedersen_commit::<E>(&crs, r, &poly_coeff).to_affine();
-    let commit_time = commit_timer.elapsed();
-    println!("LegoSNARK CP_link weight commitment time: {:?}", commit_time);
-    proving_time += commit_time;
+    println!("LegoSNARK CP_link weight commitment time (not counted): {:?}", commit_timer.elapsed());
 
     let prove_timer = Instant::now();
     let pi = lego_cplink_prove::<E>(&crs, r, &advice_lagrange[..ell]).to_affine();
@@ -502,13 +500,11 @@ pub fn time_circuit_kzg<
     println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
     assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
 
-    // (1) Weight polynomial at beta. The commitment is the "commit" phase of the CP-SNARK; it is timed
-    // separately and counted towards the prover time (same convention as cp_link_lego).
+    // (1) Weight polynomial at beta. The commitment is the "commit" phase of the CP-SNARK (its input), so
+    // it is timed and printed but, like for Apollo/Lunar, not counted towards the prover time.
     let commit_timer = Instant::now();
     let poly_com = poly_params.commit(&poly, blind).to_affine();
-    let commit_time = commit_timer.elapsed();
-    println!("Weight commitment time: {:?}", commit_time);
-    proving_time += commit_time;
+    println!("Weight commitment time (not counted): {:?}", commit_timer.elapsed());
 
     let kzg_proof_timer = Instant::now();
     let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);

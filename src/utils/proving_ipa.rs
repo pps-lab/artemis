@@ -238,13 +238,11 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
     assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
 
-    // (1) Weight polynomial at beta. The commitment is the "commit" phase; timed separately and counted
-    // towards the prover time (same convention as the KZG path and cp_link_lego).
+    // (1) Weight polynomial at beta. The commitment is the "commit" phase of the CP-SNARK (its input), so
+    // it is timed and printed but, like for Apollo/Lunar, not counted towards the prover time.
     let commit_timer = Instant::now();
     let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
-    let commit_time = commit_timer.elapsed();
-    println!("Weight commitment time: {:?}", commit_time);
-    proving_time += commit_time;
+    println!("Weight commitment time (not counted): {:?}", commit_timer.elapsed());
 
     let ipa_proof_timer = Instant::now();
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
