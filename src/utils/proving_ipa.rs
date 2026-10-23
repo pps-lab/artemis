@@ -67,7 +67,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   let start = Instant::now();
 
   let degree = circuit.k as u32;
-  let mut circuit = circuit.clone();
+  let mut circuit = circuit;
 
   let mut tensor_len = 0usize;
   let mut poly_coeff = Vec::with_capacity(2usize.pow((circuit.k + poly_col_len) as u32));
@@ -123,8 +123,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   //drop(empty_circuit);
 
 
-  // MockProver::run is only used to synthesize once and populate PUBLIC_VALS.
-  let _prover = MockProver::run(degree, &circuit, vec![vec![]]).unwrap();
+  // MockProver::run is only used to synthesize once and populate PUBLIC_VALS; it is dropped right after.
+  let mock_prover = MockProver::run(degree, &circuit, vec![vec![]]).unwrap();
   let fill_duration = start.elapsed();
   println!(
     "Time elapsed in filling circuit (MockProver): {:?}",
@@ -135,10 +135,15 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   //println!("poly coeff len: {}", poly_coeff.len());
   //println!("sum: {}", circuit.k as u32 + poly_col_len as u32);
 
-  let mut poly_params = params.clone();
-  if poly_col_len > 1 {
-    poly_params = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
-  }
+  // Params for the weight polynomial (degree up to poly_col_len * 2^k). Only loaded when needed; otherwise the
+  // circuit params are reused by reference (an unconditional clone used to double the params memory).
+  let poly_params_big;
+  let poly_params: &ParamsIPA<EqAffine> = if poly_col_len > 1 {
+    poly_params_big = get_ipa_params(format!("{}/params_ipa", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
+    &poly_params_big
+  } else {
+    &params
+  };
 
   // while poly_coeff.len() < 2usize.pow(poly_params.k() as u32) {
   //   poly_coeff.push(Fp::ZERO);
@@ -147,13 +152,6 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   //poly_coeff.extend(vec![Fp::ZERO; 2usize.pow(circuit.k as u32 + poly_col_len as u32) - poly_coeff.len()]);
 
   let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
-  let mut polys = vec![Polynomial::from_coefficients_vec(poly_coeff.clone())];
-  if poly_col_len > 0 {
-    polys = (0..poly_col_len).map(|x| {
-      let poly: Polynomial<Fp, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
-      poly
-    }).collect::<Vec<_>>();
-  }
 
   let rho = eval_polynomial(&poly, beta);
 
@@ -161,6 +159,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   //let mut betas = vec![vec![]; poly_col_len];
 
   public_vals[0] = get_public_values();
+  drop(mock_prover);
   if commit_poly { 
     public_vals[0][0] = rho;
   }
@@ -249,7 +248,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
     let ipa_proof_timer = Instant::now();
     let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
-    ProverIPA::new(&poly_params)
+    ProverIPA::new(poly_params)
       .create_proof(&mut OsRng, &mut transcript_ipa_proof, [ProverQuery { point: beta, poly: &poly, blind: Blind::default() }])
       .unwrap();
     let proof_ipa = transcript_ipa_proof.finalize();
@@ -284,7 +283,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
     for i in 0..num_runs {
       let ipa_vfy_timer = Instant::now();
-      assert!(verify_ipa_opening(&poly_params, &proof_ipa, &poly_com, beta, rho), "weight-polynomial opening did not verify");
+      assert!(verify_ipa_opening(poly_params, &proof_ipa, &poly_com, beta, rho), "weight-polynomial opening did not verify");
       let vfy_time = ipa_vfy_timer.elapsed();
       verifying_time[i] += vfy_time;
       println!("IPA vfy time (weights at beta): {:?}", vfy_time);
@@ -365,7 +364,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
       // Run prover with alpha
       let (zkfft_proof_bytes, zkfft_ptime, _zkfft_vtime, zkfft_size) =
-          zkfft_commit_ipa_fft(poly_advice_coeff.clone(), &poly_params, domain.clone(), alpha);
+          zkfft_commit_ipa_fft(poly_advice_coeff.clone(), poly_params, domain.clone(), alpha);
 
       proving_time += zkfft_ptime;
       proof_size += zkfft_size;

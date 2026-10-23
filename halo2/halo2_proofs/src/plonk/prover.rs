@@ -422,7 +422,9 @@ where
             .collect::<Vec<_>>();
         (advice, challenges)
     };
-    for (poly, blind) in advice[0].advice_polys.clone().iter().zip(advice[0].advice_blinds.clone()) {
+    // Hand the advice columns (and blinds) back to the caller for the CP-SNARK paths without first
+    // cloning the whole vector.
+    for (poly, blind) in advice[0].advice_polys.iter().zip(advice[0].advice_blinds.iter()) {
         advice_lagrange.push(poly.clone());
         advice_blind.push(blind.0);
     }

@@ -122,20 +122,22 @@ pub fn time_circuit_kzg<
 
   let degree = circuit.k as u32;
   let params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree);
-  let mut poly_params = params.clone();
-  if commit_poly {
-    if (poly_col_len) > 1  {
-      poly_params = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
-    }
-  }
+  // SRS for the weight polynomial (degree up to poly_col_len * 2^k). Only loaded when needed; otherwise the
+  // circuit SRS is reused by reference (an unconditional clone used to double the SRS memory).
+  let poly_params_big;
+  let poly_params: &ParamsKZG<E> = if commit_poly && poly_col_len > 1 {
+    poly_params_big = get_kzg_params(format!("{}/params_kzg", directory).as_str(), degree + (poly_col_len - 1).ilog2() + 1 as u32);
+    &poly_params_big
+  } else {
+    &params
+  };
   let circuit_duration = start.elapsed();
   println!(
     "Time elapsed in params construction: {:?}",
     circuit_duration
   );
-  let mut circuit = circuit.clone();
+  let mut circuit = circuit;
 
-  let alpha = E::Scalar::ONE;
   let beta = E::Scalar::random(rand::thread_rng());
 
   let mut tensor_len = 0usize;
@@ -154,13 +156,6 @@ pub fn time_circuit_kzg<
   }
 
   let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff.clone());
-  let mut polys = vec![];
-  if poly_col_len > 0 {
-    polys = (0..poly_col_len).map(|x| {
-      let poly: Polynomial<E::Scalar, Coeff> = Polynomial::from_coefficients_vec(poly_coeff[(x * poly_coeff.len() / poly_col_len)..((x + 1) * poly_coeff.len() / poly_col_len)].to_vec()) * alpha.pow([x as u64]);
-      poly
-    }).collect::<Vec<_>>();
-  }
 
   if commit_poly {
     let beta_pows = (0..poly_col_len + 1).map(|i| beta.pow([i as u64])).rev().collect::<Vec<_>>();
@@ -179,28 +174,23 @@ pub fn time_circuit_kzg<
   let rho = poly.evaluate(beta);
   let blind = Blind::default();
 
-  let vk_circuit = circuit.clone();
-  let vk = keygen_vk(&params, &vk_circuit).unwrap();
-  drop(vk_circuit);
+  let vk = keygen_vk(&params, &circuit).unwrap();
   let vk_duration = start.elapsed();
   println!(
     "Time elapsed in generating vkey: {:?}",
     vk_duration - circuit_duration
   );
 
-  let pk_circuit = circuit.clone();
-  let pk = keygen_pk(&params, vk, &pk_circuit).unwrap();
+  let pk = keygen_pk(&params, vk, &circuit).unwrap();
   let pk_duration = start.elapsed();
   println!(
     "Time elapsed in generating pkey: {:?}",
     pk_duration - vk_duration
   );
-  drop(pk_circuit);
 
-  let proof_circuit = circuit.clone();
   let mut public_vals = vec![vec![]];
-  // MockProver::run is only used to synthesize once and populate PUBLIC_VALS.
-  let _prover = MockProver::run(degree, &proof_circuit, public_vals.clone()).unwrap();
+  // MockProver::run is only used to synthesize once and populate PUBLIC_VALS; it is dropped right after.
+  let mock_prover = MockProver::run(degree, &circuit, public_vals.clone()).unwrap();
   let fill_duration = start.elapsed();
   println!(
     "Time elapsed in filling circuit (MockProver): {:?}",
@@ -210,6 +200,7 @@ pub fn time_circuit_kzg<
   //let mut betas = vec![vec![]; poly_col_len];
 
   public_vals[0] = get_public_values();
+  drop(mock_prover);
   // if commit_poly {
   //   public_vals[0][0] = rho;
   // }
@@ -231,7 +222,7 @@ pub fn time_circuit_kzg<
   >(
     &params,
     &pk,
-    &[proof_circuit.clone()],
+    std::slice::from_ref(&circuit),
     &[public_vals_slice.as_slice()],
     rng.clone(),
     &mut transcript,
@@ -521,7 +512,7 @@ pub fn time_circuit_kzg<
 
     let kzg_proof_timer = Instant::now();
     let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
-    ProverGWC::new(&poly_params)
+    ProverGWC::new(poly_params)
       .create_proof(&mut OsRng, &mut transcript_kzg_proof, [ProverQuery { point: beta, poly: &poly, blind }])
       .unwrap();
     let proof_kzg = transcript_kzg_proof.finalize();
@@ -554,7 +545,7 @@ pub fn time_circuit_kzg<
 
     for i in 0..num_runs {
       let kzg_vfy_timer = Instant::now();
-      assert!(verify_kzg_opening::<E>(&poly_params, &proof_kzg, &poly_com, beta, rho), "weight-polynomial opening did not verify");
+      assert!(verify_kzg_opening::<E>(poly_params, &proof_kzg, &poly_com, beta, rho), "weight-polynomial opening did not verify");
       let vfy_time = kzg_vfy_timer.elapsed();
       verifying_time[i] += vfy_time;
       println!("KZG vfy time (weights at beta): {:?}", vfy_time);
