@@ -113,9 +113,7 @@ class OsirisPreprocessTransformer(Transformer):
 
         # parse prover time
         #print(f'Prover time: {df["Prover time"]}')
-        df['prover_time_sec'] = (df['Prover time'].replace({'s':'*1'}, regex=True)
-                                            .dropna()
-                                            .apply(pd.eval))
+        df['prover_time_sec'] = df['Prover time'].dropna().apply(parse_rust_duration)
         #print(f'Prover time: {df["prover_time_sec"]}')
 
         df["proof_size_bytes"] = df["Proof size"].apply(pd.to_numeric)
@@ -129,11 +127,7 @@ class OsirisPreprocessTransformer(Transformer):
             measurements_ms = []
 
             for m in measurements:
-                if m.endswith('ms'):
-                    m = float(m.replace('ms', '')) / 1000
-                elif m.endswith('s'):
-                    m = float(m.replace('s', ''))
-                measurements_ms.append(m)
+                measurements_ms.append(parse_rust_duration(m))
 
             row['mean(verifier_time_sec)'] = statistics.mean(measurements_ms)
             row['count(verifier_time_sec)'] = len(measurements_ms)
@@ -181,6 +175,21 @@ class OsirisPreprocessTransformer(Transformer):
             df = compute_factor_vs_baseline(df, data_col=data_col, baseline_col="pc_type", baseline_value="kzg", result_col=[result_col_rel, result_col_abs], group_cols=["model", "cpsnark"])
 
         return df
+
+def parse_rust_duration(value) -> float:
+    """Parse a Rust `Duration` Debug string ("76.2s", "581.5ms", "35.1µs", "120ns") into seconds.
+
+    Note: the previous parser treated every string ending in 's' as seconds, so a sub-millisecond
+    entry such as "35µs" would have been read as 35 s.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    v = str(value).strip()
+    for suffix, scale in (("ns", 1e-9), ("µs", 1e-6), ("us", 1e-6), ("ms", 1e-3), ("s", 1.0)):
+        if v.endswith(suffix):
+            return float(v[: -len(suffix)]) * scale
+    return float(v)
+
 
 def compute_factor_vs_baseline(df, data_col, baseline_col, baseline_value, result_col, group_cols):
 

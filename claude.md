@@ -75,6 +75,25 @@ Where:
 | `poseidon`      | Poseidon                 | Poseidon hash-based commitment           |
 | `cp_link_lego`  | LegoSNARK                | LegoSNARK CP_link (Kiltz-Wee QA-NIZK) linking a Pedersen weight commitment to the KZG advice commitments; KZG only, same circuit as Apollo. Designs: `lego-{small,med,large}.yml` |
 
+## Measurement Conventions (time_circuit)
+
+What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, Oct 2026 audit):
+
+- **Prover time** = halo2 `create_proof` + the scheme's own CP-SNARK work. The commitment to the weights is
+  *included* for Artemis (`poly`, `pedersen`) and LegoSNARK (`cp_link_lego`); Lunar/Apollo compute their
+  weight-chunk commitments and the IFFTs of the advice columns outside the timer. Lunar (`cp_link`,
+  `cp_link_fast`) counts both CP_link₁ (per column) and CP_link₂. Setup/CRS generation is never counted.
+- **Verifier time** = halo2 `verify_proof` + the scheme's own checks, 5 back-to-back in-process repetitions
+  (warm cache). All checks are real: the Artemis opening proofs go through `SingleStrategy` (pairing check /
+  final IPA MSM); Lunar/Apollo use one batched 2-pairing multi-Miller loop per column; LegoSNARK ℓ+2 pairings.
+- **Proof size** = halo2 transcript bytes + the scheme's extra proof elements with points counted *compressed*
+  (32 B, like the transcript). Statement elements (weight commitment, advice commitments already in the
+  transcript) are not counted.
+- The `/usr/bin/time` wall time and `max_rss` additionally include the (incremental) `cargo build`, SRS
+  generation on first use, keygen and a `MockProver::run` used to populate the public values.
+- The Lunar/Apollo CP_link₁ prover time is dominated by `poly_divmod` (Newton division with FFT
+  multiplication); this is the baseline implementation as evaluated and is intentionally left unchanged.
+
 ## Complete Experiment Inventory
 
 The evaluation comprises **36 unique experiment configurations** organized by CP-SNARK scheme, model size, and polynomial commitment type:
