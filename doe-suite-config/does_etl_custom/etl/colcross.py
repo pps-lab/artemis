@@ -2,9 +2,16 @@ from copy import deepcopy
 import typing
 
 import numpy as np
-from doespy.etl.steps.colcross.colcross import BaseColumnCrossPlotLoader, SubplotConfig, PlotConfig, BrokenColumnCrossPlotLoader
+from doespy.etl.steps.colcross.colcross import BaseColumnCrossPlotLoader, SubplotConfig, PlotConfig
 from doespy.etl.steps.colcross.hooks import (CcpHooks, default_hooks)
-from doespy.etl.steps.colcross.components import (BrokenSubplotGrid, SubplotGrid, Metric)
+from doespy.etl.steps.colcross.components import (SubplotGrid, Metric)
+try:
+    # Broken-axis grid (IPA plots in super_etl/poly_plots.yml): only in a patched doe-suite, not in the
+    # pinned submodule. Fall back to the plain grid so that this module still imports (the ETL loader
+    # imports every custom step, so a missing symbol would break `make run` for every suite).
+    from doespy.etl.steps.colcross.components import BrokenSubplotGrid
+except ImportError:
+    BrokenSubplotGrid = SubplotGrid
 from matplotlib.ticker import MaxNLocator
 
 from typing import Dict, List, Optional, Union
