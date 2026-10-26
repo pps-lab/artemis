@@ -41,8 +41,8 @@ local:
   designs_dir: "{{ does_config_dir }}/designs"
 
 exp_base:
-  aws_region: eu-north-1
-  name: stockholm
+  aws_region: eu-west-1
+  name: ireland
   vpc_name: "{{ prj_id }}_vpc_base"
   vpc_cidr_block: 10.100.0.0/16
   vpc_subnet_name: "{{ prj_id }}_subnet_az1"

@@ -14,6 +14,7 @@
       - clang
       - libfontconfig1-dev
       - zsh
+      - time   # /usr/bin/time, used by the experiment command (not in the stock Ubuntu image)
 
 #### INSTALL RUST
 
