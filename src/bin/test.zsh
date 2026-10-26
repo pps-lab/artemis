@@ -19,7 +19,10 @@ dir="$5"
 
 # NOTE: no '+nightly' here: the toolchain is pinned by rust-toolchain.toml (nightly-2024-05-09);
 # '+nightly' would pick whatever 'nightly' points to on the machine, which may not build the deps.
-cargo build --release --manifest-path $dir'/Cargo.toml' --bin time_circuit
+# Build from inside the code directory: rustup resolves rust-toolchain.toml from the current directory,
+# not from --manifest-path, so building from a results directory (as doe-suite does) would use the
+# default (stable) toolchain and fail on the nightly features.
+(cd "$dir" && cargo build --release --bin time_circuit)
 mkdir -p results
 mkdir -p $dir'/params_ipa'
 mkdir -p $dir'/params_kzg_Bls12'
