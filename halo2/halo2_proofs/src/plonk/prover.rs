@@ -37,10 +37,55 @@ use crate::{
 };
 use group::prime::PrimeCurveAffine;
 
+/// Evaluation point of an extra opening (see [`ExtraProverQuery`]).
+#[derive(Clone, Copy, Debug)]
+pub enum ExtraPoint<F> {
+    /// A fixed point, e.g. `omega^i` to open a column at row `i`.
+    Fixed(F),
+    /// The multi-phase challenge with this index; resolved once all phases are committed.
+    Challenge(usize),
+}
+
+impl<F: Copy> ExtraPoint<F> {
+    /// The concrete point, given the proof's phase challenges (indexed as in the constraint system).
+    pub fn resolve(&self, challenges: &[F]) -> F {
+        match self {
+            ExtraPoint::Fixed(point) => *point,
+            ExtraPoint::Challenge(index) => challenges[*index],
+        }
+    }
+}
+
+/// An extra opening folded into the proof's batched multi-open argument (used by the Artemis
+/// CP-SNARK to link the committed weights to the circuit). The prover writes the evaluation to the
+/// transcript right after the advice evaluations, in the order of the queries; the verifier reads
+/// it back (see [`ExtraVerifierQuery`](super::ExtraVerifierQuery)).
+#[derive(Clone, Copy, Debug)]
+pub enum ExtraProverQuery<'a, F: Field> {
+    /// Opens advice column `column` of the first circuit instance at `point`.
+    Advice { column: usize, point: ExtraPoint<F> },
+    /// Opens an external polynomial, committed with the proof's params, at `point`. Its length
+    /// must not exceed the params size.
+    External {
+        poly: &'a Polynomial<F, Coeff>,
+        blind: Blind<F>,
+        point: ExtraPoint<F>,
+    },
+}
+
+impl<'a, F: Field> ExtraProverQuery<'a, F> {
+    fn point(&self) -> ExtraPoint<F> {
+        match self {
+            ExtraProverQuery::Advice { point, .. } | ExtraProverQuery::External { point, .. } => *point,
+        }
+    }
+}
+
 /// This creates a proof for the provided `circuit` when given the public
 /// parameters `params` and the proving key [`ProvingKey`] that was
 /// generated previously for the same circuit. The provided `instances`
-/// are zero-padded internally.
+/// are zero-padded internally. `extra_queries` are additional openings
+/// folded into the multi-open argument (see [`ExtraProverQuery`]).
 pub fn create_proof<
     'params,
     Scheme: CommitmentScheme,
@@ -58,6 +103,7 @@ pub fn create_proof<
     transcript: &mut T,
     advice_lagrange: &mut Vec<Polynomial<Scheme::Scalar, LagrangeCoeff>>,
     advice_blind: &mut Vec<Scheme::Scalar>,
+    extra_queries: &[ExtraProverQuery<'_, Scheme::Scalar>],
 ) -> Result<(), Error>
 where
     Scheme::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
@@ -598,6 +644,21 @@ where
         }
     }
     stop_measure(start);
+
+    // Evaluate and hash the extra openings (first circuit instance), in order.
+    let start = start_measure("extra eval_polynomial", false);
+    let extra_points: Vec<Scheme::Scalar> = extra_queries
+        .iter()
+        .map(|query| query.point().resolve(&challenges))
+        .collect();
+    for (query, point) in extra_queries.iter().zip(extra_points.iter()) {
+        let poly = match query {
+            ExtraProverQuery::Advice { column, .. } => &advice[0].advice_polys[*column],
+            ExtraProverQuery::External { poly, .. } => *poly,
+        };
+        transcript.write_scalar(eval_polynomial(poly, *point))?;
+    }
+    stop_measure(start);
     
     // Compute and hash fixed evals (shared across all circuit instances)
     let start = start_measure("fixed eval_polynomial", false);
@@ -639,6 +700,7 @@ where
         .collect::<Result<Vec<_>, _>>()?;
     stop_measure(start);
 
+    let advice_ref = &advice;
     let instances = instance
         .iter()
         .zip(advice.iter())
@@ -685,7 +747,25 @@ where
         )
         .chain(pk.permutation.open(x))
         // We query the h(X) polynomial at x
-        .chain(vanishing.open(x));
+        .chain(vanishing.open(x))
+        // Extra openings folded into the multi-open argument
+        .chain(
+            extra_queries
+                .iter()
+                .zip(extra_points.iter())
+                .map(|(query, point)| match query {
+                    ExtraProverQuery::Advice { column, .. } => ProverQuery {
+                        point: *point,
+                        poly: &advice_ref[0].advice_polys[*column],
+                        blind: advice_ref[0].advice_blinds[*column],
+                    },
+                    ExtraProverQuery::External { poly, blind, .. } => ProverQuery {
+                        point: *point,
+                        poly,
+                        blind: *blind,
+                    },
+                }),
+        );
 
     let start = start_measure("create_proof", false);
     let prover = P::new(params);

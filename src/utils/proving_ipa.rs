@@ -9,7 +9,7 @@ use std::{
 use csv::Writer;
 use group::{cofactor::CofactorCurveAffine, Group};
 use halo2_proofs::{
-  arithmetic::eval_polynomial, circuit, dev::MockProver, halo2curves::pasta::{EqAffine, Fp}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof}, poly::{
+  arithmetic::eval_polynomial, circuit, dev::MockProver, halo2curves::pasta::{EqAffine, Fp}, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, ExtraPoint, ExtraProverQuery, ExtraVerifierQuery}, poly::{
     commitment::{Blind, Params, ParamsProver, Prover, Verifier, MSM}, ipa::{
       self, commitment::{IPACommitmentScheme, ParamsIPA}, msm::MSMIPA, multiopen::{ProverIPA, VerifierIPA}, strategy::SingleStrategy
     }, Coeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery
@@ -192,6 +192,37 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
 
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
 
+  // Artemis (`poly`/`pedersen`): the two openings that link the committed weight polynomial p to the circuit
+  // are folded into halo2's batched IPA multi-open argument as extra queries:
+  //  (1) p opens to rho at the Fiat-Shamir challenge beta. Folded only when p fits the circuit params; for
+  //      larger models it stays a standalone IPA opening with the weight params (below).
+  //  (2) the Poly5/Poly2 accumulator column opens to rho at omega^0 (Horner runs bottom-up, acc_0 = p(beta)).
+  // The verifier reads both evaluations from the transcript and checks that they agree. Each standalone IPA
+  // opening costs O(params.n) (about 4 MSMs plus the generator folding), prover and verifier; folded, an
+  // opening is one Kate division. The column's blinding factor flows through the multi-open automatically.
+  let col_idx = if pedersen { poly_col_len * 2 } else { poly_col_len };
+  let acc_point = ExtraPoint::Fixed(Fp::ONE); // omega^0
+  let beta_challenge = 0usize; // beta is the circuit's only phase challenge
+  let weight_blind = Blind::default();
+  let fold_weights = commit_poly && std::ptr::eq(poly_params, &params);
+  let poly_padded: Polynomial<Fp, Coeff> = if fold_weights {
+    let mut values = poly.values.clone();
+    values.resize(params.n() as usize, Fp::ZERO);
+    Polynomial::from_coefficients_vec(values)
+  } else {
+    Polynomial::from_coefficients_vec(vec![])
+  };
+  let extra_queries: Vec<ExtraProverQuery<'_, Fp>> = if commit_poly {
+    assert_eq!(pk.get_vk().cs().num_challenges(), 1, "expected beta to be the only challenge");
+    let mut queries = vec![ExtraProverQuery::Advice { column: col_idx, point: acc_point }];
+    if fold_weights {
+      queries.push(ExtraProverQuery::External { poly: &poly_padded, blind: weight_blind, point: ExtraPoint::Challenge(beta_challenge) });
+    }
+    queries
+  } else {
+    vec![]
+  };
+
   let proof_duration_start = start.elapsed();
   let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
   let mut advice_lagrange = vec![];
@@ -205,6 +236,7 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
     &mut transcript,
     &mut advice_lagrange,
     &mut advice_blind,
+    &extra_queries,
   )
   .unwrap();
 
@@ -228,97 +260,82 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   let mut proving_time = proof_duration - proof_duration_start;
   println!("Proof size: {} bytes", proof.len());
   let mut proof_size = proof.len();
+  // Artemis: commit to the weights (the CP-SNARK's input, timed but not counted, like for Apollo/Lunar) and,
+  // when p does not fit the circuit params, prove the standalone opening (1) with the weight params. beta is
+  // the proof's phase-2 challenge (published by the synthesize pass).
+  let mut proof_ipa = vec![];
+  let mut poly_com = EqAffine::identity();
+  if commit_poly {
+    let beta = public_valss[0];
+    let rho = poly.evaluate(beta);
+    let rho_advice = advice_lagrange[col_idx][0];
+    println!("poly coeff len: {:?}, poly col len: {:?}", poly_coeff.len(), poly_col_len);
+    println!("(Rho, Beta): {:?}, col_idx: {:?}", (rho, beta), col_idx);
+    assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
+
+    let commit_timer = Instant::now();
+    poly_com = poly_params.commit(&poly, weight_blind).to_affine();
+    println!("Weight commitment time (not counted): {:?}", commit_timer.elapsed());
+
+    if fold_weights {
+      println!("Weight opening folded into the circuit multi-open (k_weights <= k)");
+    } else {
+      let ipa_proof_timer = Instant::now();
+      let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
+      ProverIPA::new(poly_params)
+        .create_proof(&mut rand::thread_rng(), &mut transcript_ipa_proof, [ProverQuery { point: beta, poly: &poly, blind: weight_blind }])
+        .unwrap();
+      proof_ipa = transcript_ipa_proof.finalize();
+      let ipa_proof_time = ipa_proof_timer.elapsed();
+      println!("IPA proof time (weights at beta, standalone): {:?}", ipa_proof_time);
+      proving_time += ipa_proof_time;
+      proof_size += proof_ipa.len();
+    }
+    println!("Proving time: {:?}", proving_time);
+  }
+  let extra_queries_v: Vec<ExtraVerifierQuery<'_, EqAffine>> = if commit_poly {
+    let mut queries = vec![ExtraVerifierQuery::Advice { column: col_idx, point: acc_point }];
+    if fold_weights {
+      queries.push(ExtraVerifierQuery::External { commitment: &poly_com, point: ExtraPoint::Challenge(beta_challenge) });
+    }
+    queries
+  } else {
+    vec![]
+  };
+
   let mut verifying_time = vec![];
-  for i in 0..num_runs {
+  for _ in 0..num_runs {
     let verification = Instant::now();
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
     let strategy = SingleStrategy::new(&params);
+    let mut extra_evals = vec![];
     assert!(
       verify_proof(
         &params,
         pk.get_vk(),
         strategy,
         &[public_vals_slice.as_slice()],
-        &mut transcript
+        &mut transcript,
+        &extra_queries_v,
+        &mut extra_evals,
       )
       .is_ok(),
       "proof did not verify"
     );
+    if commit_poly {
+      // CP-link check: the opened accumulator cell equals the committed weight polynomial at beta.
+      let rho_circuit = extra_evals[0];
+      if fold_weights {
+        assert_eq!(rho_circuit, extra_evals[1], "accumulator cell does not match the weight polynomial at beta");
+      } else {
+        assert!(
+          verify_ipa_opening(poly_params, &proof_ipa, &poly_com, public_valss[0], rho_circuit),
+          "weight-polynomial opening did not verify"
+        );
+      }
+    }
     let verify_duration = verification.elapsed();
     verifying_time.push(verify_duration);
-    //println!("Verifying time: {:?}", verify_duration);
-  }
-
-  // Artemis (`poly`): two IPA openings link the committed weight polynomial p to the in-circuit value:
-  //  (1) p opens to rho at the Fiat-Shamir challenge beta;
-  //  (2) the Poly5/Poly2 accumulator column opens to rho at omega^row_idx (the last Horner row).
-  // Both are verified with the full IPA check (final MSM), not just transcript parsing.
-  if commit_poly {
-    let col_idx = if pedersen {poly_col_len * 2} else {poly_col_len};
-    let row_idx = 0usize; // Horner runs bottom-up, anchored at acc_R = 0, so acc_0 = p(beta)
-    println!("poly coeff len: {:?}, poly col len: {:?}", poly_coeff.len(), poly_col_len);
-    let beta = public_valss[0];
-
-    let rho_advice = advice_lagrange[col_idx][row_idx];
-    let rho = poly.evaluate(beta);
-    println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
-    assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
-
-    // (1) Weight polynomial at beta. The commitment is the "commit" phase of the CP-SNARK (its input), so
-    // it is timed and printed but, like for Apollo/Lunar, not counted towards the prover time.
-    let commit_timer = Instant::now();
-    let poly_com = poly_params.commit(&poly, Blind::default()).to_affine();
-    println!("Weight commitment time (not counted): {:?}", commit_timer.elapsed());
-
-    let ipa_proof_timer = Instant::now();
-    let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
-    ProverIPA::new(poly_params)
-      .create_proof(&mut rand::thread_rng(), &mut transcript_ipa_proof, [ProverQuery { point: beta, poly: &poly, blind: Blind::default() }])
-      .unwrap();
-    let proof_ipa = transcript_ipa_proof.finalize();
-    let ipa_proof_time = ipa_proof_timer.elapsed();
-    println!("IPA proof time (weights at beta): {:?}", ipa_proof_time);
-    proving_time += ipa_proof_time;
-    proof_size += proof_ipa.len();
-
-    // (2) Accumulator column at omega^row_idx (degree 2^k, so the circuit params suffice).
-    // halo2 writes the advice commitments to the transcript phase by phase (column order within a
-    // phase), so the transcript index of the SecondPhase accumulator column differs from its column index.
-    // IPA commitments are blinded, so the opening must use the column's blinding factor.
-    // The recommitment below is a sanity check only (one extra MSM of size 2^k) and is kept outside the timer.
-    let com_idx = advice_transcript_index(&pk.get_vk().cs().advice_column_phase(), col_idx);
-    let poly_com_advice = advice_com[com_idx].to_affine();
-    let advice_col_blind = Blind(advice_blind[col_idx]);
-    assert_eq!(params.commit_lagrange(&advice_lagrange[col_idx], advice_col_blind).to_affine(), poly_com_advice,
-      "transcript commitment {} is not the commitment to advice column {}", com_idx, col_idx);
-    let ipa_proof_timer = Instant::now();
-    let domain = pk.get_vk().get_domain();
-    let open_point = domain.rotate_omega(Fp::ONE, Rotation(row_idx as i32));
-    let poly_advice = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
-    let mut transcript_ipa_proof = Blake2bWrite::<_, EqAffine, Challenge255<_>>::init(vec![]);
-    ProverIPA::new(&params)
-      .create_proof(&mut rand::thread_rng(), &mut transcript_ipa_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: advice_col_blind }])
-      .unwrap();
-    let proof_ipa_advice = transcript_ipa_proof.finalize();
-    let ipa_proof_time = ipa_proof_timer.elapsed();
-    println!("IPA proof time (advice cell): {:?}", ipa_proof_time);
-    proving_time += ipa_proof_time;
-    proof_size += proof_ipa_advice.len();
-    println!("Proving time: {:?}", proving_time);
-
-    for i in 0..num_runs {
-      let ipa_vfy_timer = Instant::now();
-      assert!(verify_ipa_opening(poly_params, &proof_ipa, &poly_com, beta, rho), "weight-polynomial opening did not verify");
-      let vfy_time = ipa_vfy_timer.elapsed();
-      verifying_time[i] += vfy_time;
-      println!("IPA vfy time (weights at beta): {:?}", vfy_time);
-
-      let ipa_vfy_timer = Instant::now();
-      assert!(verify_ipa_opening(&params, &proof_ipa_advice, &poly_com_advice, open_point, rho), "advice-cell opening did not verify");
-      let vfy_time = ipa_vfy_timer.elapsed();
-      verifying_time[i] += vfy_time;
-      println!("IPA vfy time (advice cell): {:?}", vfy_time);
-    }
   }
 
   // zkFFT commitment (if enabled)

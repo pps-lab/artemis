@@ -84,8 +84,9 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   Artemis (`poly`, `pedersen`), LegoSNARK (`cp_link_lego`), Apollo and Lunar alike. Lunar (`cp_link`,
   `cp_link_fast`) counts both CP_link₁ (per column) and CP_link₂. Setup/CRS generation is never counted.
 - **Verifier time** = halo2 `verify_proof` + the scheme's own checks, 5 back-to-back in-process repetitions
-  (warm cache). All checks are real: the Artemis opening proofs go through `SingleStrategy` (pairing check /
-  final IPA MSM); Lunar/Apollo use one batched 2-pairing multi-Miller loop per column; LegoSNARK ℓ+2 pairings.
+  (warm cache). All checks are real: the Artemis openings are part of halo2's batched multi-open (see below)
+  and a standalone weight opening, when needed, goes through `SingleStrategy` (pairing check / final IPA
+  MSM); Lunar/Apollo use one batched 2-pairing multi-Miller loop per column; LegoSNARK ℓ+2 pairings.
 - **Proof size** = halo2 transcript bytes + the scheme's extra proof elements with points counted *compressed*
   (32 B, like the transcript). Statement elements (weight commitment, advice commitments already in the
   transcript) are not counted.
@@ -100,6 +101,14 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   constant, and `acc_0 = p(β)` is the cell opened by the KZG/IPA proof (row 0). `MOCK_VERIFY=1` makes
   `time_circuit` run `MockProver::verify` on the circuit (cross-region "cell not assigned" reports for the
   Artemis gate, which reads the weight columns in place, are filtered).
+- Artemis openings are folded into halo2's multi-open argument (SHPLONK / IPA multiopen) as extra queries
+  (`ExtraProverQuery` / `ExtraVerifierQuery`, new last arguments of the fork's `create_proof` / `verify_proof`):
+  the accumulator cell at ω⁰ always, and the weight polynomial p at the phase-2 challenge β whenever p fits the
+  circuit params (`k_weights ≤ k`; otherwise p is opened standalone with the larger params, as on gpt2). The
+  prover writes the two evaluations to the transcript after the advice evals; the verifier reads them back and
+  asserts they are equal (the CP-link check). Compared to the two standalone openings this removes an MSM(n) and
+  an iFFT(n) per opening and the separate pairing / IPA checks: on mnist the KZG verifier drops from 6.2 ms to
+  the no_com 3.9 ms and the IPA verifier from 69 ms to 27 ms (Oct 2026, local).
 - Artemis weight-polynomial params: the smallest power of two ≥ the number of weights (the circuit params are
   reused when large enough), not 2^(k+⌈log₂ ℓ⌉). An IPA opening costs O(params.n) independent of the polynomial's
   degree (≈4 MSMs of n plus n scalar multiplications for the generator folding), so the old rule inflated the

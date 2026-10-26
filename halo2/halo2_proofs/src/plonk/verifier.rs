@@ -22,8 +22,29 @@ mod batch;
 pub use batch::BatchVerifier;
 
 use crate::poly::commitment::ParamsVerifier;
+use super::ExtraPoint;
 
-/// Returns a boolean indicating whether or not the proof is valid
+/// Verifier side of an extra opening folded into the multi-open argument (see
+/// [`ExtraProverQuery`](super::ExtraProverQuery)); same order as on the prover side.
+#[derive(Clone, Copy, Debug)]
+pub enum ExtraVerifierQuery<'a, C: CurveAffine> {
+    /// Advice column `column` of the first proof at `point`.
+    Advice { column: usize, point: ExtraPoint<C::Scalar> },
+    /// An external commitment (same params as the proof) at `point`.
+    External { commitment: &'a C, point: ExtraPoint<C::Scalar> },
+}
+
+impl<'a, C: CurveAffine> ExtraVerifierQuery<'a, C> {
+    fn point(&self) -> ExtraPoint<C::Scalar> {
+        match self {
+            ExtraVerifierQuery::Advice { point, .. } | ExtraVerifierQuery::External { point, .. } => *point,
+        }
+    }
+}
+
+/// Returns a boolean indicating whether or not the proof is valid. The evaluations claimed for
+/// `extra_queries` are appended to `extra_evals` (they are bound by the multi-open argument but
+/// their meaning is up to the caller to check).
 pub fn verify_proof<
     'params,
     Scheme: CommitmentScheme,
@@ -37,6 +58,8 @@ pub fn verify_proof<
     strategy: Strategy,
     instances: &[&[&[Scheme::Scalar]]],
     transcript: &mut T,
+    extra_queries: &[ExtraVerifierQuery<'_, Scheme::Curve>],
+    extra_evals: &mut Vec<Scheme::Scalar>,
 ) -> Result<Strategy::Output, Error>
 where
     Scheme::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
@@ -244,6 +267,9 @@ where
         .map(|_| -> Result<Vec<_>, _> { read_n_scalars(transcript, vk.cs.advice_queries.len()) })
         .collect::<Result<Vec<_>, _>>()?;
 
+    let extra_evals_read = read_n_scalars(transcript, extra_queries.len())?;
+    extra_evals.extend_from_slice(&extra_evals_read);
+
     let fixed_evals = read_n_scalars(transcript, vk.cs.fixed_queries.len())?;
 
     let vanishing = vanishing.evaluate_after_x(transcript)?;
@@ -415,7 +441,23 @@ where
                 }),
         )
         .chain(permutations_common.queries(&vk.permutation, x))
-        .chain(vanishing.queries(x));
+        .chain(vanishing.queries(x))
+        .chain(
+            extra_queries
+                .iter()
+                .zip(extra_evals_read.iter())
+                .map(|(query, eval)| {
+                    let point = query.point().resolve(&challenges);
+                    match query {
+                        ExtraVerifierQuery::Advice { column, .. } => {
+                            VerifierQuery::new_commitment(&advice_commitments[0][*column], point, *eval)
+                        }
+                        ExtraVerifierQuery::External { commitment, .. } => {
+                            VerifierQuery::new_commitment(*commitment, point, *eval)
+                        }
+                    }
+                }),
+        );
     //println!("Seventh step: {:?}", timer.elapsed());
     let timer = Instant::now();
     // We are now convinced the circuit is satisfied so long as the

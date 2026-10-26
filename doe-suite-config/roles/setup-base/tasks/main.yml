@@ -64,11 +64,13 @@
 #    chdir: "{{ exp_code_dir }}"
 #  tags: [print_action]
 
+# Build with the toolchain pinned in rust-toolchain.toml (rustup installs it on first use); a floating
+# `cargo +nightly` resolves to the newest nightly, which is not guaranteed to build the pinned dependencies.
 - name: Build the Artifact
   ansible.builtin.shell: |
     . ~/.bashrc
-    rustup install nightly
-    cargo +nightly build --release
+    . "$HOME/.cargo/env"
+    cargo build --release
   args:
     chdir: "{{ exp_code_dir }}"
   tags: [print_action]

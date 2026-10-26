@@ -8,7 +8,7 @@ use bitvec::{domain::Domain, order::verify};
 use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
 use group::{Group, GroupEncoding, prime::PrimeCurveAffine};
 use halo2_proofs::{
-  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery}, transcript::{
+  arithmetic::{eval_polynomial, kate_division}, circuit, dev::MockProver, helpers::SerdeCurveAffine, plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Error, ExtraPoint, ExtraProverQuery, ExtraVerifierQuery, VerifyingKey}, poly::{self, commitment::{Blind, Params, ParamsProver, Prover, Verifier}, kzg::{commitment::{KZGCommitmentScheme, ParamsKZG}, msm::DualMSM, multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK}, strategy::{AccumulatorStrategy, SingleStrategy}}, Coeff, EvaluationDomain, LagrangeCoeff, Polynomial, ProverQuery, Rotation, VerificationStrategy, VerifierQuery}, transcript::{
     self, Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite, TranscriptWriterBuffer
   }, SerdeFormat
 };
@@ -62,6 +62,8 @@ pub fn verify_kzg<
   strategy: SingleStrategy<E>,
   public_vals: &[&[E::Scalar]],
   mut transcript: Blake2bRead<&[u8], E::G1Affine, Challenge255<E::G1Affine>>,
+  extra_queries: &[ExtraVerifierQuery<'_, E::G1Affine>],
+  extra_evals: &mut Vec<E::Scalar>,
 ) {
   assert!(
     verify_proof::<
@@ -70,7 +72,7 @@ pub fn verify_kzg<
       Challenge255<E::G1Affine>,
       Blake2bRead<&[u8], E::G1Affine, Challenge255<E::G1Affine>>,
       halo2_proofs::poly::kzg::strategy::SingleStrategy<'_, E>,
-    >(&params, &vk, strategy, &[&public_vals], &mut transcript)
+    >(&params, &vk, strategy, &[&public_vals], &mut transcript, extra_queries, extra_evals)
     .is_ok(),
     "proof did not verify"
   );
@@ -229,6 +231,36 @@ pub fn time_circuit_kzg<
 
   let public_vals_slice = public_vals.iter().map(|x| x.as_slice()).collect::<Vec<_>>();
 
+  // Artemis (`poly`/`pedersen`): the two openings that link the committed weight polynomial p to the circuit
+  // are folded into halo2's batched multi-open argument (SHPLONK) as extra queries:
+  //  (1) p opens to rho at the Fiat-Shamir challenge beta. Folded only when p fits the circuit SRS (the
+  //      quotient would otherwise inherit p's degree); for larger models it stays a standalone GWC opening
+  //      with the weight SRS (below).
+  //  (2) the Poly5/Poly2 accumulator column opens to rho at omega^0 (Horner runs bottom-up, acc_0 = p(beta)).
+  // The verifier reads both evaluations from the transcript and checks that they agree. Compared to two
+  // standalone openings this saves an MSM and an iFFT of size n per opening and two pairing checks.
+  let col_idx = if pedersen { poly_col_len * 2 } else { poly_col_len };
+  let acc_point = ExtraPoint::Fixed(E::Scalar::ONE); // omega^0
+  let beta_challenge = 0usize; // beta is the circuit's only phase challenge
+  let fold_weights = commit_poly && std::ptr::eq(poly_params, &params);
+  let poly_padded: Polynomial<E::Scalar, Coeff> = if fold_weights {
+    let mut values = poly.values.clone();
+    values.resize(params.n() as usize, E::Scalar::ZERO);
+    Polynomial::from_coefficients_vec(values)
+  } else {
+    Polynomial::from_coefficients_vec(vec![])
+  };
+  let extra_queries: Vec<ExtraProverQuery<'_, E::Scalar>> = if commit_poly {
+    assert_eq!(pk.get_vk().cs().num_challenges(), 1, "expected beta to be the only challenge");
+    let mut queries = vec![ExtraProverQuery::Advice { column: col_idx, point: acc_point }];
+    if fold_weights {
+      queries.push(ExtraProverQuery::External { poly: &poly_padded, blind, point: ExtraPoint::Challenge(beta_challenge) });
+    }
+    queries
+  } else {
+    vec![]
+  };
+
   let proof_duration_start = start.elapsed();
   let mut transcript = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
   // Extract advice polys from proof generation
@@ -250,6 +282,7 @@ pub fn time_circuit_kzg<
     &mut transcript,
     &mut advice_lagrange,
     &mut advice_blind,
+    &extra_queries,
   )
   .unwrap();
 
@@ -508,84 +541,72 @@ pub fn time_circuit_kzg<
     }
   }
 
-  // Artemis (`poly`): two KZG openings link the committed weight polynomial p to the in-circuit value:
-  //  (1) p opens to rho at the Fiat-Shamir challenge beta;
-  //  (2) the Poly5/Poly2 accumulator column opens to rho at omega^row_idx (the last Horner row).
-  // Both are single-query GWC openings (one MSM each) and are verified with a real pairing check.
+  // Artemis: commit to the weights (the CP-SNARK's input, timed but not counted, like for Apollo/Lunar) and,
+  // when p does not fit the circuit SRS, prove the standalone opening (1) with the weight SRS. beta is the
+  // proof's phase-2 challenge (published by the synthesize pass).
+  let mut proof_kzg = vec![];
+  let mut poly_com = E::G1Affine::identity();
   if commit_poly {
-    let col_idx = if pedersen {poly_col_len * 2} else {poly_col_len};
-    let row_idx = 0usize; // Horner runs bottom-up, anchored at acc_R = 0, so acc_0 = p(beta)
     let beta = public_valss[0];
-
-    let rho_advice = advice_lagrange[col_idx][row_idx];
     let rho = poly.evaluate(beta);
-    println!("(Rho, Beta): {:?}, row_idx: {:?}, col_idx: {:?}", (rho, beta), row_idx, col_idx);
+    let rho_advice = advice_lagrange[col_idx][0];
+    println!("(Rho, Beta): {:?}, col_idx: {:?}", (rho, beta), col_idx);
     assert!(rho == rho_advice, "rho: {:?}, rho_advice: {:?}", rho, rho_advice);
 
-    // (1) Weight polynomial at beta. The commitment is the "commit" phase of the CP-SNARK (its input), so
-    // it is timed and printed but, like for Apollo/Lunar, not counted towards the prover time.
     let commit_timer = Instant::now();
-    let poly_com = poly_params.commit(&poly, blind).to_affine();
+    poly_com = poly_params.commit(&poly, blind).to_affine();
     println!("Weight commitment time (not counted): {:?}", commit_timer.elapsed());
 
-    let kzg_proof_timer = Instant::now();
-    let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
-    ProverGWC::new(poly_params)
-      .create_proof(&mut rand::thread_rng(), &mut transcript_kzg_proof, [ProverQuery { point: beta, poly: &poly, blind }])
-      .unwrap();
-    let proof_kzg = transcript_kzg_proof.finalize();
-    let kzg_proof_time = kzg_proof_timer.elapsed();
-    println!("KZG proof time (weights at beta): {:?}", kzg_proof_time);
-    proving_time += kzg_proof_time;
-    proof_size += proof_kzg.len();
-
-    // (2) Accumulator column at omega^row_idx (degree 2^k, so the circuit SRS suffices).
-    // halo2 writes the advice commitments to the transcript phase by phase (column order within a
-    // phase), so the transcript index of the SecondPhase accumulator column differs from its column index.
-    // The recommitment below is a sanity check only (one extra MSM of size 2^k) and is kept outside the timer.
-    let com_idx = advice_transcript_index(&pk.get_vk().cs().advice_column_phase(), col_idx);
-    let poly_com_advice = advice_com[com_idx].to_affine();
-    assert_eq!(params.commit_lagrange(&advice_lagrange[col_idx], Blind::default()).to_affine(), poly_com_advice,
-      "transcript commitment {} is not the commitment to advice column {}", com_idx, col_idx);
-    let kzg_proof_timer = Instant::now();
-    let domain = pk.get_vk().get_domain();
-    let open_point = domain.rotate_omega(E::Scalar::ONE, Rotation(row_idx as i32));
-    let poly_advice = domain.lagrange_to_coeff(advice_lagrange[col_idx].clone());
-    let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
-    ProverGWC::new(&params)
-      .create_proof(&mut rand::thread_rng(), &mut transcript_kzg_proof, [ProverQuery { point: open_point, poly: &poly_advice, blind: Blind::default() }])
-      .unwrap();
-    let proof_kzg_advice = transcript_kzg_proof.finalize();
-    let kzg_proof_time = kzg_proof_timer.elapsed();
-    println!("KZG proof time (advice cell): {:?}", kzg_proof_time);
-    proving_time += kzg_proof_time;
-    proof_size += proof_kzg_advice.len();
-    println!("Proving time: {:?}", proving_time);
-
-    for i in 0..num_runs {
-      let kzg_vfy_timer = Instant::now();
-      assert!(verify_kzg_opening::<E>(poly_params, &proof_kzg, &poly_com, beta, rho), "weight-polynomial opening did not verify");
-      let vfy_time = kzg_vfy_timer.elapsed();
-      verifying_time[i] += vfy_time;
-      println!("KZG vfy time (weights at beta): {:?}", vfy_time);
-
-      let kzg_vfy_timer = Instant::now();
-      assert!(verify_kzg_opening::<E>(&params, &proof_kzg_advice, &poly_com_advice, open_point, rho), "advice-cell opening did not verify");
-      let vfy_time = kzg_vfy_timer.elapsed();
-      verifying_time[i] += vfy_time;
-      println!("KZG vfy time (advice cell): {:?}", vfy_time);
+    if fold_weights {
+      println!("Weight opening folded into the circuit multi-open (k_weights <= k)");
+    } else {
+      let kzg_proof_timer = Instant::now();
+      let mut transcript_kzg_proof = Blake2bWrite::<_, E::G1Affine, Challenge255<_>>::init(vec![]);
+      ProverGWC::new(poly_params)
+        .create_proof(&mut rand::thread_rng(), &mut transcript_kzg_proof, [ProverQuery { point: beta, poly: &poly, blind }])
+        .unwrap();
+      proof_kzg = transcript_kzg_proof.finalize();
+      let kzg_proof_time = kzg_proof_timer.elapsed();
+      println!("KZG proof time (weights at beta, standalone): {:?}", kzg_proof_time);
+      proving_time += kzg_proof_time;
+      proof_size += proof_kzg.len();
     }
+    println!("Proving time: {:?}", proving_time);
   }
+  let extra_queries_v: Vec<ExtraVerifierQuery<'_, E::G1Affine>> = if commit_poly {
+    let mut queries = vec![ExtraVerifierQuery::Advice { column: col_idx, point: acc_point }];
+    if fold_weights {
+      queries.push(ExtraVerifierQuery::External { commitment: &poly_com, point: ExtraPoint::Challenge(beta_challenge) });
+    }
+    queries
+  } else {
+    vec![]
+  };
 
   for i in 0..num_runs {
     let vfy_timer = Instant::now();
+    let mut extra_evals = vec![];
     verify_kzg(
       &params,
       &pk.get_vk(),
       strategy.clone(),
       &public_vals_slice,
       transcript_read.clone(),
+      &extra_queries_v,
+      &mut extra_evals,
     );
+    if commit_poly {
+      // CP-link check: the opened accumulator cell equals the committed weight polynomial at beta.
+      let rho_circuit = extra_evals[0];
+      if fold_weights {
+        assert_eq!(rho_circuit, extra_evals[1], "accumulator cell does not match the weight polynomial at beta");
+      } else {
+        assert!(
+          verify_kzg_opening::<E>(poly_params, &proof_kzg, &poly_com, public_valss[0], rho_circuit),
+          "weight-polynomial opening did not verify"
+        );
+      }
+    }
     let verify_duration = vfy_timer.elapsed();
     //println!("Verifying time: {:?}", verify_duration - proof_duration);
     verifying_time[i] += verify_duration;
@@ -649,7 +670,7 @@ pub fn verify_circuit_kzg<
 
   let start = Instant::now();
   let verify_start = start.elapsed();
-  verify_kzg(&params, &vk, strategy, &[public_vals.as_slice()], transcript);
+  verify_kzg(&params, &vk, strategy, &[public_vals.as_slice()], transcript, &[], &mut vec![]);
   let verify_duration = start.elapsed();
   println!("Verifying time: {:?}", verify_duration - verify_start);
   println!("Proof verified!")

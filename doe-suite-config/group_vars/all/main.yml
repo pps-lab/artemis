@@ -7,7 +7,7 @@
 # TODO: Update to HTTPS, does not seem to be working with doe-suite at the moment
 git_remote_repository:
   - repo: "https://github.com/pps-lab/artemis.git"
-    version: "main" #"refs/tags/Usenix25"
+    version: "benchmark-audit-fixes" # "main", "refs/tags/Usenix25"
 #    version: "91d3b391f842a4560d317a3cbc129136097f8663"
 
 prj_id_prefix: "artemis"
@@ -41,8 +41,8 @@ local:
   designs_dir: "{{ does_config_dir }}/designs"
 
 exp_base:
-  aws_region: eu-west-1
-  name: ireland
+  aws_region: eu-north-1
+  name: stockholm
   vpc_name: "{{ prj_id }}_vpc_base"
   vpc_cidr_block: 10.100.0.0/16
   vpc_subnet_name: "{{ prj_id }}_subnet_az1"
