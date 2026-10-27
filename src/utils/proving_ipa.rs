@@ -70,7 +70,8 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   let mut circuit = circuit;
 
   let mut tensor_len = 0usize;
-  let mut poly_coeff = Vec::with_capacity(2usize.pow((circuit.k + poly_col_len) as u32));
+  // Sized by the weight count; the old 2^(k + poly_cols) hint over-reserves by orders of magnitude.
+  let mut poly_coeff: Vec<Fp> = Vec::with_capacity(circuit.tensors.values().map(|t| t.len()).sum());
   for (tensor_idx, tensor) in circuit.tensors.clone() {
     for val in tensor.clone() {
       tensor_len += 1;

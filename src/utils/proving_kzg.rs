@@ -134,7 +134,8 @@ pub fn time_circuit_kzg<
   let beta = E::Scalar::random(rand::thread_rng());
 
   let mut tensor_len = 0usize;
-  let mut poly_coeff = Vec::with_capacity(2usize.pow((circuit.k + poly_col_len) as u32));
+  // Sized by the weight count; the old 2^(k + poly_cols) hint is 2^34 elements (512 GiB) for poly_merged on resnet18.
+  let mut poly_coeff: Vec<E::Scalar> = Vec::with_capacity(circuit.tensors.values().map(|t| t.len()).sum());
 
   for (tensor_idx, tensor) in circuit.tensors.clone() {
     for val in tensor.clone() {
