@@ -1,0 +1,28 @@
+# Artemis Horner with the weights in the general advice columns (poly_merged); same models as poly-small.
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+exp_poly_merged_kzg_small:
+  n_repetitions: 1
+  host_types:
+    small:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "[% my_run.cmd %]"
+  base_experiment:
+    model:
+      $FACTOR$: [mnist, resnet18, dlrm]
+    cpsnark: poly_merged
+    pc_type: kzg
+
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log", "runtime_info.yaml"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

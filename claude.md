@@ -68,6 +68,7 @@ Where:
 |-----------------|--------------------------|------------------------------------------|
 | `no_com`        | No Commitment            | Baseline without commitment              |
 | `poly`          | Artemis (Horner)         | Polynomial evaluation using Horner's method |
+| `poly_merged`   | Artemis (Horner, merged) | Horner over the weights where no_com already keeps them (row-major in the general advice columns): one extra column (the accumulator) instead of `poly_cols`+1. KZG/IPA. Design: `poly_merged-small.yml` |
 | `pedersen`      | Artemis (Inner Product)  | Inner product based approach             |
 | `cp_link`       | Lunar                    | CP-Link construction                     |
 | `cp_link+`      | Apollo                   | Enhanced CP-Link construction            |
@@ -110,6 +111,11 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   constant, and `acc_0 = p(β)` is the cell opened by the KZG/IPA proof (row 0). `MOCK_VERIFY=1` makes
   `time_circuit` run `MockProver::verify` on the circuit (cross-region "cell not assigned" reports for the
   Artemis gate, which reads the weight columns in place, are filtered).
+- `poly_merged` (27 Oct 2026): the tensors are assigned row-major in the general advice columns and the Horner
+  accumulator in the same region (`assign_tensors_merged`), which is the first region of those columns and so starts
+  at row 0; `poly_ell = num_cols`, the accumulator is advice column `num_cols`, and the anchor `acc_R = 0` is a
+  second selector of the Horner gate (the zero constant is not available yet). `POLY_TAMPER=1` perturbs `acc_0`
+  (MockProver must then report the Horner gate, the verifier must reject).
 - Artemis openings are folded into halo2's multi-open argument (SHPLONK / IPA multiopen) as extra queries
   (`ExtraProverQuery` / `ExtraVerifierQuery`, new last arguments of the fork's `create_proof` / `verify_proof`):
   the accumulator cell at ω⁰ always, and the weight polynomial p at the phase-2 challenge β whenever p fits the

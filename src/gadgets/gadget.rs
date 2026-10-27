@@ -69,6 +69,9 @@ pub struct GadgetConfig {
   pub num_rows: usize,
   pub num_cols: usize,
   pub poly_ell: usize,
+  /// Artemis `poly_merged`: the weights live row-major in the general advice columns (no dedicated
+  /// weight columns) and the Horner gate reads them there; `poly_ell` then equals `num_cols`.
+  pub poly_merged: bool,
   pub k: usize,
   pub eta: f64,
   pub min_val: i64,

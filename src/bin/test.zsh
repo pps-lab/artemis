@@ -5,7 +5,7 @@ trap "exit" INT TERM
 
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
-# arg3: cp_snark = ['no_com', 'poly', 'pedersen', 'cp_link', 'cp_link+', 'cp_link_fast', 'poseidon', 'zkfft', 'bary', 'cp_link_lego']
+# arg3: cp_snark = ['no_com', 'poly', 'poly_merged', 'pedersen', 'cp_link', 'cp_link+', 'cp_link_fast', 'poseidon', 'zkfft', 'bary', 'cp_link_lego']
 # arg4: num_runs - int
 # arg5: code directory
 # example: ./test.zsh mnist kzg nocom 5 .
@@ -38,6 +38,7 @@ slow=true
 zkfft=false
 bary=false
 lego=false
+merged=false
 
 case "$name" in
     mnist)
@@ -198,6 +199,15 @@ case "$cp_snark" in
         poly_cols=0
         ;;
 
+    poly_merged)
+        # Artemis Horner with the weights row-major in the general advice columns (no dedicated
+        # weight columns): one extra column (the accumulator) instead of poly_cols + 1.
+        cp_link=false
+        poly_com=true
+        poly_cols=$cols
+        merged=true
+        ;;
+
     pedersen)
         cp_link=false
         poly_com=true
@@ -234,4 +244,4 @@ case "$cp_snark" in
         ;;
 esac
 
-$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft $bary $lego
+$dir/target/release/time_circuit $dir/examples/cifar/$name.msgpack $dir/examples/cifar/$name_ipt\_input.msgpack $pc_type $poly_com $poly_cols $rows $cols $cp_link $pedersen $num_runs $dir $slow $zkfft $bary $lego $merged

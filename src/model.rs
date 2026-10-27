@@ -110,7 +110,51 @@ impl<F: PrimeField + Ord + FromUniformBytes<64>>  ModelConfig<F> {
   }
 }
 
+/// Artemis `poly_merged`: must be called after `generate_from_file` (which resets the global gadget
+/// config) and before keygen/`configure`.
+pub fn set_poly_merged(merged: bool) {
+  GADGET_CONFIG.lock().unwrap().poly_merged = merged;
+}
+
 impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCircuit<C> {
+  /// `poly_merged`: one region holding the weights row-major in the general advice columns (padded
+  /// with zeros to a full last row) and, in the accumulator column, the Horner accumulator over them.
+  pub fn assign_tensors_merged(
+    &self,
+    mut layouter: impl Layouter<C::ScalarExt>,
+    columns: &Vec<Column<Advice>>,
+    tensors: &BTreeMap<i64, Array<C::ScalarExt, IxDyn>>,
+    chip: &Poly5Chip<C::ScalarExt>,
+  ) -> Result<(Vec<AssignedTensor<C::ScalarExt>>, Vec<Rc<AssignedCell<C::ScalarExt, C::ScalarExt>>>, Vec<C::ScalarExt>, AssignedCell<C::ScalarExt, C::ScalarExt>), Error> {
+    let (tensor_map, flat, flat_f, rho) = layouter.assign_region(
+      || "assignment + Artemis Horner",
+      |mut region| {
+        let mut assigned_tensors = BTreeMap::new();
+        let mut cell_idx = 0;
+        let mut big_flat = vec![];
+        let mut flat_f = vec![];
+        for (tensor_idx, tensor) in tensors.iter() {
+          let mut flat = vec![];
+          for val in tensor.iter() {
+            let cell = region.assign_advice(|| "assignment", columns[cell_idx % columns.len()], cell_idx / columns.len(), || Value::known(*val))?;
+            flat.push(Rc::new(cell.clone()));
+            flat_f.push(*val);
+            big_flat.push(Rc::new(cell));
+            cell_idx += 1;
+          }
+          assigned_tensors.insert(*tensor_idx, Array::from_shape_vec(tensor.shape(), flat).unwrap());
+        }
+        while cell_idx % columns.len() != 0 {
+          region.assign_advice(|| "padding", columns[cell_idx % columns.len()], cell_idx / columns.len(), || Value::known(C::ScalarExt::ZERO))?;
+          cell_idx += 1;
+        }
+        let rho = chip.assign_in_region(&mut region)?;
+        Ok((assigned_tensors, big_flat, flat_f, rho))
+      },
+    )?;
+    Ok((self.tensor_map_to_vec(&tensor_map), flat, flat_f, rho))
+  }
+
   pub fn assign_tensors_map(
     &self,
     mut layouter: impl Layouter<C::ScalarExt>,
@@ -648,15 +692,24 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
 
   fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
     let mut gadget_config = crate::model::GADGET_CONFIG.lock().unwrap().clone();
-    gadget_config.columns_poly = (0..gadget_config.poly_ell)
-    .map(|_| {
-      let col = meta.advice_column();
-      println!("Assigned column: {:?}", col);
-      col
-    })
-    .collect::<Vec<_>>();
+    let mut columns: Vec<Column<Advice>> = vec![];
+    if gadget_config.poly_merged {
+      // poly_merged: no dedicated weight columns; the general advice columns come first (advice
+      // indices 0..num_cols), the Horner accumulator right after them (index num_cols).
+      assert!(gadget_config.poly_commit && !gadget_config.pedersen, "poly_merged is the Horner (poly) scheme only");
+      assert_eq!(gadget_config.poly_ell, gadget_config.num_cols, "poly_merged: poly_cols must equal the number of advice columns");
+      columns = (0..gadget_config.num_cols).map(|_| meta.advice_column_in(FirstPhase)).collect();
+      gadget_config.columns_poly = columns.clone();
+    } else {
+      gadget_config.columns_poly = (0..gadget_config.poly_ell)
+      .map(|_| {
+        let col = meta.advice_column();
+        println!("Assigned column: {:?}", col);
+        col
+      })
+      .collect::<Vec<_>>();
+    }
 
-    let columns: Vec<Column<Advice>>;
     //let beta_pows = (0..gadget_config.poly_ell + 1).map(|i| beta.pow([i as u64])).rev().collect::<Vec<_>>();
     if gadget_config.poly_commit {
       if gadget_config.pedersen {
@@ -680,9 +733,11 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       }
     } 
 
-    columns = (0..gadget_config.num_cols)
-    .map(|_| meta.advice_column_in(FirstPhase))
-    .collect::<Vec<_>>();
+    if !gadget_config.poly_merged {
+      columns = (0..gadget_config.num_cols)
+      .map(|_| meta.advice_column_in(FirstPhase))
+      .collect::<Vec<_>>();
+    }
     
     for col in gadget_config.columns_witness.iter() {
       meta.enable_equality(*col);
@@ -770,6 +825,21 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     let range_config= RangeConfig::default();
 
     println!("Phases: {:?}", meta.advice_column_phase());
+
+    println!("=== CS_STATS_BEGIN ===");
+    println!("cs.degree = {}", meta.degree());
+    println!("num_advice_columns = {}", meta.num_advice_columns());
+    println!("num_fixed_columns = {}", meta.num_fixed_columns());
+    println!("num_instance_columns = {}", meta.num_instance_columns());
+    println!("num_gates = {}", meta.gates().len());
+    println!("num_lookups = {}", meta.lookups().len());
+    println!("num_permutation_cols = {}", meta.permutation().get_columns().len());
+    let total_poly_terms: usize = meta.gates().iter().map(|g| g.polynomials().len()).sum();
+    println!("total_poly_terms = {}", total_poly_terms);
+    println!("=== CS_STATS_END ===");
+    if std::env::var("CS_STATS_ONLY").is_ok() {
+      std::process::exit(0);
+    }
 
     ModelConfig {
       gadget_config: gadget_config.into(),
@@ -950,6 +1020,25 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
 
       // Return the tensors
       (self.tensor_map_to_vec(&tensor_map), vec![], vec![], constants)
+    } else if config.gadget_config.poly_commit && config.gadget_config.poly_merged {
+      // poly_merged: weights row-major in the general advice columns and the Horner accumulator in the
+      // same region (first region of those columns, so it starts at row 0 and acc_0 is opened at omega^0).
+      // Assigned in every pass so the layout is identical; first-phase cells are ignored in phase 2.
+      let ell = config.gadget_config.poly_ell;
+      assert_eq!(ell, config.gadget_config.columns.len());
+      let mut coeffs: Vec<C::ScalarExt> = self.tensors.values().flat_map(|t| t.iter().copied()).collect();
+      while coeffs.len() % ell != 0 {
+        coeffs.push(C::ScalarExt::ZERO);
+      }
+      let chip = Poly5Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta, coeffs);
+      let (tensors, flat, flat_f, rho) = self
+        .assign_tensors_merged(layouter.namespace(|| "assignment"), &config.gadget_config.columns, &self.tensors, &chip)
+        .unwrap();
+      println!("RHO Circ: {:?}", rho.value());
+      let constants = self
+        .assign_constants2(layouter.namespace(|| "constants 2"), config.gadget_config.clone(), &constants_base)
+        .unwrap();
+      (tensors, flat, flat_f, constants)
     } else if config.gadget_config.poly_commit && !first_phase {
       // Second phase: the prover ignores first-phase columns, so the weights (and constants, DAG) are
       // not re-assigned; only their values are needed for the accumulator column.
@@ -1021,16 +1110,21 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
       // The Horner / inner-product region is assigned in every pass (keygen, first and second phase).
       // With an unknown beta the accumulator values are unknown, but the selectors and copy
       // constraints must exist at keygen, otherwise the gate is never enforced.
-      let rho = if config.gadget_config.pedersen {
-        Poly2Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta, flat_f)
+      // (poly_merged assigned its accumulator together with the weights above.)
+      let rho = if config.gadget_config.poly_merged {
+        None
+      } else if config.gadget_config.pedersen {
+        Some(Poly2Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta, flat_f)
           .assign(layouter.namespace(|| "poly commit"), zero, one)
-          .unwrap()
+          .unwrap())
       } else {
-        Poly5Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta, flat_f)
+        Some(Poly5Chip::<C::ScalarExt>::construct(gadget_rc.clone(), beta, flat_f)
           .assign(layouter.namespace(|| "poly commit"), zero)
-          .unwrap()
+          .unwrap())
       };
-      println!("RHO Circ: {:?}", rho.value());
+      if let Some(rho) = rho {
+        println!("RHO Circ: {:?}", rho.value());
+      }
     }
 
     // // Perform the dag
