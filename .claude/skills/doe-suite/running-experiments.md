@@ -245,6 +245,8 @@ apollo-small 1793024361, cplink-small 1793024401, cplink_fast-small 1793024441, 
 IDs 1793022503–1793023722 are failed attempts (SSH / build / toolchain) and can go with `make clean-result`.
 With the `VanishingDivisor` division (27 Oct 2026, commit a731ab5) the Lunar/Apollo suites were re-run and these
 supersede the apollo/cplink IDs above: apollo-small 1793096236, cplink-small 1793096275, cplink_fast-small 1793096315.
+Artemis `poly_merged` (Horner over the weights in the general columns): poly_merged-small 1793099365
+(1793098799 is a failed first attempt: resnet18 died on a 512 GiB capacity hint, fixed in the next commit).
 
 ## Debugging Failed Experiments
 
