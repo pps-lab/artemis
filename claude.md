@@ -92,8 +92,17 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   transcript) are not counted.
 - The `/usr/bin/time` wall time and `max_rss` additionally include the (incremental) `cargo build`, SRS
   generation on first use, keygen and a `MockProver::run` used to populate the public values.
-- The Lunar/Apollo CP_link₁ prover time is dominated by `poly_divmod` (Newton division with FFT
-  multiplication); this is the baseline implementation as evaluated and is intentionally left unchanged.
+- Lunar/Apollo CP_link₁ divisions (27 Oct 2026): `cplink1_lite` divides by a `VanishingDivisor`
+  (`src/utils/helpers.rs`), which exploits that every divisor Z vanishes on a subset of the circuit domain H and so
+  divides X^n − 1: the remainder comes from one cyclic convolution with w = (X^n − 1)/Z and the quotients from
+  exact divisions on the coset ζH (six size-n FFTs per division with remainder, two per exact division; 1/Z, 1/w
+  on the coset and w on H are precomputed at setup, not timed). The column layout (prefix blocks θ_j·V of H) is
+  unchanged. The generic Newton division `poly_divmod` (cost ≈ (n / deg Z) size-2n FFT multiplications, which
+  made Lunar 4–10× slower than no_com) is kept for `setup` and `src/bin/cp_link.rs`. Local Mac prover times
+  old → new: Lunar mnist 29.4 → 4.9 s, resnet18 267 → 94 s, dlrm 119 → 57 s; Apollo mnist 5.7 → 4.0 s,
+  resnet18 72 → 70 s, dlrm 33 → 31 s. The remaining Lunar overhead is MSM-bound (per column, commitments to
+  q_i and q of degree ≈ n, plus CP_link₂'s ℓ commitments and two SHPLONK proofs); verifier/proof size unchanged.
+  `cargo test --release --lib vanishing_divisor` checks the new division against `poly_divmod`.
 - Artemis circuit (`poly`/`pedersen`): the Horner / inner-product region (`src/gadgets/poly_5.rs`,
   `poly_2.rs`) is assigned in every synthesize pass so its selectors exist at keygen (before Oct 2026 the
   chip only ran when β was known, i.e. never at keygen, and the gate was vacuous). Weights are laid out
