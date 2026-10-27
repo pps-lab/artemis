@@ -2,6 +2,22 @@
 
 Common issues and solutions when running DoE-Suite experiments.
 
+## Seen in Oct 2026 (eu-west-1, stock Ubuntu), in the order they bit
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: does_etl_custom` on `make design-validate` / `make run` | custom ETL package not on the path | `export PYTHONPATH=$DOES_PROJECT_DIR/doe-suite-config` after sourcing `.envrc` |
+| `ImportError: BrokenColumnCrossPlotLoader` | pinned doe-suite lacks the broken-axis grid | guarded import in `does_etl_custom/etl/colcross.py` (done) |
+| `InvalidAMIID.NotFound` for the custom AMI | custom AMIs exist only in eu-north-1 | stock Ubuntu AMI + `setup-base` (done); update `group_vars/<size>` when changing region |
+| no local key matches any EC2 key pair; `import-key-pair` denied | CLI user lacks the permission | import `~/.ssh/id_ed25519.pub` in the EC2 console, set `DOES_SSH_KEY_NAME` |
+| `VpcLimitExceeded` | 5 VPCs per region, one per project suffix | delete an old `artemis_*_vpc_base` VPC, keep one suffix (`hly`) |
+| `Host key verification failed` (ansible UNREACHABLE on first contact) | `ansible_ssh_common_args` is under `[defaults]` and ignored | `~/.ssh/config` Host block with `StrictHostKeyChecking accept-new` (see prerequisites) |
+| every ssh hangs | stale `SSH_AUTH_SOCK` | `unset SSH_AUTH_SOCK` / kill the old agent |
+| remote build: `feature edition2024 is required` | fresh dependency resolution | `Cargo.lock` is committed (done); keep it committed |
+| jobs fail with `E0554` (nightly feature on stable) | `cargo build --manifest-path` from the results dir does not see `rust-toolchain.toml` | `test.zsh` builds from inside the code dir (done) |
+| `runtime_info.yaml matches no extractor` / `stderr.log matches multiple extractors` | per-suite ETL config | `IgnoreExtractor: [stdout.log, runtime_info.yaml]` only (done); rerun `make etl-design suite=<s> id=<id>` |
+| playbook killed mid-suite | instance keeps running | `make clean-cloud`, then `id=new` or `id=last` |
+
 ## Infrastructure Issues
 
 ### SSH Key Not Found
@@ -356,6 +372,16 @@ make run suite=<suite-name> id=last
 ```
 
 Monitoring will resume and continue checking progress.
+
+### Watching from Claude Code
+
+Run the suites through a background driver that appends `"<suite> exit <code>"` to a status file and arm a
+`Monitor` on `tail -f status.txt` plus one on the playbook logs filtered for `fatal:|FAILED!|UNREACHABLE|Error|
+Traceback|PLAY RECAP` (details in [running-experiments](./running-experiments.md#launching-from-claude-code)).
+Silence is not success: a monitor that only matches the happy path stays quiet through a build failure, so keep
+the failure patterns in the filter and re-arm monitors when they expire (30 min). A suite that exited non-zero
+left its instance running unless the playbook reached cleanup: `make clean-cloud`, then check
+`aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId'`.
 
 ## Cleanup Issues
 

@@ -21,14 +21,18 @@ Before launching expensive cloud resources, validate your configuration:
 
 ```bash
 cd doe-suite
-source .envrc
+source ../doe-suite-config/.envrc
+export PYTHONPATH=$DOES_PROJECT_DIR/doe-suite-config
 
 # View all commands that will be executed
 make design suite=<suite-name>
 
-# Validate design with defaults
+# Validate design with defaults (also imports the custom ETL modules: catches ETL config errors early)
 make design-validate suite=<suite-name>
 ```
+
+Also make sure the branch named by `git_remote_repository.version` in `doe-suite-config/group_vars/all/main.yml`
+is pushed: the instances clone it, not your working tree.
 
 **What to check:**
 - Factor combinations are correct
@@ -50,11 +54,11 @@ make run suite=<suite-name> id=new
    - Launches EC2 instance(s) with appropriate size
    - Waits for SSH access
 
-2. **Environment Setup** (10-15 min)
-   - Installs dependencies (Rust, AWS CLI, task spooler)
-   - Clones code from GitHub (`main` branch)
-   - Builds project: `cargo build --release`
-   - Downloads model artifacts from S3
+2. **Environment Setup** (~10 min on a stock Ubuntu AMI)
+   - `setup-base` installs apt deps (incl. `time`), rustup, AWS CLI, task spooler
+   - Clones the branch in `group_vars/all/main.yml` (`git_remote_repository.version`)
+   - Builds with the pinned toolchain: `cargo build --release` (Cargo.lock is committed)
+   - Syncs model artifacts from S3
 
 3. **Job Execution** (variable time)
    - Enqueues all experiment jobs to task spooler
@@ -77,6 +81,40 @@ make run suite=<suite-name> id=new
 - `make run-keep` - Keep instances running after completion (for debugging)
 
 ### 3. Monitor Progress
+
+#### Launching from Claude Code
+
+`make run` is a blocking Ansible playbook that runs for the whole suite, so it must be started as a background
+process and watched through files. What worked for the Oct 2026 runs (scripts live in the session scratchpad;
+recreate them, they are three lines each):
+
+```zsh
+# launch_suite.zsh <suite>: one blocking make run, logged per suite, exit code appended to status.txt
+cd /Users/hidde/Postdoc-newpc/artemis/doe-suite || exit 1
+source ../doe-suite-config/.envrc
+export PYTHONPATH=$DOES_PROJECT_DIR/doe-suite-config
+make run suite=$1 id=new > $S/remote/$1.log 2>&1
+echo "$1 exit $?" >> $S/remote/status.txt
+```
+
+```zsh
+# driver: start the suites 40 s apart (the first one creates the VPC; simultaneous starts race on it), wait for all
+: > $S/remote/status.txt
+for suite in apollo-small cplink-small cplink_fast-small; do zsh launch_suite.zsh $suite & sleep 40; done
+wait; echo ALL_SUITES_FINISHED >> $S/remote/status.txt
+```
+
+Run the driver with Bash `run_in_background` (one completion notification when all suites have exited), then arm:
+
+- `Monitor`: `tail -n +1 -f $S/remote/status.txt` — one event per suite exit, success or failure.
+- `Monitor`: `tail -f <suite>.log ... | grep -E --line-buffered 'fatal:|FAILED!|UNREACHABLE|Error|Traceback|PLAY RECAP'`
+  — surfaces a broken setup (SSH, build, toolchain) within the first minutes instead of after the timeout.
+
+Monitors expire after 30 min; re-arm them on expiry. Do not poll the logs or sleep-loop. When a playbook has to
+be killed (TaskStop), run `make clean-cloud` so its instance is terminated, then `id=new` after the fix, or
+`id=last` to resume monitoring an interrupted but healthy suite.
+
+#### Manual monitoring
 
 The `make run` command monitors automatically, but if it times out, continue monitoring:
 
@@ -190,9 +228,23 @@ Three tiers of AWS EC2 instances:
 | Medium | r6i.16xlarge  | 64    | 512GB | mobilenet, vgg                    |
 | Large  | r6i.32xlarge  | 128   | 1TB   | diffusion, gpt2                   |
 
-All use custom AMI: `ami-0714b2f0040bb3a42` (eu-north-1 Stockholm region).
+All use the stock Ubuntu 24.04 AMI in eu-west-1 (`ami-0445442ed20a2c6f8`); `setup-base` installs everything.
+The custom AMI `ami-0714b2f0040bb3a42` only exists in eu-north-1 (Stockholm).
 
-Configurations: `doe-suite-config/group_vars/<size>/main.yml`
+Configurations: `doe-suite-config/group_vars/<size>/main.yml` (AMI, snapshot, instance type) and
+`group_vars/all/main.yml` (region, key pair, branch).
+
+Timing (small tier, Oct 2026): ~10 min setup + build, then nocom/poly/lego/apollo ≈ 10–15 min, cplink ≈ 25 min,
+poseidon ≈ 45 min (dlrm alone 12 min).
+
+## Suite IDs
+
+Good runs of the eight small KZG suites on branch `benchmark-audit-fixes` (26 Oct 2026, before the Lunar
+division fix): poly-small 1793023921, nocom-small 1793024241, poly-ip-small 1793024281, lego-small 1793024321,
+apollo-small 1793024361, cplink-small 1793024401, cplink_fast-small 1793024441, poseidon-small 1793024481.
+IDs 1793022503–1793023722 are failed attempts (SSH / build / toolchain) and can go with `make clean-result`.
+With the `VanishingDivisor` division (27 Oct 2026, commit a731ab5) the Lunar/Apollo suites were re-run and these
+supersede the apollo/cplink IDs above: apollo-small 1793096236, cplink-small 1793096275, cplink_fast-small 1793096315.
 
 ## Debugging Failed Experiments
 
@@ -228,7 +280,8 @@ If experiments panic or error:
    make run suite=<suite-name> id=new
    ```
 
-The remote instance will pull the latest `main` branch code.
+The remote instance pulls the branch named in `group_vars/all/main.yml`, so push that branch (do not develop
+on `main`; the evaluation branch is `benchmark-audit-fixes`).
 
 ### Instance Won't Start
 
@@ -299,8 +352,13 @@ Add to suite design ETL config:
 $ETL$:
   overview:
     extractors:
-      IgnoreExtractor: {file_regex: ["*.log", "runtime_info.yaml"]}
+      ErrorExpectedFileExtractor: {file_regex: ["stderr.log"], expected_file: "output.csv"}
+      IgnoreExtractor: {file_regex: ["stdout.log", "runtime_info.yaml"]}
 ```
+
+Every result file must match exactly one extractor: `stderr.log` is already claimed by
+`ErrorExpectedFileExtractor`, so listing it in `IgnoreExtractor` too fails with "matches multiple extractors".
+The per-job ETL error does not stop the suite; after fixing the design run `make etl-design suite=<s> id=<id>`.
 
 **Solution 2: Extract the file**
 
