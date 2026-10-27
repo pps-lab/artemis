@@ -2,7 +2,7 @@ use core::num;
 use std::{
   cmp::min, fmt::Debug, fs::File, io::{BufReader, Write}, path::{self, Path}, time::{Duration, Instant}
 };
-use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanishing_on_set, verify1, verify1_lite};
+use crate::utils::helpers::{cplink1, cplink1_lite, cplink2, powers, setup, vanishing_on_set, verify1, verify1_lite, VanishingDivisor};
 use crate::utils::lego_cplink::{lego_cplink_prove, lego_cplink_setup, lego_cplink_verify, lego_pedersen_commit};
 use bitvec::{domain::Domain, order::verify};
 use ff::{Field, FromUniformBytes, WithSmallOrderMulGroup};
@@ -18,7 +18,7 @@ use rand_core::OsRng;
 
 use csv::Writer;
 use rmp_serde::config;
-use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_values, poly_divmod}};
+use crate::{model::{ModelCircuit, GADGET_CONFIG}, utils::helpers::{get_public_values}};
 //use halo2curves::{bn256, ::{EpAffine, Eq}};
 
 pub fn get_kzg_params<E: Engine<G1Affine: SerdeCurveAffine, G2Affine: SerdeCurveAffine> + Debug>(params_dir: &str, degree: u32) -> ParamsKZG<E> {
@@ -370,6 +370,8 @@ pub fn time_circuit_kzg<
       //let u_coms = advice_com.clone();
       //let u_coms = vec![E::G1::identity(); c];
       let z_v_com = params.commit_g2(&z_v);
+      // Divisor-only precomputation for the O(n log n) division (setup, not timed).
+      let z_v_div = VanishingDivisor::new(col_size as u32, &z_v);
       let u = HH.lagrange_to_coeff(HH.lagrange_from_vec(poly_coeff.clone()));
       let u_com = params.commit_g1(&u);
       let (uprimes, uprime_coms, cp2_prove, cp2_vfy, cp2_proof_size) = cplink2(thetas, HH.clone(), u, z_v.clone(), z_v_com, u_com, params.clone());
@@ -384,7 +386,7 @@ pub fn time_circuit_kzg<
 
        //let chat = E::G1::identity();///advice_com[i];
         let polycom = params.commit_g1(&poly_coeff);
-        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &poly_coeff, &params, &HH);
+        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v_div, &poly_coeff, &params, &HH);
         proving_time += cplink_time;
         // Proof elements per column (compressed): c', d_small, d. chat (weight commitment) and bigc (advice
         // commitment) are statement elements; the zeroed ZK elements (wcom, zz) are not sent.
@@ -411,6 +413,8 @@ pub fn time_circuit_kzg<
       let z = vanishing_on_set(&domain_vals);
       //let z = Polynomial::from_coefficients_vec(vec![E::Scalar::one()]);
       let z_com = params.commit_g2(&z);
+      // Divisor-only precomputation for the O(n log n) division (setup, not timed).
+      let z_div = VanishingDivisor::new(params.k(), &z);
       //println!("poly sum: {:?}", poly_sum);
       //println!("z: {:?}", z);
       let polys_lagrange = (0..poly_col_len).map(|x| {
@@ -422,7 +426,7 @@ pub fn time_circuit_kzg<
         poly
       }).collect::<Vec<_>>();
 
-      let uhats: Vec<_> = polys_lagrange.iter().map(|poly| poly_divmod(&domain.lagrange_to_coeff(poly.clone()), &z).1).collect();
+      let uhats: Vec<_> = polys_lagrange.iter().map(|poly| z_div.divmod(&domain.lagrange_to_coeff(poly.clone())).1).collect();
       let chats: Vec<_> = uhats.iter().map(|uhat| params.commit_g1(&uhat)).collect();
       for i in 0..polys_lagrange.len() {
         //let (q, mut uhat) = poly_divmod(poly, &z);   
@@ -433,7 +437,7 @@ pub fn time_circuit_kzg<
         // columns 0..poly_col_len come first in the transcript).
         let polycom = advice_com[i];
         debug_assert_eq!(params.commit_g1(&poly_coeff), polycom);
-        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z, &poly_coeff, &params, &domain);
+        let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uhats[i], &chats[i], &polycom, &z_div, &poly_coeff, &params, &domain);
         proving_time += cplink_time;
         // Proof elements per column (compressed): c', d_small, d. chat (weight commitment) and bigc (advice
         // commitment) are statement elements; the zeroed ZK elements (wcom, zz) are not sent.
@@ -466,6 +470,7 @@ pub fn time_circuit_kzg<
       //let u_coms = vec![E::G1::identity(); c];
 
       let z_v_com = params.commit_g2(&z_v);
+      let z_v_div = VanishingDivisor::new(col_size as u32, &z_v);
       println!("poly_cols {:?}, chunks per column: {:?}", poly_col_len, chunks_per_column);
       for j in 0..poly_col_len {
         println!("j: {}, chunks_per_col: {}, j*c: {}", j, chunks_per_column, j*chunks_per_column);
@@ -490,7 +495,7 @@ pub fn time_circuit_kzg<
   
          //let chat = E::G1::identity();///advice_com[i];
           let polycom = params.commit_g1(&witness_poly_coeff);
-          let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v, &witness_poly_coeff, &params, &HH);
+          let (chat, d_small, cprime, wcom, bigc, d, x, zz, cplink_time) = cplink1_lite(&uprimes[i], &uprime_coms[i], &polycom, &z_v_div, &witness_poly_coeff, &params, &HH);
           proving_time += cplink_time;
           // Proof elements per column (compressed): c', d_small, d. chat (weight commitment) and bigc (advice
           // commitment) are statement elements; the zeroed ZK elements (wcom, zz) are not sent.

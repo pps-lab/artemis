@@ -506,7 +506,7 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   u: &Polynomial<E::Scalar, Coeff>,
   chat: &E::G1,
   bigc: &E::G1,
-  z: &Polynomial<E::Scalar, Coeff>,
+  zdiv: &VanishingDivisor<E::Scalar>,
   poly: &Polynomial<E::Scalar, Coeff>,
   params: &ParamsKZG<E>,
   //ck: CS2_PP<E>,
@@ -532,7 +532,7 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
       println!("U size: {:?}, Poly size {:?}", u.len(), poly.len());
       //let zeros: usize = u.iter().map(|x| if x.is_zero_vartime() {1} else {0}).sum();
       //println!("zeros: {:?}", zeros);
-      let (q, r) = poly_divmod(&u, &z);  
+      let (q, r) = zdiv.divmod(u);
       // u = q * z + r
       // chat = d_small * z_com + cprime
       //println!("Diff: {:?}", (q.clone() *z + &r - u).is_zero() );
@@ -552,10 +552,8 @@ pub fn cplink1_lite<E: Engine<Scalar: WithSmallOrderMulGroup<3> + Ord, G1Affine:
   // vanishing[HH.get_n() as usize] = E::Scalar::ONE;
   //let vanishing_poly = HH.coeff_from_vec(vanishing);
 
-  let q = poly.clone() - &uhat;
-  //let (q, r) = q.divide_with_q_and_r(&zhats[l]).unwrap();
-  let (q, r) = poly_divmod(&q, &z);
-  assert!(r.is_zero(), "R value:, Q value:\n, {:?}, ", r.values.len());
+  // poly agrees with uhat on the rows where z vanishes, so the division is exact (checked in debug builds).
+  let q = zdiv.div_exact(&(poly.clone() - &uhat));
 
   let large_q = second_timer.elapsed();
   println!("Large q: {:?}", large_q - uhats);
@@ -1402,4 +1400,149 @@ pub fn poly_divmod<F: Field + WithSmallOrderMulGroup<3>>(u: &Polynomial<F, Coeff
   let r = poly_sub(u, &poly_mul(v, &q));
 
   (q, r)
+}
+
+/// Division with remainder by the vanishing polynomial Z of a subset S of the evaluation domain H (|H| = n = 2^k),
+/// i.e. any monic divisor with Z | X^n - 1 (Lunar's Z_i on a block W_i of H, Apollo's Z on the weight rows).
+/// Costs six size-n FFTs for a division with remainder and two for an exact division, independent of deg Z;
+/// the generic `poly_divmod` above costs about (n / deg Z) size-2n FFT multiplications on the same inputs.
+///
+/// Everything that depends only on the divisor is computed once here (setup): the complementary factor
+/// w = (X^n - 1) / Z evaluated on H (zero outside S), and 1/Z and 1/w evaluated on the coset zeta*H, where
+/// neither vanishes.
+///
+/// Write u = q*Z + r with deg r < deg Z = d. Then u*w = q*(X^n - 1) + r*w with deg(r*w) < d + (n - d) = n, so
+/// r*w is u*w reduced mod X^n - 1: the cyclic convolution of u and w on H, i.e. the pointwise product of their
+/// evaluations on H. r = (r*w)/w and q = (u - r)/Z are then exact divisions, done pointwise on the coset.
+pub struct VanishingDivisor<F: WithSmallOrderMulGroup<3>> {
+  pub z: Polynomial<F, Coeff>,
+  pub degree: usize,
+  domain: EvaluationDomain<F>,
+  w_evals: Vec<F>,
+  z_coset_inv: Vec<F>,
+  w_coset_inv: Vec<F>,
+}
+
+impl<F: WithSmallOrderMulGroup<3>> VanishingDivisor<F> {
+  pub fn new(k: u32, z: &Polynomial<F, Coeff>) -> Self {
+    use ff::BatchInvert;
+    let n = 1usize << k;
+    let z = z.normalize();
+    let degree = z.values.len() - 1;
+    assert!(degree >= 1 && degree < n, "divisor degree {} must be in [1, 2^k)", degree);
+    assert!(z.values[degree] == F::ONE, "divisor must be monic");
+    // j = 2: the "extended" domain is then the coset zeta*H of size n itself (with j = 1 the fork's
+    // extended_to_coeff truncates to 0 coefficients).
+    let domain = EvaluationDomain::<F>::new(2, k);
+    assert_eq!(domain.extended_len(), n);
+
+    let mut z_pad = z.values.clone();
+    z_pad.resize(n, F::ZERO);
+    let z_coset = domain.coeff_to_extended(Polynomial::from_coefficients_vec(z_pad)).values;
+    assert!(z_coset.iter().all(|v| !v.is_zero_vartime()), "divisor vanishes on the coset: it does not divide X^n - 1");
+    let mut z_coset_inv = z_coset.clone();
+    z_coset_inv.iter_mut().batch_invert();
+    // X^n - 1 is the constant zeta^n - 1 on the coset.
+    let t = F::ZETA.pow_vartime([n as u64]) - F::ONE;
+    let t_inv = t.invert().unwrap();
+    let w_coset: Vec<F> = z_coset_inv.iter().map(|zi| *zi * t).collect();
+    let w_coset_inv: Vec<F> = z_coset.iter().map(|zc| *zc * t_inv).collect();
+    let w_coeffs = domain.extended_to_coeff(Polynomial { values: w_coset, _marker: PhantomData });
+    let w_evals = domain.coeff_to_lagrange(Polynomial::from_coefficients_vec(w_coeffs)).values;
+    Self { z, degree, domain, w_evals, z_coset_inv, w_coset_inv }
+  }
+
+  pub fn n(&self) -> usize {
+    self.w_evals.len()
+  }
+
+  fn padded(&self, u: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+    let n = self.n();
+    assert!(u.values.len() <= n, "dividend has {} coefficients, the domain has {}", u.values.len(), n);
+    let mut v = u.values.clone();
+    v.resize(n, F::ZERO);
+    Polynomial::from_coefficients_vec(v)
+  }
+
+  /// (q, r) with u = q*Z + r and deg r < deg Z; requires deg u < n.
+  pub fn divmod(&self, u: &Polynomial<F, Coeff>) -> (Polynomial<F, Coeff>, Polynomial<F, Coeff>) {
+    let n = self.n();
+    let d = self.degree;
+    let u = u.normalize();
+    if u.values.len() <= d {
+      return (Polynomial::zero(), u);
+    }
+    let u_pad = self.padded(&u);
+    // r*w = (u*w) mod (X^n - 1): pointwise product of the evaluations on H.
+    let mut rw = self.domain.coeff_to_lagrange(u_pad.clone());
+    rw.values.iter_mut().zip(self.w_evals.iter()).for_each(|(a, w)| *a *= w);
+    let rw = self.domain.lagrange_to_coeff(rw);
+    // r = (r*w) / w, exact, on the coset.
+    let mut r_coset = self.domain.coeff_to_extended(rw);
+    r_coset.values.iter_mut().zip(self.w_coset_inv.iter()).for_each(|(a, w)| *a *= w);
+    // q = (u - r) / Z, exact, on the coset.
+    let mut q_coset = self.domain.coeff_to_extended(u_pad);
+    q_coset.values.iter_mut().zip(r_coset.values.iter()).zip(self.z_coset_inv.iter())
+      .for_each(|((a, r), z)| *a = (*a - r) * z);
+    let mut r = self.domain.extended_to_coeff(r_coset);
+    debug_assert!(r[d..].iter().all(|c| c.is_zero_vartime()), "remainder has degree >= deg Z");
+    r.truncate(d);
+    let mut q = self.domain.extended_to_coeff(q_coset);
+    q.truncate(n - d);
+    (Polynomial::from_coefficients_vec(q).normalize(), Polynomial::from_coefficients_vec(r).normalize())
+  }
+
+  /// u / Z for u divisible by Z (deg u < n); two FFTs. Exactness is only checked in debug builds.
+  pub fn div_exact(&self, u: &Polynomial<F, Coeff>) -> Polynomial<F, Coeff> {
+    let n = self.n();
+    let u_pad = self.padded(u);
+    let mut q_coset = self.domain.coeff_to_extended(u_pad);
+    q_coset.values.iter_mut().zip(self.z_coset_inv.iter()).for_each(|(a, z)| *a *= z);
+    let mut q = self.domain.extended_to_coeff(q_coset);
+    q.truncate(n - self.degree);
+    let q = Polynomial::from_coefficients_vec(q).normalize();
+    debug_assert!(self.divmod(u).1.is_zero(), "division is not exact");
+    q
+  }
+}
+
+#[cfg(test)]
+mod vanishing_divisor_tests {
+  use super::*;
+  use halo2curves::bn256::Fr;
+  use rand_core::OsRng;
+
+  fn random_poly(len: usize) -> Polynomial<Fr, Coeff> {
+    Polynomial::from_coefficients_vec((0..len).map(|_| Fr::random(OsRng)).collect())
+  }
+
+  fn check(k: u32, start: usize, d: usize, u_len: usize) {
+    let n = 1usize << k;
+    let hh = EvaluationDomain::<Fr>::new(1, k);
+    let hh_vals: Vec<Fr> = powers(hh.get_omega()).take(n).collect();
+    let z = vanishing_on_set(&hh_vals[start..start + d]);
+    let zdiv = VanishingDivisor::new(k, &z);
+    let u = random_poly(u_len);
+    let (q, r) = zdiv.divmod(&u);
+    let (q_ref, r_ref) = poly_divmod(&u, &z);
+    assert_eq!(q.normalize().values, q_ref.normalize().values, "quotient mismatch (k={}, d={}, u_len={})", k, d, u_len);
+    assert_eq!(r.normalize().values, r_ref.normalize().values, "remainder mismatch (k={}, d={}, u_len={})", k, d, u_len);
+    assert!(r.values.len() <= d);
+    let back = q.naive_mul(&z) + &r;
+    assert_eq!(back.normalize().values, u.normalize().values);
+    // Exact division of q*Z.
+    let qz = q.naive_mul(&z);
+    assert_eq!(zdiv.div_exact(&qz).normalize().values, q.normalize().values);
+  }
+
+  #[test]
+  fn divmod_matches_generic_division() {
+    check(8, 0, 37, 256);        // Lunar: prefix block, full-degree dividend
+    check(8, 3 * 37, 37, 256);   // a later block
+    check(8, 0, 1, 256);         // single root
+    check(8, 0, 255, 256);       // d = n - 1
+    check(8, 0, 37, 200);        // deg u < n - 1
+    check(8, 0, 37, 20);         // deg u < d: trivial
+    check(10, 5, 100, 1024);
+  }
 }
