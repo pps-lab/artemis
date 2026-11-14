@@ -11,6 +11,18 @@ pub mod baseline;
 pub mod parallel;
 pub mod recursive;
 
+/// Which implementation `FFT=` selects (read once).
+fn fft_impl() -> &'static str {
+    static IMPL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    IMPL.get_or_init(|| match var("FFT") {
+        // Default (27 Oct 2026): the recursive radix-2/4 FFT with precomputed stage twiddles; it is
+        // about 2x faster than `parallel` on an M-series Mac (2^19: 14.6 ms vs 29.2 ms, 15 threads).
+        Err(_) => "recursive".to_string(),
+        Ok(v) if v == "baseline" || v == "recursive" || v == "parallel" => v,
+        Ok(_) => panic!("Please either specify environment variable `FFT={{baseline,recursive,parallel}}` or remove it all together."),
+    })
+}
+
 /// Runtime dispatcher to concrete FFT implementation
 pub fn fft<Scalar: Field, G: FftGroup<Scalar>>(
     a: &mut [G],
@@ -19,27 +31,34 @@ pub fn fft<Scalar: Field, G: FftGroup<Scalar>>(
     data: &FFTData<Scalar>,
     inverse: bool,
 ) {
-    match var("FFT") {
-        Err(_) => {
-            // No `FFT=` environment variable specified.
-            log_info("=== Parallel FFT ===".to_string());
-            parallel::fft(a, omega, log_n, data, inverse)
-        }
-        Ok(fft_impl) if fft_impl == "baseline"=> {
-            log_info("=== Baseline FFT ===".to_string());
-            baseline::fft(a, omega, log_n, data, inverse)
-        }
-        Ok(fft_impl) if fft_impl == "recursive" => {
-            log_info("=== Recusive FFT ===".to_string());
-            recursive::fft(a, omega, log_n, data, inverse)
-        }
-        Ok(fft_impl) if fft_impl == "parallel" => {
-            log_info("=== Parallel FFT ===".to_string());
-            parallel::fft(a, omega, log_n, data, inverse)
-        }
+    match fft_impl() {
+        "baseline" => baseline::fft(a, omega, log_n, data, inverse),
+        "parallel" => parallel::fft(a, omega, log_n, data, inverse),
+        // `recursive` needs the stage twiddles of exactly this size; fall back otherwise.
+        _ if data.get_n() == a.len() => recursive::fft(a, omega, log_n, data, inverse),
         _ => {
-            panic!("Please either specify environment variable `FFT={{baseline,recursive,parallel}}` or remove it all together.")
+            log_info(format!("fft: no FFTData for size {}, using parallel", a.len()));
+            parallel::fft(a, omega, log_n, data, inverse)
         }
+    }
+}
+
+/// Out-of-place variant: the FFT of `src` is written to `dst` (same length). With the recursive
+/// implementation this saves the copy into the scratch buffer.
+pub fn fft_into<Scalar: Field, G: FftGroup<Scalar>>(
+    src: &[G],
+    dst: &mut [G],
+    omega: Scalar,
+    log_n: u32,
+    data: &FFTData<Scalar>,
+    inverse: bool,
+) {
+    assert_eq!(src.len(), dst.len());
+    if fft_impl() == "recursive" && data.get_n() == src.len() {
+        recursive::fft_into(src, dst, data, inverse);
+    } else {
+        dst.copy_from_slice(src);
+        fft(dst, omega, log_n, data, inverse);
     }
 }
 

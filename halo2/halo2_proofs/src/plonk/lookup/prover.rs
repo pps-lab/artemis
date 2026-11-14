@@ -4,6 +4,7 @@ use super::super::{
 };
 use super::Argument;
 use crate::plonk::evaluation::evaluate;
+use crate::plonk::{start_measure, stop_measure};
 use crate::{
     arithmetic::{eval_polynomial, parallelize, CurveAffine},
     poly::{
@@ -111,12 +112,15 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
         };
 
         // Get values of input expressions involved in the lookup and compress them
+        let m = start_measure("lookup.compress", false);
         let compressed_input_expression = compress_expressions(&self.input_expressions);
 
         // Get values of table expressions involved in the lookup and compress them
         let compressed_table_expression = compress_expressions(&self.table_expressions);
+        stop_measure(m);
 
         // Permute compressed (InputExpression, TableExpression) pair
+        let m = start_measure("lookup.permute", false);
         let (permuted_input_expression, permuted_table_expression) = permute_expression_pair(
             pk,
             params,
@@ -125,8 +129,10 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
             &compressed_input_expression,
             &compressed_table_expression,
         )?;
+        stop_measure(m);
 
         // Closure to construct commitment to vector of values
+        let m = start_measure("lookup.commit_permuted", false);
         let mut commit_values = |values: &Polynomial<C::Scalar, LagrangeCoeff>| {
             let poly = pk.vk.domain.lagrange_to_coeff(values.clone());
             let blind = Blind(C::Scalar::random(&mut rng));
@@ -147,6 +153,7 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
 
         // Hash permuted table commitment
         transcript.write_point(permuted_table_commitment)?;
+        stop_measure(m);
 
         Ok(Permuted {
             compressed_input_expression,
@@ -194,6 +201,7 @@ impl<C: CurveAffine> Permuted<C> {
         // s_j(X) is the jth table expression in this lookup,
         // s'(X) is the compression of the permuted table expressions,
         // and i is the ith row of the expression.
+        let m = start_measure("lookup.product_fractions", false);
         let mut lookup_product = vec![C::Scalar::ZERO; params.n() as usize];
         // Denominator uses the permuted input expression and permuted table expression
         parallelize(&mut lookup_product, |lookup_product, start| {
@@ -235,8 +243,10 @@ impl<C: CurveAffine> Permuted<C> {
         // s'(\omega^i) is the permuted table expression,
         // and i is the ith row of the expression.
 
+        stop_measure(m);
         // Compute the evaluations of the lookup product polynomial
         // over our domain, starting with z[0] = 1
+        let m = start_measure("lookup.product_scan", false);
         let z = iter::once(C::Scalar::ONE)
             .chain(lookup_product)
             .scan(C::Scalar::ONE, |state, cur| {
@@ -251,6 +261,7 @@ impl<C: CurveAffine> Permuted<C> {
             .collect::<Vec<_>>();
         assert_eq!(z.len(), params.n() as usize);
         let z = pk.vk.domain.lagrange_from_vec(z);
+        stop_measure(m);
 
         #[cfg(feature = "sanity-checks")]
         // This test works only with intermediate representations in this method.
@@ -290,12 +301,14 @@ impl<C: CurveAffine> Permuted<C> {
             assert_eq!(z[u], C::Scalar::ONE);
         }
 
+        let m = start_measure("lookup.product_commit", false);
         let product_blind = Blind(C::Scalar::random(rng));
         let product_commitment = params.commit_lagrange(&z, product_blind).to_affine();
         let z = pk.vk.domain.lagrange_to_coeff(z);
 
         // Hash product commitment
         transcript.write_point(product_commitment)?;
+        stop_measure(m);
 
         Ok(Committed::<C> {
             permuted_input_poly: self.permuted_input_poly,
@@ -404,11 +417,20 @@ fn permute_expression_pair<'params, C: CurveAffine, P: Params<'params, C>, R: Rn
     // for value in &table_expression.values {
     //     println!("Table: {:?}", value);
     // }
-    let mut permuted_input_expression: Vec<C::Scalar> = input_expression.to_vec();
-    permuted_input_expression.truncate(usable_rows);
-
-    // Sort input lookup expression values
-    permuted_input_expression.sort();
+    // Sort the input lookup expression values. Any order in which equal values are adjacent
+    // works for the argument, so sort by the canonical byte representation computed once per
+    // element: `Ord` on the field converts both operands out of Montgomery form on every
+    // comparison, which made this sort ~1 s on dlrm (27 Oct 2026).
+    let mut keyed: Vec<(<C::Scalar as PrimeField>::Repr, C::Scalar)> = input_expression
+        .iter()
+        .take(usable_rows)
+        .map(|v| (v.to_repr(), *v))
+        .collect();
+    {
+        use rayon::slice::ParallelSliceMut;
+        keyed.par_sort_unstable_by(|a, b| a.0.as_ref().cmp(b.0.as_ref()));
+    }
+    let mut permuted_input_expression: Vec<C::Scalar> = keyed.into_iter().map(|(_, v)| v).collect();
 
     struct ScalarWrapper<C: CurveAffine> {
         value: C::ScalarExt,

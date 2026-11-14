@@ -42,6 +42,12 @@ group = "0.13.0"
 ff = "0.13.0"
 csv = "1.1"
 
+# On x86_64 use the hand-written assembly field arithmetic of the halo2curves fork (bn256 Fq/Fr
+# Montgomery multiplication); it is not available on aarch64 (the Macs), where the generic Rust
+# implementation is used. Feature unification enables it for halo2_proofs' copy as well.
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+halo2curves = { path = "halo2/halo2curves", features = ["asm"] }
+
 [[bench]]
 name = "benchmark_ipa_fft"
 harness = false

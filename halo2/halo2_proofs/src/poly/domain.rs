@@ -277,6 +277,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         assert_eq!(a_extended.values.len(), self.n as usize);
 
         // Perform inverse FFT to obtain the polynomial in coefficient form
+        crate::plonk::log_info(format!("fft: {} inverse: false", a_extended.values.len()));
         best_fft(&mut a_extended.values, self.omega, self.k, &self.fft_data, false);
 
         Polynomial {
@@ -315,6 +316,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         self.distribute_powers_zeta(&mut a.values, true);
         a.values.resize(self.extended_len(), F::ZERO);
 
+        crate::plonk::log_info(format!("fft: {} inverse: false", a.values.len()));
         best_fft(
             &mut a.values,
             self.extended_omega,
@@ -347,7 +349,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
         let mut extended_omega_factor = F::ONE;
         (0..num_parts)
             .map(|_| {
-                let part = self.coeff_to_extended_part(a.clone(), extended_omega_factor);
+                let part = self.coeff_to_extended_part(&a, extended_omega_factor);
                 extended_omega_factor *= self.extended_omega;
                 part
             })
@@ -374,7 +376,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             .map(|_| {
                 let a_lagrange = a
                     .iter()
-                    .map(|poly| self.coeff_to_extended_part(poly.clone(), extended_omega_factor))
+                    .map(|poly| self.coeff_to_extended_part(poly, extended_omega_factor))
                     .collect();
                 extended_omega_factor *= self.extended_omega;
                 a_lagrange
@@ -390,17 +392,28 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     /// where `extended_omega_factor` is `extended_omega^i` with `i` in `[0, m)`.
     pub fn coeff_to_extended_part(
         &self,
-        mut a: Polynomial<F, Coeff>,
+        a: &Polynomial<F, Coeff>,
         extended_omega_factor: F,
     ) -> Polynomial<F, LagrangeCoeff> {
         assert_eq!(a.values.len(), 1 << self.k);
 
-        self.distribute_powers(&mut a.values, self.g_coset * extended_omega_factor);
-        let data = self.get_fft_data(a.len());
-        best_fft(&mut a.values, self.omega, self.k, data, false);
+        // f(c X) for c = zeta * extended_omega_factor, written to a fresh buffer (no clone)
+        let c = self.g_coset * extended_omega_factor;
+        let mut scaled = vec![F::ZERO; a.values.len()];
+        parallelize(&mut scaled, |out, start| {
+            let mut c_power = c.pow_vartime(&[start as u64, 0, 0, 0]);
+            for (out, v) in out.iter_mut().zip(a.values[start..].iter()) {
+                *out = *v * c_power;
+                c_power *= c;
+            }
+        });
+        let data = self.get_fft_data(scaled.len());
+        crate::plonk::log_info(format!("fft: {} inverse: false", scaled.len()));
+        let mut values = vec![F::ZERO; scaled.len()];
+        crate::fft::fft_into(&scaled, &mut values, self.omega, self.k, data, false);
 
         Polynomial {
-            values: a.values,
+            values,
             _marker: PhantomData,
         }
     }
@@ -505,6 +518,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             });
         }
         let data = self.get_fft_data(result.len());
+        crate::plonk::log_info(format!("fft: {} inverse: false", result.len()));
         best_fft(&mut result, self.extended_omega, self.extended_k, data, false);
         parallelize(&mut result_poly.values, |values, start| {
             for (value, other) in values.iter_mut().zip(result[start..].iter()) {
@@ -586,6 +600,7 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
     }
 
     fn fft_inner(&self, a: &mut Vec<F>, omega: F, log_n: u32, inverse: bool) {
+        crate::plonk::log_info(format!("fft: {} inverse: {}", a.len(), inverse));
         let start = get_time();
         let fft_data = self.get_fft_data(a.len());
         best_fft(a, omega, log_n, fft_data, inverse);

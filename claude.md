@@ -104,6 +104,19 @@ What `results/output.csv` contains, per scheme (branch `benchmark-audit-fixes`, 
   resnet18 72 → 70 s, dlrm 33 → 31 s. The remaining Lunar overhead is MSM-bound (per column, commitments to
   q_i and q of degree ≈ n, plus CP_link₂'s ℓ commitments and two SHPLONK proofs); verifier/proof size unchanged.
   `cargo test --release --lib vanishing_divisor` checks the new division against `poly_divmod`.
+- halo2 fork speedups (27 Oct 2026, `halo2/halo2_proofs`): (1) `best_multiexp` is a port of halo2curves 0.10's
+  batched-affine Booth-window Pippenger (`multiexp_batch_affine` in `arithmetic.rs`; windows x point chunks are
+  parallelised, bases are no longer cloned; the old chunked Pippenger remains as `multiexp_chunked` for small inputs
+  and tests). (2) The FFT dispatcher (`fft.rs`, `FFT=` env) now defaults to the `recursive` radix-2/4 implementation
+  with precomputed stage twiddles instead of `parallel` (2x faster at 2^19); `fft_into` is an out-of-place variant used
+  by `coeff_to_extended_part`, which takes `&Polynomial` and no longer clones. (3) The lookup permutation sorts by a
+  precomputed canonical key with rayon (`Ord` on the field reduces out of Montgomery form per comparison). (4) On
+  x86_64 the halo2curves `asm` feature is enabled (top-level `Cargo.toml`, target-specific). Local Mac, 2^19: MSM
+  249 -> 146 ms (random scalars), FFT 29 -> 14 ms; dlrm no_com prover 27.3 -> 17.7 s, resnet18 68.6 -> 52 s, mnist
+  3.5 -> 2.1 s; all schemes benefit alike (Lunar dlrm 56.6 -> 35.5 s, Apollo 30.9 -> 18.9 s). Tests:
+  `cargo test --release --lib multiexp_tests`, `fft_tests`, `vanishing_divisor`; benches `benchmark_kzg_msm`,
+  `benchmark_kzg_fft` (`MSM_MIN_K/MSM_MAX_K`, `FFT_MIN_K/FFT_MAX_K`). Remaining prover profile (dlrm, local): lookup
+  argument ~45% (13 lookups x 3 commitments + coset FFTs), MSMs ~30%; mv-lookup would be the next structural step.
 - Artemis circuit (`poly`/`pedersen`): the Horner / inner-product region (`src/gadgets/poly_5.rs`,
   `poly_2.rs`) is assigned in every synthesize pass so its selectors exist at keygen (before Oct 2026 the
   chip only ran when β was known, i.e. never at keygen, and the gate was vacuous). Weights are laid out

@@ -442,10 +442,10 @@ impl<C: CurveAffine> Evaluator<C> {
         for part_idx in 0..num_parts {
             let mut fixed: Vec<Option<Polynomial<C::ScalarExt, LagrangeCoeff>>> =
                 vec![None; pk.fixed_polys.len()];
-            let l0 = domain.coeff_to_extended_part(pk.l0.clone(), current_extended_omega);
-            let l_last = domain.coeff_to_extended_part(pk.l_last.clone(), current_extended_omega);
+            let l0 = domain.coeff_to_extended_part(&pk.l0, current_extended_omega);
+            let l_last = domain.coeff_to_extended_part(&pk.l_last, current_extended_omega);
             let l_active_row =
-                domain.coeff_to_extended_part(pk.l_active_row.clone(), current_extended_omega);
+                domain.coeff_to_extended_part(&pk.l_active_row, current_extended_omega);
 
             let mut constraint_idx = 0;
             let mut cluster_last_constraint_idx = vec![0; num_clusters];
@@ -477,7 +477,7 @@ impl<C: CurveAffine> Evaluator<C> {
                     for fixed_idx in custom_gates.used_fixed_columns.iter() {
                         if fixed[*fixed_idx].is_none() {
                             fixed[*fixed_idx] = Some(domain.coeff_to_extended_part(
-                                pk.fixed_polys[*fixed_idx].clone(),
+                                &pk.fixed_polys[*fixed_idx],
                                 current_extended_omega,
                             ));
                         }
@@ -485,7 +485,7 @@ impl<C: CurveAffine> Evaluator<C> {
                     for instance_idx in custom_gates.used_instance_columns.iter() {
                         if instance[*instance_idx].is_none() {
                             instance[*instance_idx] = Some(domain.coeff_to_extended_part(
-                                instance_polys[*instance_idx].clone(),
+                                &instance_polys[*instance_idx],
                                 current_extended_omega,
                             ));
                         }
@@ -493,7 +493,7 @@ impl<C: CurveAffine> Evaluator<C> {
                     for advice_idx in custom_gates.used_advice_columns.iter() {
                         if advice[*advice_idx].is_none() {
                             advice[*advice_idx] = Some(domain.coeff_to_extended_part(
-                                advice_polys[*advice_idx].clone(),
+                                &advice_polys[*advice_idx],
                                 current_extended_omega,
                             ));
                         }
@@ -553,7 +553,7 @@ impl<C: CurveAffine> Evaluator<C> {
                         sets.iter()
                             .map(|set| {
                                 domain.coeff_to_extended_part(
-                                    set.permutation_product_poly.clone(),
+                                    &set.permutation_product_poly,
                                     current_extended_omega,
                                 )
                             })
@@ -648,7 +648,7 @@ impl<C: CurveAffine> Evaluator<C> {
                                     let advice = &mut advice[column.index()];
                                     if (*advice).is_none() {
                                         *advice = Some(domain.coeff_to_extended_part(
-                                            advice_polys[column.index()].clone(),
+                                            &advice_polys[column.index()],
                                             current_extended_omega,
                                         ));
                                     }
@@ -657,7 +657,7 @@ impl<C: CurveAffine> Evaluator<C> {
                                     let instance = &mut instance[column.index()];
                                     if instance.is_none() {
                                         *instance = Some(domain.coeff_to_extended_part(
-                                            instance_polys[column.index()].clone(),
+                                            &instance_polys[column.index()],
                                             current_extended_omega,
                                         ));
                                     }
@@ -666,7 +666,7 @@ impl<C: CurveAffine> Evaluator<C> {
                                     let fixed = &mut fixed[column.index()];
                                     if fixed.is_none() {
                                         *fixed = Some(domain.coeff_to_extended_part(
-                                            pk.fixed_polys[column.index()].clone(),
+                                            &pk.fixed_polys[column.index()],
                                             current_extended_omega,
                                         ));
                                     }
@@ -679,7 +679,7 @@ impl<C: CurveAffine> Evaluator<C> {
                             .polys
                             .iter()
                             .map(|p| {
-                                domain.coeff_to_extended_part(p.clone(), current_extended_omega)
+                                domain.coeff_to_extended_part(&p, current_extended_omega)
                             })
                             .collect();
 
@@ -779,22 +779,25 @@ impl<C: CurveAffine> Evaluator<C> {
                     // Polynomials required for this lookup.
                     // Calculated here so these only have to be kept in memory for the short time
                     // they are actually needed.
+                    let m = start_measure("lookup.h.cosets", false);
                     let product_coset = pk.vk.domain.coeff_to_extended_part(
-                        lookup.product_poly.clone(),
+                        &lookup.product_poly,
                         current_extended_omega,
                     );
                     let permuted_input_coset = pk.vk.domain.coeff_to_extended_part(
-                        lookup.permuted_input_poly.clone(),
+                        &lookup.permuted_input_poly,
                         current_extended_omega,
                     );
                     let permuted_table_coset = pk.vk.domain.coeff_to_extended_part(
-                        lookup.permuted_table_poly.clone(),
+                        &lookup.permuted_table_poly,
                         current_extended_omega,
                     );
+                    stop_measure(m);
 
                     // Lookup constraints
                     constraint_idx += 1;
                     if need_to_compute(part_idx, 1) {
+                        let m = start_measure("lookup.h.l0", false);
                         let y_power = y_powers[constraint_idx - cluster_last_constraint_idx[1]];
 
                         parallelize(
@@ -809,6 +812,7 @@ impl<C: CurveAffine> Evaluator<C> {
                             },
                         );
                         cluster_last_constraint_idx[1] = constraint_idx;
+                        stop_measure(m);
                     }
 
                     constraint_idx += 1;
@@ -831,11 +835,12 @@ impl<C: CurveAffine> Evaluator<C> {
                     }
                     constraint_idx += 1;
                     if need_to_compute(part_idx, running_prod_cluster) {
+                        let m = start_measure("lookup.h.rp_cosets", false);
                         for fixed_column in used_columns.0.iter() {
                             let fixed = &mut fixed[*fixed_column];
                             if fixed.is_none() {
                                 *fixed = Some(domain.coeff_to_extended_part(
-                                    pk.fixed_polys[*fixed_column].clone(),
+                                    &pk.fixed_polys[*fixed_column],
                                     current_extended_omega,
                                 ));
                             }
@@ -844,7 +849,7 @@ impl<C: CurveAffine> Evaluator<C> {
                             let instance = &mut instance[*instance_column];
                             if instance.is_none() {
                                 *instance = Some(domain.coeff_to_extended_part(
-                                    instance_polys[*instance_column].clone(),
+                                    &instance_polys[*instance_column],
                                     current_extended_omega,
                                 ));
                             }
@@ -854,12 +859,14 @@ impl<C: CurveAffine> Evaluator<C> {
                             let advice = &mut advice[*advice_column];
                             if (*advice).is_none() {
                                 *advice = Some(domain.coeff_to_extended_part(
-                                    advice_polys[*advice_column].clone(),
+                                    &advice_polys[*advice_column],
                                     current_extended_omega,
                                 ));
                             }
                         }
 
+                        stop_measure(m);
+                        let m = start_measure("lookup.h.rp", false);
                         let y_power = y_powers
                             [constraint_idx - cluster_last_constraint_idx[running_prod_cluster]];
                         let fixed_slice = &fixed[..];
@@ -905,6 +912,7 @@ impl<C: CurveAffine> Evaluator<C> {
                             },
                         );
                         cluster_last_constraint_idx[running_prod_cluster] = constraint_idx;
+                        stop_measure(m);
                     }
 
                     constraint_idx += 1;

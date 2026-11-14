@@ -1546,3 +1546,81 @@ mod vanishing_divisor_tests {
     check(10, 5, 100, 1024);
   }
 }
+
+#[cfg(test)]
+mod multiexp_tests {
+    use halo2_proofs::arithmetic::{best_multiexp, multiexp_batch_affine, multiexp_chunked};
+    use ff::Field;
+    use group::{prime::PrimeCurveAffine, Curve, Group};
+    use halo2_proofs::halo2curves::bn256::{Fr, G1Affine, G1};
+    use rand_core::OsRng;
+
+    #[test]
+    fn batch_affine_matches_chunked() {
+        let max_k = 14;
+        let n = 1 << max_k;
+        let points: Vec<G1> = (0..n).map(|_| G1::random(OsRng)).collect();
+        let mut bases = vec![G1Affine::identity(); n];
+        G1::batch_normalize(&points, &mut bases);
+        // scalars: random, plus small, zero and repeated values (common in advice columns)
+        let mut scalars: Vec<Fr> = (0..n).map(|_| Fr::random(OsRng)).collect();
+        for i in 0..n / 4 {
+            scalars[i] = Fr::from((i % 7) as u64);
+        }
+        scalars[n / 2] = -Fr::ONE;
+        scalars[n / 2 + 1] = Fr::ZERO;
+        for k in [10usize, 12, 13, max_k] {
+            let m = 1 << k;
+            let a = multiexp_batch_affine(&scalars[..m], &bases[..m]);
+            let b = multiexp_chunked(&scalars[..m], &bases[..m]);
+            assert_eq!(a.to_affine(), b.to_affine(), "k = {}", k);
+        }
+        // odd length and a shorter coefficient vector than base vector
+        let m = (1 << 13) + 517;
+        let a = best_multiexp(&scalars[..m], &bases);
+        let b = multiexp_chunked(&scalars[..m], &bases[..m]);
+        assert_eq!(a.to_affine(), b.to_affine());
+        // repeated bases (the same point many times => many doublings in the batch)
+        let rep: Vec<G1Affine> = (0..(1 << 12)).map(|i| bases[i % 3]).collect();
+        let a = multiexp_batch_affine(&scalars[..rep.len()], &rep);
+        let b = multiexp_chunked(&scalars[..rep.len()], &rep);
+        assert_eq!(a.to_affine(), b.to_affine());
+    }
+}
+
+#[cfg(test)]
+mod fft_tests {
+    use ff::{Field, WithSmallOrderMulGroup};
+    use halo2_proofs::arithmetic::{best_fft, eval_polynomial};
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::poly::EvaluationDomain;
+    use rand_core::OsRng;
+
+    /// FFT / iFFT through the domain (whatever `FFT=` selects) against naive evaluation.
+    #[test]
+    fn fft_matches_naive_evaluation() {
+        for k in [0u32, 1, 2, 4, 10, 13] {
+            let domain = EvaluationDomain::<Fr>::new(3, k);
+            let n = 1usize << k;
+            let coeffs: Vec<Fr> = (0..n).map(|_| Fr::random(OsRng)).collect();
+            let omega = domain.get_omega();
+            let mut evals = coeffs.clone();
+            best_fft(&mut evals, omega, k, domain.get_fft_data(n), false);
+            for i in [0usize, 1, 2, n / 2, n - 1].into_iter().filter(|&i| i < n) {
+                assert_eq!(evals[i], eval_polynomial(&coeffs, omega.pow_vartime([i as u64])), "k={} i={}", k, i);
+            }
+            // round trip through the domain's own conversions (uses the inverse twiddles)
+            let back = domain.lagrange_to_coeff(domain.lagrange_from_vec(evals.clone()));
+            assert_eq!(&back.values[..], &coeffs[..]);
+            // extended domain (size 2^(k+2)) evaluated on the coset
+            let ext = domain.coeff_to_extended(domain.coeff_from_vec(coeffs.clone()));
+            let zeta = Fr::ZETA;
+            let ext_omega = domain.get_extended_omega();
+            for i in [0usize, 1, 5].into_iter().filter(|&i| i < ext.values.len()) {
+                assert_eq!(ext.values[i], eval_polynomial(&coeffs, zeta * ext_omega.pow_vartime([i as u64])), "ext k={} i={}", k, i);
+            }
+            let back = domain.extended_to_coeff(ext);
+            assert_eq!(&back[..n], &coeffs[..]);
+        }
+    }
+}

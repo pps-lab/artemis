@@ -451,7 +451,38 @@ fn parallelize_count<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(
     });
 }
 
-/// Generic adaptor
+/// Out-of-place FFT of `src` into `dst` (see `fft`).
+pub fn fft_into<Scalar: Field, G: FftGroup<Scalar>>(
+    src: &[G],
+    dst: &mut [G],
+    data: &FFTData<Scalar>,
+    inverse: bool,
+) {
+    assert_eq!(data.get_n(), src.len(), "recursive fft: FFTData size mismatch");
+    assert_eq!(src.len(), dst.len());
+    if src.len() <= 1 {
+        // no stages: the size-1 FFT is the identity
+        dst.copy_from_slice(src);
+        return;
+    }
+    recursive_fft_inner(
+        src,
+        dst,
+        if inverse {
+            &data.inv_twiddles
+        } else {
+            &data.f_twiddles
+        },
+        &data.stages,
+        0,
+        1,
+        0,
+        multicore::current_num_threads(),
+    );
+}
+
+/// Generic adaptor. `omega`/`log_n` are implied by `data` (whose twiddles must have been built
+/// for `data_in.len()`); `inverse` selects the inverse twiddles, no 1/n scaling is applied.
 pub fn fft<Scalar: Field, G: FftGroup<Scalar>>(
     data_in: &mut [G],
     _omega: Scalar,
@@ -459,9 +490,28 @@ pub fn fft<Scalar: Field, G: FftGroup<Scalar>>(
     data: &FFTData<Scalar>,
     inverse: bool,
 ) {
-    let orig_len = data_in.len();
-    let mut data_in_vec = data_in.to_vec();
-    recursive_fft(data, &mut data_in_vec, inverse);
-    data_in.copy_from_slice(&data_in_vec);
-    assert_eq!(orig_len, data_in.len());
+    assert_eq!(data.get_n(), data_in.len(), "recursive fft: FFTData size mismatch");
+    if data_in.len() <= 1 {
+        return;
+    }
+    let num_threads = multicore::current_num_threads();
+    let filler = data_in[0];
+    let mut scratch = vec![filler; data_in.len()];
+    recursive_fft_inner(
+        data_in,
+        &mut scratch,
+        if inverse {
+            &data.inv_twiddles
+        } else {
+            &data.f_twiddles
+        },
+        &data.stages,
+        0,
+        1,
+        0,
+        num_threads,
+    );
+    parallelize(data_in, |out, start| {
+        out.copy_from_slice(&scratch[start..start + out.len()]);
+    });
 }
