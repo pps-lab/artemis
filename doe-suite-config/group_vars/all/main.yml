@@ -7,7 +7,7 @@
 # TODO: Update to HTTPS, does not seem to be working with doe-suite at the moment
 git_remote_repository:
   - repo: "https://github.com/pps-lab/artemis.git"
-    version: "benchmark-audit-fixes" # "main", "refs/tags/Usenix25"
+    version: "sha256-commit" # "benchmark-audit-fixes", "main", "refs/tags/Usenix25"
 #    version: "91d3b391f842a4560d317a3cbc129136097f8663"
 
 prj_id_prefix: "artemis"

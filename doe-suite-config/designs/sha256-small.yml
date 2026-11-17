@@ -1,0 +1,58 @@
+# SHA-256 weight commitment (cpsnark sha256): the Poseidon circuit (_p models) with the commitment hash
+# replaced by SHA-256 (halo2_gadgets Table16 + feed-forward, src/commitments/sha256_commit.rs).
+# One Table16 instance needs ~2,100 rows per 64-byte block (16 weights), so the circuit is far larger than
+# Poseidon's: ~10M cells on mnist, ~360M on resnet18, ~1G on dlrm. Hence one experiment per model with
+# a host type sized for its memory.
+$SUITE_VARS$:
+  $INCLUDE_VARS$: general.yml
+
+# mnist: r6i.8xlarge, ~10 GB measured locally
+exp_sha256_kzg_mnist:
+  n_repetitions: 1
+  host_types:
+    small:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "[% my_run.cmd %]"
+  base_experiment:
+    model: mnist
+    cpsnark: sha256
+    pc_type: kzg
+
+# resnet18: r6i.32xlarge (1 TB), ~400 GB estimated
+exp_sha256_kzg_resnet18:
+  n_repetitions: 1
+  host_types:
+    large:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "[% my_run.cmd %]"
+  base_experiment:
+    model: resnet18
+    cpsnark: sha256
+    pc_type: kzg
+
+# dlrm: x2idn.metal (2 TB), ~1.1 TB estimated
+exp_sha256_kzg_dlrm:
+  n_repetitions: 1
+  host_types:
+    xlarge:
+      n: 1
+      init_roles: setup-base
+      $CMD$: "[% my_run.cmd %]"
+  base_experiment:
+    model: dlrm
+    cpsnark: sha256
+    pc_type: kzg
+
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      ErrorExpectedFileExtractor: {expected_file: ["output.csv"]}
+      IgnoreExtractor: {file_regex: ["stdout.log", "runtime_info.yaml"]}
+      CsvExtractor: {file_regex: ["output.csv"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

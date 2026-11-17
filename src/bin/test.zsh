@@ -5,7 +5,7 @@ trap "exit" INT TERM
 
 # arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
-# arg3: cp_snark = ['no_com', 'poly', 'poly_merged', 'pedersen', 'cp_link', 'cp_link+', 'cp_link_fast', 'poseidon', 'zkfft', 'bary', 'cp_link_lego']
+# arg3: cp_snark = ['no_com', 'poly', 'poly_merged', 'pedersen', 'cp_link', 'cp_link+', 'cp_link_fast', 'poseidon', 'sha256', 'zkfft', 'bary', 'cp_link_lego']
 # arg4: num_runs - int
 # arg5: code directory
 # example: ./test.zsh mnist kzg nocom 5 .
@@ -42,7 +42,7 @@ merged=false
 
 case "$name" in
     mnist)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=10
             rows=19
             poly_cols=0
@@ -58,7 +58,7 @@ case "$name" in
         ;;
     
     resnet18)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=13
             rows=20
             poly_cols=0
@@ -72,7 +72,7 @@ case "$name" in
         ;;
     
     dlrm)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=11
             rows=21
             poly_cols=0
@@ -88,7 +88,7 @@ case "$name" in
         ;;
     
     mobilenet)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=20
             rows=24
             poly_cols=0
@@ -101,7 +101,7 @@ case "$name" in
         ;;
     
     vgg)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=12
             rows=25
             poly_cols=0
@@ -117,7 +117,7 @@ case "$name" in
         ;;
     
     gpt2)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=20
             rows=27
             poly_cols=0
@@ -133,7 +133,7 @@ case "$name" in
         ;;
     
     diffusion)
-        if [ "$cp_snark" = "poseidon" ]; then
+        if [ "$cp_snark" = "poseidon" ] || [ "$cp_snark" = "sha256" ]; then
             cols=16
             rows=26
             poly_cols=0
@@ -191,6 +191,15 @@ case "$cp_snark" in
         cp_link=false
         poly_com=false
         name=$name'_p'
+        ;;
+
+    sha256)
+        # Same circuit as Poseidon (the _p models commit to the weights and the output), but the
+        # commitment hash is SHA-256 (halo2_gadgets Table16 + feed-forward, src/commitments/sha256_commit.rs).
+        cp_link=false
+        poly_com=false
+        name=$name'_p'
+        export COMMIT_HASH=sha256
         ;;
 
     cp_link)

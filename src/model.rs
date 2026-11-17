@@ -26,6 +26,7 @@ use crate::{
     commit::Commit,
     packer::PackerChip,
     poseidon_commit::{PoseidonCommitChip, L, RATE, WIDTH},
+    sha256_commit::{sha256_num_blocks, Sha256CommitChip, SHA256_ROWS_PER_BLOCK},
   },
   gadgets::{
     add_pairs::AddPairsChip, adder::AdderChip, bias_div_round_relu6::BiasDivRoundRelu6Chip, dot_prod::DotProductChip, dot_prod_bias::DotProductBiasChip, gadget::{Gadget, GadgetConfig, GadgetType}, input_lookup::InputLookupChip, max::MaxChip, mul_pairs::MulPairsChip, nonlinear::{cos::CosGadgetChip, exp::ExpGadgetChip, logistic::LogisticGadgetChip, pow::PowGadgetChip, relu::ReluChip, relu_decompose::ReluDecomposeChip, rsqrt::RsqrtGadgetChip, sin::SinGadgetChip, sqrt::SqrtGadgetChip, tanh::TanhGadgetChip}, poly::PolyChip, poly_2::Poly2Chip, poly_5::Poly5Chip, poly_4::Poly4Chip, sqrt_big::SqrtBigChip, square::SquareGadgetChip, squared_diff::SquaredDiffGadgetChip, sub_pairs::SubPairsChip, update::UpdateGadgetChip, var_div::VarDivRoundChip, var_div_big::VarDivRoundBigChip, var_div_big3::VarDivRoundBig3Chip
@@ -84,11 +85,34 @@ pub struct ModelCircuit<C: CurveAffine<ScalarExt: PrimeField>> {
   pub num_random: i64,
 }
 
+/// The hash used for the Poseidon-style commitments (`commit_before` / `commit_after`).
+#[derive(Clone, Debug)]
+pub enum Hasher<F: PrimeField + Ord + FromUniformBytes<64>> {
+  Poseidon(PoseidonCommitChip<F, WIDTH, RATE, L>),
+  Sha256(Sha256CommitChip),
+}
+
+impl<F: PrimeField + Ord + FromUniformBytes<64>> Commit<F> for Hasher<F> {
+  fn commit(
+    &self,
+    layouter: impl Layouter<F>,
+    gadget_config: Rc<GadgetConfig>,
+    constants: &HashMap<i64, CellRc<F>>,
+    values: &Vec<CellRc<F>>,
+    blinding: CellRc<F>,
+  ) -> Result<Vec<CellRc<F>>, Error> {
+    match self {
+      Hasher::Poseidon(c) => c.commit(layouter, gadget_config, constants, values, blinding),
+      Hasher::Sha256(c) => c.commit(layouter, gadget_config, constants, values, blinding),
+    }
+  }
+}
+
 #[derive(Clone, Debug)]
 pub struct ModelConfig<F: PrimeField + Ord + FromUniformBytes<64>> {
   pub gadget_config: Rc<GadgetConfig>,
   pub public_col: Column<Instance>,
-  pub hasher: Option<PoseidonCommitChip<F, WIDTH, RATE, L>>,
+  pub hasher: Option<Hasher<F>>,
   pub _marker: PhantomData<F>,
   pub main_gate_config: MainGateConfig,
   pub range_config: RangeConfig,
@@ -568,6 +592,25 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
     let gadget = &GADGET_CONFIG;
     let cloned_gadget = gadget.lock().unwrap().clone();
 
+    // SHA-256 instead of Poseidon for the commitments (`COMMIT_HASH=sha256`): spread the Table16 blocks
+    // over enough instances that they fit in 2^k rows (each packed cell holds one weight, `num_cols/2`
+    // per row, the last row padded).
+    let sha256_chips = if std::env::var("COMMIT_HASH").map(|v| v == "sha256").unwrap_or(false) {
+      let commit_before = config.commit_before.clone().unwrap_or(vec![]);
+      assert!(!commit_before.is_empty(), "COMMIT_HASH=sha256 needs a model with commit_before (the _p models)");
+      let per_row = (c_ipt as usize / 2).max(1);
+      let num_weights: usize = commit_before[0].iter().map(|idx| tensors.get(idx).unwrap().len()).sum();
+      let mut blocks = sha256_num_blocks(num_weights.div_ceil(per_row) * per_row + 1);
+      // commit_after (the model output): small, its size is only known after the DAG; budget 4 blocks each
+      blocks += 4 * config.commit_after.clone().unwrap_or(vec![]).len();
+      let usable_rows = ((1usize << k_ipt) as f64 * 0.95) as usize;
+      let chips = (blocks * SHA256_ROWS_PER_BLOCK).div_ceil(usable_rows).max(1);
+      println!("SHA-256 commitment: {} weights, {} blocks, {} instances at k = {}", num_weights, blocks, chips, k_ipt);
+      chips
+    } else {
+      0
+    };
+
     *gadget.lock().unwrap() = GadgetConfig {
       cp_link,
       poly_commit,
@@ -586,8 +629,12 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
       use_selectors: config.use_selectors.unwrap_or(true),
       num_bits_per_elem: config.bits_per_elem.unwrap_or(config.k),
       poly_ell: chunks,
+      sha256_chips,
       ..cloned_gadget
     };
+    if sha256_chips > 0 {
+      println!("SHA-256 commitment: {} Table16 instances", sha256_chips);
+    }
     println!("!Tensors: {:?}", tensors.keys());
     println!("!commit_before: {:?}", config.commit_before);
     ModelCircuit {
@@ -610,7 +657,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
     constants: &HashMap<i64, CellRc<C::ScalarExt>>,
     config: &ModelConfig<C::ScalarExt>,
     tensors: &BTreeMap<i64, Array<C::ScalarExt, IxDyn>>,
-  ) -> (BTreeMap<i64, AssignedTensor<C::ScalarExt>>, CellRc<C::ScalarExt>) {
+  ) -> (BTreeMap<i64, AssignedTensor<C::ScalarExt>>, Vec<CellRc<C::ScalarExt>>) {
     let num_bits = self.bits_per_elem;
     let packer_config = PackerChip::<C::ScalarExt>::construct(num_bits, config.gadget_config.as_ref());
     let packer_chip = PackerChip::<C::ScalarExt> {
@@ -637,9 +684,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
         zero.clone(),
       )
       .unwrap();
-    assert_eq!(commitments.len(), 1);
-
-    (tensor_map, commitments[0].clone())
+    (tensor_map, commitments)
   }
 
   pub fn copy_and_commit(
@@ -648,7 +693,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
     constants: &HashMap<i64, CellRc<C::ScalarExt>>,
     config: &ModelConfig<C::ScalarExt>,
     tensors: &BTreeMap<i64, AssignedTensor<C::ScalarExt>>,
-  ) -> CellRc<C::ScalarExt> {
+  ) -> Vec<CellRc<C::ScalarExt>> {
     let num_bits = self.bits_per_elem;
     let packer_config = PackerChip::<C::ScalarExt>::construct(num_bits, config.gadget_config.as_ref());
     let packer_chip = PackerChip::<C::ScalarExt> {
@@ -675,9 +720,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> ModelCi
         zero.clone(),
       )
       .unwrap();
-    assert_eq!(commitments.len(), 1);
-
-    commitments[0].clone()
+    commitments
   }
 }
 
@@ -807,16 +850,20 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
         PackerChip::<C::ScalarExt>::construct(gadget_config.num_bits_per_elem as usize, &gadget_config);
       gadget_config = PackerChip::<C::ScalarExt>::configure(meta, packer_config, gadget_config);
 
-      // TODO
-      let input = gadget_config.columns[0..L].try_into().unwrap();
-      let state = gadget_config.columns[L..L + WIDTH].try_into().unwrap();
-      let partial_sbox = gadget_config.columns[L + WIDTH].into();
-      Some(PoseidonCommitChip::<C::ScalarExt, WIDTH, RATE, L>::configure(
-        meta,
-        input,
-        state,
-        partial_sbox,
-      ))
+      if gadget_config.sha256_chips > 0 {
+        Some(Hasher::Sha256(Sha256CommitChip::configure(meta, gadget_config.sha256_chips)))
+      } else {
+        // TODO
+        let input = gadget_config.columns[0..L].try_into().unwrap();
+        let state = gadget_config.columns[L..L + WIDTH].try_into().unwrap();
+        let partial_sbox = gadget_config.columns[L + WIDTH].into();
+        Some(Hasher::Poseidon(PoseidonCommitChip::<C::ScalarExt, WIDTH, RATE, L>::configure(
+          meta,
+          input,
+          state,
+          partial_sbox,
+        )))
+      }
     } else {
       None
     };
@@ -961,6 +1008,9 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
     first_phase = beta.inner.is_none();
 
     let mut commitments = vec![];
+    if let Some(Hasher::Sha256(sha)) = &config.hasher {
+      sha.load_tables(&mut layouter)?;
+    }
     let (tensors, flat, mut flat_f, constants) = if self.commit_before.len() > 0 {
       // Commit to the tensors before the DAG
       //println!("commit to the tensors :)))");
@@ -993,7 +1043,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
           &config,
           &to_commit,
         );
-        commitments.push(commitment);
+        commitments.extend(commitment);
         tensor_map.append(&mut committed_tensors);
         ignore_idxes.extend(self.commit_before[0].iter());
       // }
@@ -1152,7 +1202,7 @@ impl<C: CurveAffine<ScalarExt: PrimeField + Ord + FromUniformBytes<64>>> Circuit
             &config,
             &to_commit,
           );
-          commitments.push(commitment);
+          commitments.extend(commitment);
         }
       }
     }

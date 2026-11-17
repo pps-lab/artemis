@@ -72,6 +72,9 @@ pub struct GadgetConfig {
   /// Artemis `poly_merged`: the weights live row-major in the general advice columns (no dedicated
   /// weight columns) and the Horner gate reads them there; `poly_ell` then equals `num_cols`.
   pub poly_merged: bool,
+  /// SHA-256 weight commitment (`COMMIT_HASH=sha256`, on the Poseidon `_p` models): number of Table16
+  /// instances; 0 = Poseidon.
+  pub sha256_chips: usize,
   pub k: usize,
   pub eta: f64,
   pub min_val: i64,

@@ -45,6 +45,17 @@ impl<F: PrimeField> PackerChip<F> {
   pub fn construct(num_bits_per_elem: usize, gadget_config: &GadgetConfig) -> PackerConfig<F> {
     let columns = &gadget_config.columns;
 
+    if gadget_config.sha256_chips > 0 {
+      // SHA-256: one (shifted, range-checked) value per packed cell, hashed as one 32-bit word.
+      assert!(num_bits_per_elem <= 32);
+      return PackerConfig {
+        num_bits_per_elem,
+        num_elem_per_packed: 1,
+        num_packed_per_row: columns.len() / 2,
+        exponents: vec![F::ONE],
+        _marker: PhantomData,
+      };
+    }
     let num_elem_per_packed = if NUM_BITS_PER_FIELD_ELEM / num_bits_per_elem > columns.len() - 1 {
       columns.len() - 1
     } else {
@@ -166,7 +177,7 @@ impl<F: PrimeField> PackerChip<F> {
           let col_offset = i * (self.config.num_elem_per_packed + 1);
 
           let mut vals = cells
-            [val_offset..min(val_offset + self.config.num_elem_per_packed, cells.len())]
+            [min(val_offset, cells.len())..min(val_offset + self.config.num_elem_per_packed, cells.len())]
             .iter()
             .enumerate()
             .map(|(i, x)| {
@@ -176,7 +187,8 @@ impl<F: PrimeField> PackerChip<F> {
             })
             .collect::<Vec<_>>();
 
-          let zero_copied = (cells.len()..self.config.num_elem_per_packed)
+          let num_vals = vals.len();
+          let zero_copied = (num_vals..self.config.num_elem_per_packed)
             .map(|i| {
               zero
                 .copy_advice(|| "", &mut region, columns[col_offset + i], 0)
@@ -238,7 +250,7 @@ impl<F: PrimeField> PackerChip<F> {
           let col_offset = i * (self.config.num_elem_per_packed + 1);
 
           let mut values = values
-            [val_offset..min(val_offset + self.config.num_elem_per_packed, values.len())]
+            [min(val_offset, values.len())..min(val_offset + self.config.num_elem_per_packed, values.len())]
             .iter()
             .map(|x| **x)
             .collect::<Vec<_>>();

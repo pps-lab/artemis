@@ -41,6 +41,7 @@ criterion = "0.5.1"
 group = "0.13.0"
 ff = "0.13.0"
 csv = "1.1"
+sha2 = "0.10.8"
 
 # On x86_64 use the hand-written assembly field arithmetic of the halo2curves fork (bn256 Fq/Fr
 # Montgomery multiplication); it is not available on aarch64 (the Macs), where the generic Rust

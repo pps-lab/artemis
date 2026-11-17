@@ -127,6 +127,9 @@ pub fn time_circuit_ipa(circuit: ModelCircuit<EqAffine>, commit_poly: bool, poly
   // MockProver::run is only used to synthesize once and populate PUBLIC_VALS; it is dropped right after.
   let mock_prover = MockProver::run(degree, &circuit, vec![vec![]]).unwrap();
   if std::env::var("MOCK_VERIFY").is_ok() {
+    // The run above used an empty instance column (it only fills PUBLIC_VALS); re-run with the
+    // public values so that the copy constraints to the instance column are checked too.
+    let mock_prover = MockProver::run(degree, &circuit, vec![get_public_values()]).unwrap();
     // MockProver reports "cell not assigned" for cells that a gate reads but that were assigned in a
     // different region. The Artemis gate reads the weight columns in place by design, so those
     // reports (and only those, for the Artemis regions) are ignored; any other failure aborts.
