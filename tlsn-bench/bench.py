@@ -72,7 +72,11 @@ BACKEND_ROWS = {
 }
 # Largest payload that fits a 48 GB machine (prover RAM extrapolated from the
 # smaller sizes: ~50 GiB and ~42 GiB at 64 KiB). `--all-sizes` lifts the caps.
-LOCAL_CAP = {("provekit", "keccak256"): 16384, ("bb", "keccak256"): 16384}
+LOCAL_CAP = {("provekit", "keccak256"): 16384, ("bb", "keccak256"): 16384,
+             # Not memory but preprocessing time: ProveKit's single-threaded `prepare` (keygen) grows
+             # superlinearly (SHA-256: 26 s at 4000 B, 96 s at 10000 B on an M5 Pro; >2 h at 64 KiB on
+             # r6i), so 1 MiB would take days. Barretenberg covers SHA-256 above 64 KiB.
+             ("provekit", "sha256"): 65536}
 AGE_ROWS = {
     "provekit": [("age_nocom", False), ("age_sha256", False), ("age_keccak256", False),
                  ("age_blake3", False), ("age_poseidon2", False), ("age_artemis", True)],
