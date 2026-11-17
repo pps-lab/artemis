@@ -197,6 +197,11 @@ def compute_factor_vs_baseline(df, data_col, baseline_col, baseline_value, resul
     def add_group_info(group):
         
         row = group[group[baseline_col] == baseline_value]
+        if len(row) == 0:
+            # no baseline run for this group (e.g. no_com was not re-run on the large models): no factor
+            group[result_col[0]] = float("nan")
+            group[result_col[1]] = float("nan")
+            return group
         assert len(row) == 1, f"len(row)={len(row)}, row={row}, group={group}, baseline: {baseline_col}, baseline_val: {baseline_value}, \ngroup baseline col: {group[baseline_col]}"
         row = row.iloc[0]
         #print(f"Group {group}")

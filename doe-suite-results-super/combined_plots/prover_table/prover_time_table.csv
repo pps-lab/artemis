@@ -1,0 +1,13 @@
+group,line,Pairing-based: prover time [s]:No Com.,Pairing-based: prover time [s]:Artemis,Pairing-based: prover time [s]:Lunar,Pairing-based: prover time [s]:Lego,Pairing-based: prover time [s]:Poseidon,Pairing-based: prover time [s]:SHA-256,Transparent: prover time [s]:No Com.,Transparent: prover time [s]:Artemis,Transparent: prover time [s]:Lunar,Transparent: prover time [s]:Lego,Transparent: prover time [s]:Poseidon,Transparent: prover time [s]:SHA-256
+zkML,MNIST,2.88631,3.10148,3.74571,3.0211,53.2816,76.6351,3.79689,4.05708,unsupported,unsupported,72.3677,98.6989
+zkML,R18,55.2817,57.5758,68.7752,56.718,209.298,1153.33,73.5944,75.9828,unsupported,unsupported,266.198,1343.19
+zkML,DLRM,21.9804,24.2885,30.5553,23.831,285.921,not_run,32.7877,45.9533,unsupported,unsupported,370.397,not_run
+zkML,Mob.,1071.37,1091.84,1290.86,1076.97,3520.06,not_run,1285.92,1322.88,unsupported,unsupported,4147.63,not_run
+zkML,VGG,458.786,482.731,527.691,475.838,5390.66,not_run,537.713,614.87,unsupported,unsupported,6257.7,not_run
+zkML,Diff.,4433.4,4532.59,5066.82,4505.04,17269.4,not_run,not_run,5358.27,unsupported,unsupported,16377.9,not_run
+zkML,GPT-2,3964.14,4279.04,4578.25,4103.19,not_run,not_run,not_run,5305.51,unsupported,unsupported,not_run,not_run
+TLSNotary,Bank,0.0101856,0.0124973 (estimate),not_implemented,not_implemented,0.0192832,0.206876,0.0232402,0.0267817,unsupported,unsupported,0.0247387,0.120202
+TLSNotary,Uber,0.0998311,0.116789 (estimate),not_implemented,not_implemented,0.189923,5.19117,0.0475491,0.066059,unsupported,unsupported,0.0650621,1.61991
+TLSNotary,ID.me,0.293417,0.348692 (estimate),not_implemented,not_implemented,0.605313,40.1303,0.107406,0.151389,unsupported,unsupported,0.184055,7.19461
+TLSNotary,Gov.,0.625767,1.05043 (estimate),not_implemented,not_implemented,1.31993,not_run,0.207576,0.297944,unsupported,unsupported,0.502418,not_run
+TLSNotary,Synth.,3.60876,4.31776 (estimate),not_implemented,not_implemented,7.55163,not_run,1.1793,1.63699,unsupported,unsupported,2.29813,not_run
