@@ -1,0 +1,6 @@
+[package]
+name = "lego_packed"
+type = "bin"
+authors = [""]
+
+[dependencies]

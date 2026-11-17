@@ -1,0 +1,1705 @@
+{
+ "lego_estimate/10000": {
+  "active_rows": 12582,
+  "bb_dump_prove_rss_bytes": 40976384,
+  "bytes": 10000,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   12488,
+   2535,
+   2533,
+   2533
+  ],
+  "cells_le_32_bits": [
+   12488,
+   2535,
+   2535,
+   2533
+  ],
+  "cells_le_64_bits": [
+   12488,
+   2535,
+   2535,
+   2533
+  ],
+  "cells_le_8_bits": [
+   12488,
+   2535,
+   2533,
+   2533
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.001207833,
+  "committed_occurrences": [
+   10000,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 9999,
+  "dyadic_size": 16384,
+  "elements": 323,
+  "gates": 12581,
+  "key_p_bytes": 805504,
+  "key_pedersen_bytes": 20736,
+  "link_prover_rss_bytes": 19759104,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 12491,
+  "msm_small_share": 0.99976,
+  "nonzero_cells": [
+   12491,
+   2538,
+   2538,
+   2536
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.001459875,
+  "row": "lego_estimate",
+  "setup_s": 0.096117208,
+  "verify_s": 0.0004,
+  "wire_commit_s": 0.00122385425,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/1048576": {
+  "active_rows": 1310802,
+  "bb_dump_prove_rss_bytes": 3234381824,
+  "bytes": 1048576,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   1305742,
+   261185,
+   261184,
+   261184
+  ],
+  "cells_le_32_bits": [
+   1305742,
+   261185,
+   261186,
+   261184
+  ],
+  "cells_le_64_bits": [
+   1305742,
+   261185,
+   261186,
+   261184
+  ],
+  "cells_le_8_bits": [
+   1305742,
+   261185,
+   261184,
+   261184
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.01424675,
+  "committed_occurrences": [
+   1048576,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 1048575,
+  "dyadic_size": 2097152,
+  "elements": 33826,
+  "gates": 1310801,
+  "key_p_bytes": 83891584,
+  "key_pedersen_bytes": 2164928,
+  "link_prover_rss_bytes": 1283424256,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 1305745,
+  "msm_small_share": 0.999998,
+  "nonzero_cells": [
+   1305745,
+   261188,
+   261189,
+   261187
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.028603416,
+  "row": "lego_estimate",
+  "setup_s": 10.168512875,
+  "verify_s": 0.000438375,
+  "wire_commit_s": 0.016024927,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/16384": {
+  "active_rows": 20562,
+  "bb_dump_prove_rss_bytes": 58982400,
+  "bytes": 16384,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   20458,
+   4129,
+   4127,
+   4127
+  ],
+  "cells_le_32_bits": [
+   20458,
+   4129,
+   4129,
+   4127
+  ],
+  "cells_le_64_bits": [
+   20458,
+   4129,
+   4129,
+   4127
+  ],
+  "cells_le_8_bits": [
+   20458,
+   4129,
+   4127,
+   4127
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.001491208,
+  "committed_occurrences": [
+   16384,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 16383,
+  "dyadic_size": 32768,
+  "elements": 529,
+  "gates": 20561,
+  "key_p_bytes": 1316224,
+  "key_pedersen_bytes": 33920,
+  "link_prover_rss_bytes": 31064064,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 20461,
+  "msm_small_share": 0.999853,
+  "nonzero_cells": [
+   20461,
+   4132,
+   4132,
+   4130
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.002445083,
+  "row": "lego_estimate",
+  "setup_s": 0.150712875,
+  "verify_s": 0.000455667,
+  "wire_commit_s": 0.001297302,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/190259": {
+  "active_rows": 237906,
+  "bb_dump_prove_rss_bytes": 556711936,
+  "bytes": 190259,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   236937,
+   47424,
+   47423,
+   47423
+  ],
+  "cells_le_32_bits": [
+   236937,
+   47424,
+   47425,
+   47423
+  ],
+  "cells_le_64_bits": [
+   236937,
+   47424,
+   47425,
+   47423
+  ],
+  "cells_le_8_bits": [
+   236937,
+   47424,
+   47423,
+   47423
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.003811,
+  "committed_occurrences": [
+   190259,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 190258,
+  "dyadic_size": 262144,
+  "elements": 6138,
+  "gates": 237905,
+  "key_p_bytes": 15226240,
+  "key_pedersen_bytes": 392896,
+  "link_prover_rss_bytes": 227213312,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 236940,
+  "msm_small_share": 0.999987,
+  "nonzero_cells": [
+   236940,
+   47427,
+   47428,
+   47426
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.00627325,
+  "row": "lego_estimate",
+  "setup_s": 1.70782275,
+  "verify_s": 0.000404083,
+  "wire_commit_s": 0.00433075,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/2400": {
+  "active_rows": 3082,
+  "bb_dump_prove_rss_bytes": 17973248,
+  "bytes": 2400,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   3041,
+   645,
+   643,
+   644
+  ],
+  "cells_le_32_bits": [
+   3041,
+   645,
+   645,
+   644
+  ],
+  "cells_le_64_bits": [
+   3041,
+   645,
+   645,
+   644
+  ],
+  "cells_le_8_bits": [
+   3041,
+   645,
+   643,
+   644
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.000746667,
+  "committed_occurrences": [
+   2400,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 2399,
+  "dyadic_size": 4096,
+  "elements": 78,
+  "gates": 3081,
+  "key_p_bytes": 197504,
+  "key_pedersen_bytes": 5056,
+  "link_prover_rss_bytes": 9863168,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 3044,
+  "msm_small_share": 0.999014,
+  "nonzero_cells": [
+   3044,
+   648,
+   648,
+   647
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.001080833,
+  "row": "lego_estimate",
+  "setup_s": 0.025348292,
+  "verify_s": 0.00037775,
+  "wire_commit_s": 0.000940823,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/262144": {
+  "active_rows": 327762,
+  "bb_dump_prove_rss_bytes": 882999296,
+  "bytes": 262144,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   326462,
+   65329,
+   65328,
+   65328
+  ],
+  "cells_le_32_bits": [
+   326462,
+   65329,
+   65330,
+   65328
+  ],
+  "cells_le_64_bits": [
+   326462,
+   65329,
+   65330,
+   65328
+  ],
+  "cells_le_8_bits": [
+   326462,
+   65329,
+   65328,
+   65328
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.005002167,
+  "committed_occurrences": [
+   262144,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 262143,
+  "dyadic_size": 524288,
+  "elements": 8457,
+  "gates": 327761,
+  "key_p_bytes": 20977024,
+  "key_pedersen_bytes": 541312,
+  "link_prover_rss_bytes": 329580544,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 326465,
+  "msm_small_share": 0.999991,
+  "nonzero_cells": [
+   326465,
+   65332,
+   65333,
+   65331
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.008659125,
+  "row": "lego_estimate",
+  "setup_s": 2.396555791,
+  "verify_s": 0.000419041,
+  "wire_commit_s": 0.00524822925,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/4000": {
+  "active_rows": 5082,
+  "bb_dump_prove_rss_bytes": 20955136,
+  "bytes": 4000,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   5021,
+   1041,
+   1039,
+   1040
+  ],
+  "cells_le_32_bits": [
+   5021,
+   1041,
+   1041,
+   1040
+  ],
+  "cells_le_64_bits": [
+   5021,
+   1041,
+   1041,
+   1040
+  ],
+  "cells_le_8_bits": [
+   5021,
+   1041,
+   1039,
+   1040
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.00088275,
+  "committed_occurrences": [
+   4000,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 3999,
+  "dyadic_size": 8192,
+  "elements": 130,
+  "gates": 5081,
+  "key_p_bytes": 325504,
+  "key_pedersen_bytes": 8384,
+  "link_prover_rss_bytes": 12419072,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 5024,
+  "msm_small_share": 0.999403,
+  "nonzero_cells": [
+   5024,
+   1044,
+   1044,
+   1043
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.001456084,
+  "row": "lego_estimate",
+  "setup_s": 0.038103666,
+  "verify_s": 0.000364917,
+  "wire_commit_s": 0.00095436475,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/520": {
+  "active_rows": 732,
+  "bb_dump_prove_rss_bytes": 12419072,
+  "bytes": 520,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   696,
+   176,
+   174,
+   175
+  ],
+  "cells_le_32_bits": [
+   696,
+   176,
+   176,
+   175
+  ],
+  "cells_le_64_bits": [
+   696,
+   176,
+   176,
+   175
+  ],
+  "cells_le_8_bits": [
+   696,
+   176,
+   174,
+   175
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.000716583,
+  "committed_occurrences": [
+   520,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 519,
+  "dyadic_size": 1024,
+  "elements": 17,
+  "gates": 731,
+  "key_p_bytes": 47104,
+  "key_pedersen_bytes": 1152,
+  "link_prover_rss_bytes": 7110656,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 699,
+  "msm_small_share": 0.995708,
+  "nonzero_cells": [
+   699,
+   179,
+   179,
+   178
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.000852917,
+  "row": "lego_estimate",
+  "setup_s": 0.006748417,
+  "verify_s": 0.000363042,
+  "wire_commit_s": 0.000607896,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/65536": {
+  "active_rows": 82002,
+  "bb_dump_prove_rss_bytes": 214941696,
+  "bytes": 65536,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   81648,
+   16367,
+   16365,
+   16365
+  ],
+  "cells_le_32_bits": [
+   81648,
+   16367,
+   16367,
+   16365
+  ],
+  "cells_le_64_bits": [
+   81648,
+   16367,
+   16367,
+   16365
+  ],
+  "cells_le_8_bits": [
+   81648,
+   16367,
+   16365,
+   16365
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.0024645,
+  "committed_occurrences": [
+   65536,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 65535,
+  "dyadic_size": 131072,
+  "elements": 2115,
+  "gates": 82001,
+  "key_p_bytes": 5248384,
+  "key_pedersen_bytes": 135424,
+  "link_prover_rss_bytes": 86605824,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 81651,
+  "msm_small_share": 0.999963,
+  "nonzero_cells": [
+   81651,
+   16370,
+   16370,
+   16368
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.00314975,
+  "row": "lego_estimate",
+  "setup_s": 0.620289416,
+  "verify_s": 0.000411667,
+  "wire_commit_s": 0.00241509375,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/85606": {
+  "active_rows": 107090,
+  "bb_dump_prove_rss_bytes": 272023552,
+  "bytes": 85606,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   106622,
+   21361,
+   21360,
+   21360
+  ],
+  "cells_le_32_bits": [
+   106622,
+   21361,
+   21362,
+   21360
+  ],
+  "cells_le_64_bits": [
+   106622,
+   21361,
+   21362,
+   21360
+  ],
+  "cells_le_8_bits": [
+   106622,
+   21361,
+   21360,
+   21360
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.002565833,
+  "committed_occurrences": [
+   85606,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 85605,
+  "dyadic_size": 131072,
+  "elements": 2762,
+  "gates": 107089,
+  "key_p_bytes": 6854016,
+  "key_pedersen_bytes": 176832,
+  "link_prover_rss_bytes": 105676800,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 106625,
+  "msm_small_share": 0.999972,
+  "nonzero_cells": [
+   106625,
+   21364,
+   21365,
+   21363
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.004002792,
+  "row": "lego_estimate",
+  "setup_s": 0.77274225,
+  "verify_s": 0.000400958,
+  "wire_commit_s": 0.0033090415,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_estimate/91546": {
+  "active_rows": 114515,
+  "bb_dump_prove_rss_bytes": 277807104,
+  "bytes": 91546,
+  "cells_full_size": [
+   3,
+   3,
+   3,
+   3
+  ],
+  "cells_le_16_bits": [
+   114020,
+   22841,
+   22839,
+   22839
+  ],
+  "cells_le_32_bits": [
+   114020,
+   22841,
+   22841,
+   22839
+  ],
+  "cells_le_64_bits": [
+   114020,
+   22841,
+   22841,
+   22839
+  ],
+  "cells_le_8_bits": [
+   114020,
+   22841,
+   22839,
+   22839
+  ],
+  "circuit": "nocom",
+  "commit_s": 0.002609375,
+  "committed_occurrences": [
+   91546,
+   1,
+   1,
+   1
+  ],
+  "committed_only_in_linked": 91545,
+  "dyadic_size": 131072,
+  "elements": 2954,
+  "gates": 114514,
+  "key_p_bytes": 7329216,
+  "key_pedersen_bytes": 189120,
+  "link_prover_rss_bytes": 115965952,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "packed",
+  "msm_cells": 114023,
+  "msm_small_share": 0.999974,
+  "nonzero_cells": [
+   114023,
+   22844,
+   22844,
+   22842
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.003874875,
+  "row": "lego_estimate",
+  "setup_s": 0.870362875,
+  "verify_s": 0.000429083,
+  "wire_commit_s": 0.0028869165,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/10000": {
+  "active_rows": 16130,
+  "bb_dump_prove_rss_bytes": 47513600,
+  "bytes": 10000,
+  "cells_full_size": [
+   325,
+   3,
+   4,
+   3228
+  ],
+  "cells_le_16_bits": [
+   15695,
+   5744,
+   5748,
+   2855
+  ],
+  "cells_le_32_bits": [
+   15695,
+   5744,
+   5750,
+   2855
+  ],
+  "cells_le_64_bits": [
+   15695,
+   5744,
+   5750,
+   2855
+  ],
+  "cells_le_8_bits": [
+   15695,
+   5744,
+   5748,
+   2855
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.001217041,
+  "committed_occurrences": [
+   322,
+   0,
+   1,
+   0
+  ],
+  "committed_only_in_linked": 323,
+  "dyadic_size": 16384,
+  "elements": 323,
+  "gates": 16129,
+  "key_p_bytes": 2065088,
+  "key_pedersen_bytes": 20736,
+  "link_prover_rss_bytes": 25329664,
+  "linked_wires": [
+   "w_l",
+   "w_o"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 21774,
+  "msm_small_share": 0.984798,
+  "nonzero_cells": [
+   16020,
+   5747,
+   5754,
+   6083
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.003886666,
+  "row": "lego_packed_estimate",
+  "setup_s": 0.128157875,
+  "verify_s": 0.000434792,
+  "wire_commit_s": 0.00240855225,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/1048576": {
+  "active_rows": 1682878,
+  "bb_dump_prove_rss_bytes": 4045340672,
+  "bytes": 1048576,
+  "cells_full_size": [
+   33828,
+   3,
+   3,
+   338253
+  ],
+  "cells_le_16_bits": [
+   1642654,
+   598165,
+   598134,
+   294899
+  ],
+  "cells_le_32_bits": [
+   1642654,
+   598165,
+   598136,
+   294899
+  ],
+  "cells_le_64_bits": [
+   1642654,
+   598165,
+   598136,
+   294899
+  ],
+  "cells_le_8_bits": [
+   1642654,
+   598165,
+   598134,
+   294899
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.014034708,
+  "committed_occurrences": [
+   33825,
+   1,
+   0,
+   0
+  ],
+  "committed_only_in_linked": 33826,
+  "dyadic_size": 2097152,
+  "elements": 33826,
+  "gates": 1682877,
+  "key_p_bytes": 215408832,
+  "key_pedersen_bytes": 2164928,
+  "link_prover_rss_bytes": 1951367168,
+  "linked_wires": [
+   "w_l",
+   "w_r"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 2274650,
+  "msm_small_share": 0.985127,
+  "nonzero_cells": [
+   1676482,
+   598168,
+   598139,
+   633152
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.062548167,
+  "row": "lego_packed_estimate",
+  "setup_s": 14.618701333,
+  "verify_s": 0.000473375,
+  "wire_commit_s": 0.0473698645,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/16384": {
+  "active_rows": 26376,
+  "bb_dump_prove_rss_bytes": 71155712,
+  "bytes": 16384,
+  "cells_full_size": [
+   532,
+   3,
+   3,
+   5288
+  ],
+  "cells_le_16_bits": [
+   25725,
+   9391,
+   9400,
+   4654
+  ],
+  "cells_le_32_bits": [
+   25725,
+   9391,
+   9402,
+   4654
+  ],
+  "cells_le_64_bits": [
+   25725,
+   9391,
+   9402,
+   4654
+  ],
+  "cells_le_8_bits": [
+   25725,
+   9391,
+   9400,
+   4654
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.001190041,
+  "committed_occurrences": [
+   529,
+   0,
+   0,
+   0
+  ],
+  "committed_only_in_linked": 529,
+  "dyadic_size": 32768,
+  "elements": 529,
+  "gates": 26375,
+  "key_p_bytes": 1688320,
+  "key_pedersen_bytes": 33920,
+  "link_prover_rss_bytes": 35373056,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 26257,
+  "msm_small_share": 0.979739,
+  "nonzero_cells": [
+   26257,
+   9394,
+   9405,
+   9942
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.002683417,
+  "row": "lego_packed_estimate",
+  "setup_s": 0.106623083,
+  "verify_s": 0.0004035,
+  "wire_commit_s": 0.00271364575,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/190259": {
+  "active_rows": 305417,
+  "bb_dump_prove_rss_bytes": 834600960,
+  "bytes": 190259,
+  "cells_full_size": [
+   6140,
+   3,
+   4,
+   61376
+  ],
+  "cells_le_16_bits": [
+   298070,
+   108556,
+   108552,
+   53541
+  ],
+  "cells_le_32_bits": [
+   298070,
+   108556,
+   108554,
+   53541
+  ],
+  "cells_le_64_bits": [
+   298070,
+   108556,
+   108554,
+   53541
+  ],
+  "cells_le_8_bits": [
+   298070,
+   108556,
+   108552,
+   53541
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.00385125,
+  "committed_occurrences": [
+   6137,
+   0,
+   1,
+   0
+  ],
+  "committed_only_in_linked": 6138,
+  "dyadic_size": 524288,
+  "elements": 6138,
+  "gates": 305416,
+  "key_p_bytes": 39093824,
+  "key_pedersen_bytes": 392896,
+  "link_prover_rss_bytes": 364068864,
+  "linked_wires": [
+   "w_l",
+   "w_o"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 412768,
+  "msm_small_share": 0.98511,
+  "nonzero_cells": [
+   304210,
+   108559,
+   108558,
+   114917
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.0154835,
+  "row": "lego_packed_estimate",
+  "setup_s": 2.497876417,
+  "verify_s": 0.000482958,
+  "wire_commit_s": 0.012379073,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/2400": {
+  "active_rows": 3934,
+  "bb_dump_prove_rss_bytes": 19152896,
+  "bytes": 2400,
+  "cells_full_size": [
+   81,
+   3,
+   3,
+   777
+  ],
+  "cells_le_16_bits": [
+   3814,
+   1417,
+   1416,
+   721
+  ],
+  "cells_le_32_bits": [
+   3814,
+   1417,
+   1418,
+   721
+  ],
+  "cells_le_64_bits": [
+   3814,
+   1417,
+   1418,
+   721
+  ],
+  "cells_le_8_bits": [
+   3814,
+   1417,
+   1416,
+   721
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.000725916,
+  "committed_occurrences": [
+   78,
+   0,
+   0,
+   0
+  ],
+  "committed_only_in_linked": 78,
+  "dyadic_size": 4096,
+  "elements": 78,
+  "gates": 3933,
+  "key_p_bytes": 252032,
+  "key_pedersen_bytes": 5056,
+  "link_prover_rss_bytes": 11567104,
+  "linked_wires": [
+   "w_l"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 3895,
+  "msm_small_share": 0.979204,
+  "nonzero_cells": [
+   3895,
+   1420,
+   1421,
+   1498
+  ],
+  "pairings": 3,
+  "proof_bytes": 32,
+  "prove_s": 0.001638375,
+  "row": "lego_packed_estimate",
+  "setup_s": 0.017714083,
+  "verify_s": 0.000411041,
+  "wire_commit_s": 0.00133590625,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/262144": {
+  "active_rows": 420781,
+  "bb_dump_prove_rss_bytes": 1077329920,
+  "bytes": 262144,
+  "cells_full_size": [
+   8459,
+   3,
+   3,
+   84565
+  ],
+  "cells_le_16_bits": [
+   410703,
+   149536,
+   149580,
+   73760
+  ],
+  "cells_le_32_bits": [
+   410703,
+   149536,
+   149582,
+   73760
+  ],
+  "cells_le_64_bits": [
+   410703,
+   149537,
+   149582,
+   73760
+  ],
+  "cells_le_8_bits": [
+   410703,
+   149536,
+   149580,
+   73760
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.004721583,
+  "committed_occurrences": [
+   8456,
+   1,
+   0,
+   0
+  ],
+  "committed_only_in_linked": 8457,
+  "dyadic_size": 524288,
+  "elements": 8457,
+  "gates": 420780,
+  "key_p_bytes": 53860416,
+  "key_pedersen_bytes": 541312,
+  "link_prover_rss_bytes": 469991424,
+  "linked_wires": [
+   "w_l",
+   "w_r"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 568702,
+  "msm_small_share": 0.985119,
+  "nonzero_cells": [
+   419162,
+   149540,
+   149585,
+   158325
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.018995791,
+  "row": "lego_packed_estimate",
+  "setup_s": 3.430665833,
+  "verify_s": 0.000475041,
+  "wire_commit_s": 0.0150103645,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/4000": {
+  "active_rows": 6502,
+  "bb_dump_prove_rss_bytes": 26968064,
+  "bytes": 4000,
+  "cells_full_size": [
+   132,
+   3,
+   3,
+   1293
+  ],
+  "cells_le_16_bits": [
+   6303,
+   2326,
+   2323,
+   1169
+  ],
+  "cells_le_32_bits": [
+   6303,
+   2326,
+   2325,
+   1169
+  ],
+  "cells_le_64_bits": [
+   6303,
+   2326,
+   2325,
+   1169
+  ],
+  "cells_le_8_bits": [
+   6303,
+   2326,
+   2323,
+   1169
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.0007925,
+  "committed_occurrences": [
+   129,
+   1,
+   0,
+   0
+  ],
+  "committed_only_in_linked": 130,
+  "dyadic_size": 8192,
+  "elements": 130,
+  "gates": 6501,
+  "key_p_bytes": 832704,
+  "key_pedersen_bytes": 8384,
+  "link_prover_rss_bytes": 17039360,
+  "linked_wires": [
+   "w_l",
+   "w_r"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 8764,
+  "msm_small_share": 0.984596,
+  "nonzero_cells": [
+   6435,
+   2329,
+   2328,
+   2462
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.002930708,
+  "row": "lego_packed_estimate",
+  "setup_s": 0.05510175,
+  "verify_s": 0.000425417,
+  "wire_commit_s": 0.00165133325,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/520": {
+  "active_rows": 916,
+  "bb_dump_prove_rss_bytes": 12353536,
+  "bytes": 520,
+  "cells_full_size": [
+   19,
+   3,
+   4,
+   170
+  ],
+  "cells_le_16_bits": [
+   863,
+   344,
+   341,
+   192
+  ],
+  "cells_le_32_bits": [
+   863,
+   344,
+   343,
+   192
+  ],
+  "cells_le_64_bits": [
+   863,
+   344,
+   343,
+   192
+  ],
+  "cells_le_8_bits": [
+   863,
+   344,
+   341,
+   192
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.000588125,
+  "committed_occurrences": [
+   16,
+   0,
+   1,
+   0
+  ],
+  "committed_only_in_linked": 17,
+  "dyadic_size": 1024,
+  "elements": 17,
+  "gates": 915,
+  "key_p_bytes": 117696,
+  "key_pedersen_bytes": 1152,
+  "link_prover_rss_bytes": 9109504,
+  "linked_wires": [
+   "w_l",
+   "w_o"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 1229,
+  "msm_small_share": 0.979658,
+  "nonzero_cells": [
+   882,
+   347,
+   347,
+   362
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.001984166,
+  "row": "lego_packed_estimate",
+  "setup_s": 0.008902417,
+  "verify_s": 0.000452584,
+  "wire_commit_s": 0.00106097925,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/65536": {
+  "active_rows": 105257,
+  "bb_dump_prove_rss_bytes": 258916352,
+  "bytes": 65536,
+  "cells_full_size": [
+   2117,
+   3,
+   3,
+   21143
+  ],
+  "cells_le_16_bits": [
+   102719,
+   37428,
+   37409,
+   18471
+  ],
+  "cells_le_32_bits": [
+   102719,
+   37428,
+   37411,
+   18471
+  ],
+  "cells_le_64_bits": [
+   102719,
+   37428,
+   37411,
+   18471
+  ],
+  "cells_le_8_bits": [
+   102719,
+   37428,
+   37408,
+   18471
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.002456291,
+  "committed_occurrences": [
+   2114,
+   0,
+   1,
+   0
+  ],
+  "committed_only_in_linked": 2115,
+  "dyadic_size": 131072,
+  "elements": 2115,
+  "gates": 105256,
+  "key_p_bytes": 13473344,
+  "key_pedersen_bytes": 135424,
+  "link_prover_rss_bytes": 130220032,
+  "linked_wires": [
+   "w_l",
+   "w_o"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 142250,
+  "msm_small_share": 0.985083,
+  "nonzero_cells": [
+   104836,
+   37431,
+   37414,
+   39614
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.008483458,
+  "row": "lego_packed_estimate",
+  "setup_s": 0.831929375,
+  "verify_s": 0.000490417,
+  "wire_commit_s": 0.00580309375,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/85606": {
+  "active_rows": 137466,
+  "bb_dump_prove_rss_bytes": 398000128,
+  "bytes": 85606,
+  "cells_full_size": [
+   2764,
+   3,
+   4,
+   27617
+  ],
+  "cells_le_16_bits": [
+   134121,
+   48867,
+   48863,
+   24112
+  ],
+  "cells_le_32_bits": [
+   134121,
+   48867,
+   48865,
+   24112
+  ],
+  "cells_le_64_bits": [
+   134121,
+   48867,
+   48865,
+   24112
+  ],
+  "cells_le_8_bits": [
+   134121,
+   48867,
+   48863,
+   24112
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.002693542,
+  "committed_occurrences": [
+   2761,
+   0,
+   1,
+   0
+  ],
+  "committed_only_in_linked": 2762,
+  "dyadic_size": 262144,
+  "elements": 2762,
+  "gates": 137465,
+  "key_p_bytes": 17596096,
+  "key_pedersen_bytes": 176832,
+  "link_prover_rss_bytes": 175030272,
+  "linked_wires": [
+   "w_l",
+   "w_o"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 185754,
+  "msm_small_share": 0.985088,
+  "nonzero_cells": [
+   136885,
+   48870,
+   48869,
+   51729
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.009437083,
+  "row": "lego_packed_estimate",
+  "setup_s": 1.125947708,
+  "verify_s": 0.000473542,
+  "wire_commit_s": 0.0069535835,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ },
+ "lego_packed_estimate/91546": {
+  "active_rows": 146999,
+  "bb_dump_prove_rss_bytes": 418562048,
+  "bytes": 91546,
+  "cells_full_size": [
+   2956,
+   3,
+   3,
+   29533
+  ],
+  "cells_le_16_bits": [
+   143446,
+   52246,
+   52244,
+   25781
+  ],
+  "cells_le_32_bits": [
+   143446,
+   52246,
+   52246,
+   25782
+  ],
+  "cells_le_64_bits": [
+   143446,
+   52246,
+   52246,
+   25782
+  ],
+  "cells_le_8_bits": [
+   143446,
+   52246,
+   52244,
+   25781
+  ],
+  "circuit": "lego_packed",
+  "commit_s": 0.002949125,
+  "committed_occurrences": [
+   2953,
+   0,
+   0,
+   1
+  ],
+  "committed_only_in_linked": 2954,
+  "dyadic_size": 262144,
+  "elements": 2954,
+  "gates": 146998,
+  "key_p_bytes": 18816320,
+  "key_pedersen_bytes": 189120,
+  "link_prover_rss_bytes": 194117632,
+  "linked_wires": [
+   "w_l",
+   "w_4"
+  ],
+  "masked_rows": 3,
+  "mode": "vars",
+  "msm_cells": 201717,
+  "msm_small_share": 0.838933,
+  "nonzero_cells": [
+   146402,
+   52249,
+   52249,
+   55315
+  ],
+  "pairings": 4,
+  "proof_bytes": 32,
+  "prove_s": 0.021786167,
+  "row": "lego_packed_estimate",
+  "setup_s": 1.208589,
+  "verify_s": 0.000467208,
+  "wire_commit_s": 0.00826877075,
+  "wire_commitment_proof_offsets": [
+   384,
+   512,
+   640,
+   1024
+  ],
+  "wire_commitments_match_bb": true
+ }
+}

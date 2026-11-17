@@ -1,4 +1,5 @@
 provekit/
+aztec-packages/
 .build/
 pcs/target/
 circuits/*/target/

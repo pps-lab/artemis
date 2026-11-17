@@ -10,6 +10,7 @@ the age check).
 
 import argparse
 import csv
+import json
 import statistics
 from collections import defaultdict
 from pathlib import Path
@@ -28,6 +29,7 @@ STYLE = {
     "poseidon2": ("Poseidon2 (faster of t16 / native)", "#D55E00", "s", "-"),
     "artemis": ("Artemis", "#009E73", "D", "-"),
     "artemis_estimate": ("Artemis (cost estimate, not sound)", "#009E73", "D", ":"),
+    "lego_estimate": ("LegoSNARK CP_link (cost estimate)", "#56B4E9", "P", (0, (1, 1.5))),
     "nocom": ("No commitment", "#666666", "x", "--"),
 }
 PANELS = [("provekit", "ProveKit (WHIR, pairing-free)"), ("bb", "Barretenberg (UltraHonk, KZG)")]
@@ -52,7 +54,8 @@ def load(path):
 
 def series(data, backend):
     """row -> {bytes: metrics}, with the bb Artemis estimate completed by the
-    external KZG opening and Poseidon2 reduced to its faster variant."""
+    external KZG opening, the bb LegoSNARK estimate rebased on the nocom row,
+    and Poseidon2 reduced to its faster variant."""
     rows = defaultdict(dict)
     for (workload, b, row, n), m in data.items():
         if workload == "sweep" and b == backend:
@@ -64,6 +67,13 @@ def series(data, backend):
                 m["prover_s"] += ext["prover_s"]
                 m["verifier_s"] += ext["verifier_s"]
                 m["proof_bytes"] += ext["proof_bytes"]
+        # LegoSNARK proves the no-commitment circuit unchanged, and its rows were measured in a later
+        # session than the nocom rows (the same `bb prove` drifts by several percent between sessions).
+        # Use the nocom row's bb time plus the link prover (opening_s); the CSV keeps the measured sum.
+        for n, m in rows.get("lego_estimate", {}).items():
+            base = rows.get("nocom", {}).get(n)
+            if base and m.get("opening_s") is not None:
+                m["prover_s"] = base["prover_s"] + m["opening_s"]
     # Rows with several circuit variants: keep the faster one per size.
     for name, variants in (("poseidon2", ("poseidon2_t16", "poseidon2_native")),
                            ("keccak", ("keccak256", "keccak256_bb")),
@@ -94,8 +104,10 @@ def plot(data, out):
                 continue
             xs = [n for n, _ in pts]
             ys = [max(m["prover_s"], 1e-3) for _, m in pts]
-            ax.plot(xs, ys, color=colour, marker=marker, linestyle=ls, linewidth=2, markersize=5,
-                    label=label)
+            # The LegoSNARK estimate lies within 3% of "No commitment": large markers drawn below
+            # that line keep both visible.
+            extra = {"markersize": 10, "zorder": 1.9} if row == "lego_estimate" else {"markersize": 5}
+            ax.plot(xs, ys, color=colour, marker=marker, linestyle=ls, linewidth=2, label=label, **extra)
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
         ax.set_title(title, fontsize=10)
@@ -116,10 +128,13 @@ def tables(data, out):
     lines = ["# TLSNotary / Artemis benchmark: summary", "",
              "Medians over the runs in the CSV. Prover time excludes ACVM witness generation, "
              "key generation and setup; the Artemis rows include the IPA opening "
-             "(ProveKit) or the KZG opening (Barretenberg estimate).", ""]
+             "(ProveKit) or the KZG opening (Barretenberg estimate). The LegoSNARK row is the no-commitment "
+             "row plus the CP_link prover on the wire columns of a real Barretenberg proof (same circuit; "
+             "the CSV rows hold the sum with a `bb prove` run of their own session).", ""]
     for backend, title in PANELS:
         rows = series(data, backend)
-        order = [r for r in ("nocom", "sha256", "keccak", "blake3", "poseidon2", "artemis", "artemis_estimate") if r in rows]
+        order = [r for r in ("nocom", "sha256", "keccak", "blake3", "poseidon2", "artemis", "artemis_estimate",
+                             "lego_estimate") if r in rows]
         sizes = sorted({n for r in order for n in rows[r]})
         if not sizes:
             continue
@@ -154,6 +169,7 @@ def tables(data, out):
                     return f"{(a / v if inv else v / a):.1f}x"
                 lines.append(f"| {fmt_bytes(n)} | {ratio('sha256')} | {ratio('keccak')} | {ratio('blake3')} | {ratio('poseidon2')} | {ratio('nocom', True)} |")
             lines.append("")
+    lines += lego_table(data, out)
     age = {(b, row): m for (w, b, row, _), m in data.items() if w == "age"}
     if age:
         lines += ["## Age check (10 committed bytes)", "",
@@ -164,6 +180,48 @@ def tables(data, out):
                          f"{m['verifier_s'] * 1e3:.1f} | {m['proof_bytes'] / 1e3:.1f} |")
         lines.append("")
     (out / "summary.md").write_text("\n".join(lines))
+
+
+def lego_table(data, out):
+    """Layout facts and link cost of the LegoSNARK rows (lego_layout.json is written by bench.py)."""
+    path = out / "lego_layout.json"
+    if not path.exists():
+        return []
+    layout = json.loads(path.read_text())
+    lines = []
+    for row, title in (("lego_estimate", "no-commitment circuit, byte cells linked (the plotted row)"),
+                       ("lego_packed_estimate", "variant that packs in the circuit, packed cells linked")):
+        sizes = sorted(int(k.split("/")[1]) for k in layout if k.split("/")[0] == row)
+        if not sizes:
+            continue
+        lines += [f"## Barretenberg: LegoSNARK CP_link, {title}", "",
+                  "Link prover, Pedersen commitment and link verifier are in-process medians. "
+                  "Overhead columns: prover time over no commitment. LegoSNARK: the link prover (the circuit "
+                  "is the no-commitment circuit) or, for the packed variant, the difference of the `bb prove` "
+                  "medians of the two LegoSNARK circuits (measured back to back) plus the link prover. "
+                  "Artemis: `artemis_estimate` + KZG opening - `nocom` (measured back to back).", "",
+                  "| Payload | Gates | Linked wires | Non-zero cells in the MSM | of at most 16 bits | "
+                  "Link prover [ms] | LegoSNARK overhead [ms] | Artemis estimate overhead [ms] | "
+                  "Pedersen commit [ms] (not counted) | Link verifier [ms] | Setup [s] | Keys [MB] |",
+                  "|---|" + "---|" * 11]
+        for n in sizes:
+            m = layout[f"{row}/{n}"]
+            get = lambda r, b="bb": data.get(("sweep", b, r, n), {}).get("prover_s")  # noqa: E731
+            nocom, art, ext = get("nocom"), get("artemis_estimate"), get("kzg", "external")
+            link = data.get(("sweep", "bb", row, n), {}).get("opening_s")
+            ref = data.get(("sweep", "bb", "lego_estimate", n))
+            over = link
+            if row != "lego_estimate":  # (bb + link) - (bb_ref + link_ref) + link_ref
+                over = get(row) - ref["prover_s"] + ref["opening_s"] if ref else None
+            art_over = art + ext - nocom if art and ext and nocom else None
+            ms = lambda v: "n/a" if v is None else f"{v * 1e3:.1f}"  # noqa: E731
+            lines.append(
+                f"| {fmt_bytes(n)} | {m['gates']} | {', '.join(m['linked_wires'])} | {m['msm_cells']} | "
+                f"{100 * m['msm_small_share']:.2f}% | {ms(link)} | {ms(over)} | {ms(art_over)} | "
+                f"{ms(m['commit_s'])} | {ms(m['verify_s'])} | {m['setup_s']:.2f} | "
+                f"{(m['key_p_bytes'] + m['key_pedersen_bytes']) / 1e6:.1f} |")
+        lines.append("")
+    return lines
 
 
 def main():

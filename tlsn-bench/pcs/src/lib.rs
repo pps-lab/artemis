@@ -10,9 +10,13 @@
 //!   no pairing. This is the scheme the ProveKit instantiation uses.
 //! * [`kzg`]: hiding KZG10 over BN254. The benchmark setup samples the
 //!   trapdoor locally, which is fine for timing and unusable for anything else.
+//! * [`lego`]: LegoSNARK CP_link (Kiltz-Wee QA-NIZK) between a Pedersen
+//!   commitment and KZG commitments to wire columns, for the Barretenberg
+//!   cost estimate (`lego_bench`).
 
 pub mod ipa;
 pub mod kzg;
+pub mod lego;
 mod transcript;
 
 pub use ark_bn254::{Fr, G1Affine, G1Projective};

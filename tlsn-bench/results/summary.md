@@ -1,6 +1,6 @@
 # TLSNotary / Artemis benchmark: summary
 
-Medians over the runs in the CSV. Prover time excludes ACVM witness generation, key generation and setup; the Artemis rows include the IPA opening (ProveKit) or the KZG opening (Barretenberg estimate).
+Medians over the runs in the CSV. Prover time excludes ACVM witness generation, key generation and setup; the Artemis rows include the IPA opening (ProveKit) or the KZG opening (Barretenberg estimate). The LegoSNARK row is the no-commitment row plus the CP_link prover on the wire columns of a real Barretenberg proof (same circuit; the CSV rows hold the sum with a `bb prove` run of their own session).
 
 ## ProveKit (WHIR, pairing-free): Prover time [s]
 
@@ -100,83 +100,119 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 
 ## Barretenberg (UltraHonk, KZG): Prover time [s]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) |
-|---|---|---|---|---|---|---|
-| 520 B | 0.010 | 0.207 | 0.439 | 0.122 | 0.019 | 0.012 |
-| 2.3 KiB | 0.027 | 0.668 | 1.654 | 0.719 | 0.053 | 0.030 |
-| 3.9 KiB | 0.044 | 0.889 | 2.741 | 1.208 | 0.074 | 0.050 |
-| 9.8 KiB | 0.065 | 2.693 | 6.210 | 2.671 | 0.124 | 0.078 |
-| 16.0 KiB | 0.100 | 5.191 | 10.384 | 4.564 | 0.190 | 0.117 |
-| 64.0 KiB | 0.293 | 40.130 | 39.495 | 16.915 | 0.605 | 0.349 |
-| 83.6 KiB | 0.321 | n/a | n/a | n/a | 0.680 | 0.548 |
-| 89.4 KiB | 0.333 | n/a | n/a | n/a | 0.696 | 0.559 |
-| 185.8 KiB | 0.626 | n/a | n/a | n/a | 1.320 | 1.050 |
-| 256.0 KiB | 0.988 | n/a | n/a | n/a | 2.080 | 1.186 |
-| 1 MiB | 3.609 | n/a | n/a | n/a | 7.552 | 4.318 |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+|---|---|---|---|---|---|---|---|
+| 520 B | 0.010 | 0.207 | 0.439 | 0.122 | 0.019 | 0.012 | 0.011 |
+| 2.3 KiB | 0.027 | 0.668 | 1.654 | 0.719 | 0.053 | 0.030 | 0.028 |
+| 3.9 KiB | 0.044 | 0.889 | 2.741 | 1.208 | 0.074 | 0.050 | 0.046 |
+| 9.8 KiB | 0.065 | 2.693 | 6.210 | 2.671 | 0.124 | 0.078 | 0.067 |
+| 16.0 KiB | 0.100 | 5.191 | 10.384 | 4.564 | 0.190 | 0.117 | 0.102 |
+| 64.0 KiB | 0.293 | 40.130 | 39.495 | 16.915 | 0.605 | 0.349 | 0.297 |
+| 83.6 KiB | 0.321 | n/a | n/a | n/a | 0.680 | 0.548 | 0.325 |
+| 89.4 KiB | 0.333 | n/a | n/a | n/a | 0.696 | 0.559 | 0.337 |
+| 185.8 KiB | 0.626 | n/a | n/a | n/a | 1.320 | 1.050 | 0.632 |
+| 256.0 KiB | 0.988 | n/a | n/a | n/a | 2.080 | 1.186 | 0.997 |
+| 1 MiB | 3.609 | n/a | n/a | n/a | 7.552 | 4.318 | 3.637 |
 
 ## Barretenberg (UltraHonk, KZG): Constraints (ProveKit R1CS) / gates (bb circuit size)
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) |
-|---|---|---|---|---|---|---|
-| 520 B | 731 | 39659 | 74067 | 20701 | 1357 | 919 |
-| 2.3 KiB | 3081 | 158149 | 323967 | 193699 | 5834 | 3936 |
-| 3.9 KiB | 5081 | 260255 | 538127 | 317217 | 9716 | 6504 |
-| 9.8 KiB | 12581 | 644144 | 1323847 | 791500 | 24017 | 16133 |
-| 16.0 KiB | 20561 | 1052522 | 2163051 | 1290322 | 39299 | 26378 |
-| 64.0 KiB | 82001 | 4189226 | 8609263 | 5162242 | 156724 | 105260 |
-| 83.6 KiB | 107089 | n/a | n/a | n/a | 204702 | 137469 |
-| 89.4 KiB | 114514 | n/a | n/a | n/a | 218907 | 147002 |
-| 185.8 KiB | 237905 | n/a | n/a | n/a | 454778 | 305420 |
-| 256.0 KiB | 327761 | n/a | n/a | n/a | 626570 | 420784 |
-| 1 MiB | 1310801 | n/a | n/a | n/a | 2506028 | 1682880 |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+|---|---|---|---|---|---|---|---|
+| 520 B | 731 | 39659 | 74067 | 20701 | 1357 | 919 | 731 |
+| 2.3 KiB | 3081 | 158149 | 323967 | 193699 | 5834 | 3936 | 3081 |
+| 3.9 KiB | 5081 | 260255 | 538127 | 317217 | 9716 | 6504 | 5081 |
+| 9.8 KiB | 12581 | 644144 | 1323847 | 791500 | 24017 | 16133 | 12581 |
+| 16.0 KiB | 20561 | 1052522 | 2163051 | 1290322 | 39299 | 26378 | 20561 |
+| 64.0 KiB | 82001 | 4189226 | 8609263 | 5162242 | 156724 | 105260 | 82001 |
+| 83.6 KiB | 107089 | n/a | n/a | n/a | 204702 | 137469 | 107089 |
+| 89.4 KiB | 114514 | n/a | n/a | n/a | 218907 | 147002 | 114514 |
+| 185.8 KiB | 237905 | n/a | n/a | n/a | 454778 | 305420 | 237905 |
+| 256.0 KiB | 327761 | n/a | n/a | n/a | 626570 | 420784 | 327761 |
+| 1 MiB | 1310801 | n/a | n/a | n/a | 2506028 | 1682880 | 1310801 |
 
 ## Barretenberg (UltraHonk, KZG): Verifier time [ms]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) |
-|---|---|---|---|---|---|---|
-| 520 B | 0.2 | 1.2 | 0.8 | 0.8 | 0.2 | 1.1 |
-| 2.3 KiB | 0.6 | 1.3 | 1.2 | 1.1 | 0.9 | 1.3 |
-| 3.9 KiB | 0.8 | 1.4 | 1.1 | 1.0 | 1.0 | 1.7 |
-| 9.8 KiB | 1.1 | 1.4 | 1.7 | 1.1 | 1.3 | 1.9 |
-| 16.0 KiB | 1.2 | 1.5 | 1.4 | 1.1 | 1.3 | 2.0 |
-| 64.0 KiB | 1.3 | 4.4 | 5.6 | 3.5 | 1.3 | 2.0 |
-| 83.6 KiB | 0.9 | n/a | n/a | n/a | 1.0 | 1.8 |
-| 89.4 KiB | 1.0 | n/a | n/a | n/a | 1.1 | 1.8 |
-| 185.8 KiB | 1.1 | n/a | n/a | n/a | 1.2 | 2.1 |
-| 256.0 KiB | 1.2 | n/a | n/a | n/a | 1.2 | 1.9 |
-| 1 MiB | 1.2 | n/a | n/a | n/a | 1.2 | 2.0 |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+|---|---|---|---|---|---|---|---|
+| 520 B | 0.2 | 1.2 | 0.8 | 0.8 | 0.2 | 1.1 | 0.8 |
+| 2.3 KiB | 0.6 | 1.3 | 1.2 | 1.1 | 0.9 | 1.3 | 1.1 |
+| 3.9 KiB | 0.8 | 1.4 | 1.1 | 1.0 | 1.0 | 1.7 | 1.1 |
+| 9.8 KiB | 1.1 | 1.4 | 1.7 | 1.1 | 1.3 | 1.9 | 1.2 |
+| 16.0 KiB | 1.2 | 1.5 | 1.4 | 1.1 | 1.3 | 2.0 | 1.4 |
+| 64.0 KiB | 1.3 | 4.4 | 5.6 | 3.5 | 1.3 | 2.0 | 1.5 |
+| 83.6 KiB | 0.9 | n/a | n/a | n/a | 1.0 | 1.8 | 1.7 |
+| 89.4 KiB | 1.0 | n/a | n/a | n/a | 1.1 | 1.8 | 1.6 |
+| 185.8 KiB | 1.1 | n/a | n/a | n/a | 1.2 | 2.1 | 1.5 |
+| 256.0 KiB | 1.2 | n/a | n/a | n/a | 1.2 | 1.9 | 1.9 |
+| 1 MiB | 1.2 | n/a | n/a | n/a | 1.2 | 2.0 | 2.3 |
 
 ## Barretenberg (UltraHonk, KZG): Proof size [kB]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) |
-|---|---|---|---|---|---|---|
-| 520 B | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 2.3 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 3.9 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 9.8 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 16.0 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 64.0 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 83.6 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 89.4 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 185.8 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 256.0 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 1 MiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+|---|---|---|---|---|---|---|---|
+| 520 B | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
+| 2.3 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
+| 3.9 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
+| 9.8 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
+| 16.0 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
+| 64.0 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
+| 83.6 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 | 14.7 |
+| 89.4 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 | 14.7 |
+| 185.8 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 | 14.7 |
+| 256.0 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 | 14.7 |
+| 1 MiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 | 14.7 |
 
 ## Barretenberg (UltraHonk, KZG): Prover peak memory [GiB]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) |
-|---|---|---|---|---|---|---|
-| 520 B | 0.01 | 0.10 | 0.17 | 0.05 | 0.01 | 0.01 |
-| 2.3 KiB | 0.02 | 0.41 | 0.68 | 0.53 | 0.02 | 0.02 |
-| 3.9 KiB | 0.02 | 0.61 | 1.21 | 0.93 | 0.03 | 0.02 |
-| 9.8 KiB | 0.04 | 2.20 | 2.62 | 2.28 | 0.06 | 0.04 |
-| 16.0 KiB | 0.05 | 4.77 | 4.27 | 3.45 | 0.09 | 0.06 |
-| 64.0 KiB | 0.20 | 16.77 | 13.93 | 12.06 | 0.39 | 0.24 |
-| 83.6 KiB | 0.25 | n/a | n/a | n/a | 0.47 | 0.37 |
-| 89.4 KiB | 0.26 | n/a | n/a | n/a | 0.49 | 0.39 |
-| 185.8 KiB | 0.52 | n/a | n/a | n/a | 1.01 | 0.79 |
-| 256.0 KiB | 0.82 | n/a | n/a | n/a | 1.58 | 1.00 |
-| 1 MiB | 3.01 | n/a | n/a | n/a | 5.42 | 3.76 |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+|---|---|---|---|---|---|---|---|
+| 520 B | 0.01 | 0.10 | 0.17 | 0.05 | 0.01 | 0.01 | 0.01 |
+| 2.3 KiB | 0.02 | 0.41 | 0.68 | 0.53 | 0.02 | 0.02 | 0.02 |
+| 3.9 KiB | 0.02 | 0.61 | 1.21 | 0.93 | 0.03 | 0.02 | 0.02 |
+| 9.8 KiB | 0.04 | 2.20 | 2.62 | 2.28 | 0.06 | 0.04 | 0.04 |
+| 16.0 KiB | 0.05 | 4.77 | 4.27 | 3.45 | 0.09 | 0.06 | 0.05 |
+| 64.0 KiB | 0.20 | 16.77 | 13.93 | 12.06 | 0.39 | 0.24 | 0.20 |
+| 83.6 KiB | 0.25 | n/a | n/a | n/a | 0.47 | 0.37 | 0.25 |
+| 89.4 KiB | 0.26 | n/a | n/a | n/a | 0.49 | 0.39 | 0.26 |
+| 185.8 KiB | 0.52 | n/a | n/a | n/a | 1.01 | 0.79 | 0.52 |
+| 256.0 KiB | 0.82 | n/a | n/a | n/a | 1.58 | 1.00 | 0.82 |
+| 1 MiB | 3.01 | n/a | n/a | n/a | 5.42 | 3.76 | 3.01 |
+
+## Barretenberg: LegoSNARK CP_link, no-commitment circuit, byte cells linked (the plotted row)
+
+Link prover, Pedersen commitment and link verifier are in-process medians. Overhead columns: prover time over no commitment. LegoSNARK: the link prover (the circuit is the no-commitment circuit) or, for the packed variant, the difference of the `bb prove` medians of the two LegoSNARK circuits (measured back to back) plus the link prover. Artemis: `artemis_estimate` + KZG opening - `nocom` (measured back to back).
+
+| Payload | Gates | Linked wires | Non-zero cells in the MSM | of at most 16 bits | Link prover [ms] | LegoSNARK overhead [ms] | Artemis estimate overhead [ms] | Pedersen commit [ms] (not counted) | Link verifier [ms] | Setup [s] | Keys [MB] |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 520 B | 731 | w_l | 699 | 99.57% | 0.9 | 0.9 | 2.3 | 0.7 | 0.4 | 0.01 | 0.0 |
+| 2.3 KiB | 3081 | w_l | 3044 | 99.90% | 1.1 | 1.1 | 3.7 | 0.7 | 0.4 | 0.03 | 0.2 |
+| 3.9 KiB | 5081 | w_l | 5024 | 99.94% | 1.5 | 1.5 | 6.1 | 0.9 | 0.4 | 0.04 | 0.3 |
+| 9.8 KiB | 12581 | w_l | 12491 | 99.98% | 1.5 | 1.5 | 12.1 | 1.2 | 0.4 | 0.10 | 0.8 |
+| 16.0 KiB | 20561 | w_l | 20461 | 99.99% | 2.4 | 2.4 | 17.0 | 1.5 | 0.5 | 0.15 | 1.4 |
+| 64.0 KiB | 82001 | w_l | 81651 | 100.00% | 3.1 | 3.1 | 55.3 | 2.5 | 0.4 | 0.62 | 5.4 |
+| 83.6 KiB | 107089 | w_l | 106625 | 100.00% | 4.0 | 4.0 | 227.4 | 2.6 | 0.4 | 0.77 | 7.0 |
+| 89.4 KiB | 114514 | w_l | 114023 | 100.00% | 3.9 | 3.9 | 225.5 | 2.6 | 0.4 | 0.87 | 7.5 |
+| 185.8 KiB | 237905 | w_l | 236940 | 100.00% | 6.3 | 6.3 | 424.7 | 3.8 | 0.4 | 1.71 | 15.6 |
+| 256.0 KiB | 327761 | w_l | 326465 | 100.00% | 8.7 | 8.7 | 197.6 | 5.0 | 0.4 | 2.40 | 21.5 |
+| 1 MiB | 1310801 | w_l | 1305745 | 100.00% | 28.6 | 28.6 | 709.0 | 14.2 | 0.4 | 10.17 | 86.1 |
+
+## Barretenberg: LegoSNARK CP_link, variant that packs in the circuit, packed cells linked
+
+Link prover, Pedersen commitment and link verifier are in-process medians. Overhead columns: prover time over no commitment. LegoSNARK: the link prover (the circuit is the no-commitment circuit) or, for the packed variant, the difference of the `bb prove` medians of the two LegoSNARK circuits (measured back to back) plus the link prover. Artemis: `artemis_estimate` + KZG opening - `nocom` (measured back to back).
+
+| Payload | Gates | Linked wires | Non-zero cells in the MSM | of at most 16 bits | Link prover [ms] | LegoSNARK overhead [ms] | Artemis estimate overhead [ms] | Pedersen commit [ms] (not counted) | Link verifier [ms] | Setup [s] | Keys [MB] |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 520 B | 915 | w_l, w_o | 1229 | 97.97% | 2.0 | 2.6 | 2.3 | 0.6 | 0.5 | 0.01 | 0.1 |
+| 2.3 KiB | 3933 | w_l | 3895 | 97.92% | 1.6 | 2.2 | 3.7 | 0.7 | 0.4 | 0.02 | 0.3 |
+| 3.9 KiB | 6501 | w_l, w_r | 8764 | 98.46% | 2.9 | 7.9 | 6.1 | 0.8 | 0.4 | 0.06 | 0.8 |
+| 9.8 KiB | 16129 | w_l, w_o | 21774 | 98.48% | 3.9 | 13.8 | 12.1 | 1.2 | 0.4 | 0.13 | 2.1 |
+| 16.0 KiB | 26375 | w_l | 26257 | 97.97% | 2.7 | 17.1 | 17.0 | 1.2 | 0.4 | 0.11 | 1.7 |
+| 64.0 KiB | 105256 | w_l, w_o | 142250 | 98.51% | 8.5 | 69.7 | 55.3 | 2.5 | 0.5 | 0.83 | 13.6 |
+| 83.6 KiB | 137465 | w_l, w_o | 185754 | 98.51% | 9.4 | 230.8 | 227.4 | 2.7 | 0.5 | 1.13 | 17.8 |
+| 89.4 KiB | 146998 | w_l, w_4 | 201717 | 83.89% | 21.8 | 251.4 | 225.5 | 2.9 | 0.5 | 1.21 | 19.0 |
+| 185.8 KiB | 305416 | w_l, w_o | 412768 | 98.51% | 15.5 | 423.9 | 424.7 | 3.9 | 0.5 | 2.50 | 39.5 |
+| 256.0 KiB | 420780 | w_l, w_r | 568702 | 98.51% | 19.0 | 195.2 | 197.6 | 4.7 | 0.5 | 3.43 | 54.4 |
+| 1 MiB | 1682877 | w_l, w_r | 2274650 | 98.51% | 62.5 | 703.1 | 709.0 | 14.0 | 0.5 | 14.62 | 217.6 |
 
 ## Age check (10 committed bytes)
 

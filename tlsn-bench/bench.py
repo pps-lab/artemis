@@ -26,6 +26,11 @@ BUILD = ROOT / ".build"
 ARTEMIS_BENCH = ROOT / "provekit/target/release/artemis-bench"
 PCS_BENCH = ROOT / "pcs/target/release/pcs_bench"
 DIGEST = ROOT / "pcs/target/release/digest"
+LEGO_BENCH = ROOT / "pcs/target/release/lego_bench"
+# Barretenberg built from source with barretenberg-dump.patch (./run.sh setup-bb-dump): writes the wire
+# columns of the proof it produces. Only the LegoSNARK rows need it.
+BB_DUMP = os.environ.get("BB_DUMP", str(ROOT / "aztec-packages/barretenberg/cpp/build/bin/bb"))
+BB_CRS = os.environ.get("BB_CRS", str(Path.home() / ".bb-crs/bn254_g1.dat"))
 NARGO = os.environ.get("NARGO", "nargo")
 BB = os.environ.get("BB", "bb")
 
@@ -63,12 +68,18 @@ SWEEP_ROWS = {
     "poseidon2_native": ("poseidon2_native", False),
     "artemis": ("artemis", True),
     "artemis_estimate": ("artemis_estimate", False),
+    # LegoSNARK CP_link on the real wire columns (see run_lego): the no-commitment circuit with the
+    # byte cells linked, and a variant that packs in the circuit and links the packed cells.
+    "lego_estimate": ("nocom", False),
+    "lego_packed_estimate": ("lego_packed", False),
 }
+LEGO_ROWS = ("lego_estimate", "lego_packed_estimate")
 BACKEND_ROWS = {
     "provekit": ["nocom", "sha256", "keccak256", "blake3", "poseidon2_t16", "poseidon2_native", "artemis"],
     # Barretenberg cannot expose a challenge, so the Artemis row is the
     # (unsound) in-circuit Horner cost estimate; add an `external` opening.
-    "bb": ["nocom", "sha256", "keccak256", "keccak256_bb", "blake3", "blake3_bb", "poseidon2_t16", "poseidon2_native", "artemis_estimate"],
+    "bb": ["nocom", "sha256", "keccak256", "keccak256_bb", "blake3", "blake3_bb", "poseidon2_t16", "poseidon2_native", "artemis_estimate",
+           "lego_estimate", "lego_packed_estimate"],
 }
 # Largest payload that fits a 48 GB machine (prover RAM extrapolated from the
 # smaller sizes: ~50 GiB and ~42 GiB at 64 KiB). `--all-sizes` lifts the caps.
@@ -99,12 +110,12 @@ def sh(cmd, cwd=None):
     return proc.stdout
 
 
-def timed(cmd):
+def timed(cmd, stdout=os.devnull, env=None):
     """Run a command; return (wall seconds, the child's peak RSS in bytes)."""
     start = time.perf_counter()
     pid = os.posix_spawn(
-        str(cmd[0]), [str(c) for c in cmd], os.environ,
-        file_actions=[(os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
+        str(cmd[0]), [str(c) for c in cmd], env or os.environ,
+        file_actions=[(os.POSIX_SPAWN_OPEN, 1, str(stdout), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
                       (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0)],
     )
     _, status, usage = os.wait4(pid, 0)
@@ -155,6 +166,9 @@ def prover_toml(template, n):
         lines.append(f'eval_point = "{z}"')
         lines.append(f'claimed_eval = "{horner(payload, mask, z)}"')
     lines.append(f"payload = {payload}")
+    if template == "lego_packed":
+        chunks = [int.from_bytes(bytes(payload[i:i + PACK]), "little") for i in range(0, n, PACK)]
+        lines.append("packed = [" + ", ".join(f'"{c}"' for c in chunks) + "]")
     if template in ("artemis", "artemis_estimate"):
         lines.append(f'mask = "{mask}"')
     return "\n".join(lines) + "\n"
@@ -178,9 +192,9 @@ def age_toml(template):
     return "\n".join(lines) + "\n"
 
 
-def instantiate(template, n, toml):
+def instantiate(template, n, toml, name=None):
     """Copy a circuit template to .build/, set N, write Prover.toml."""
-    name = template if n is None else f"{template}_{n}"
+    name = name or (template if n is None else f"{template}_{n}")
     dst = BUILD / name
     if dst.exists():
         shutil.rmtree(dst)
@@ -271,6 +285,61 @@ def run_bb(dst, template, runs):
     return rows
 
 
+def run_lego(dst, row, template, n, runs):
+    """LegoSNARK CP_link cost estimate on Barretenberg.
+
+    The patched `bb` proves the circuit once and dumps the wire columns it committed to. `lego_bench`
+    finds the cells of the payload, checks that the dumped values give the wire commitments in that
+    proof under Barretenberg's reference string, and times the link prover on those values and the
+    link verifier on those commitments. Prover time = stock `bb prove` (as in run_bb) + link prover;
+    the Pedersen commitment is `commit_s` and not counted; `opening_s` is the link prover alone.
+    Returns (rows, layout).
+    """
+    base_p, base_v = bb_baseline(runs)
+    gates = bb_setup(dst, template)
+    target, dump = dst / "target", dst / "dump"
+    dump.mkdir()
+    (dump / "payload.bin").write_bytes(bytes(payload_bytes(n)))
+    _, dump_rss = timed([BB_DUMP, "prove", "-b", target / f"{template}.json", "-w", target / f"{template}.gz",
+                         "-k", target / "vk", "-o", dump], env={**os.environ, "BB_DUMP_WIRES": str(dump)})
+    # The stock binary accepts the proof whose wire columns were dumped.
+    sh([BB, "verify", "-k", target / "vk", "-p", dump / "proof", "-i", dump / "public_inputs"])
+    mode = ["--mode", "packed"] if row == "lego_estimate" else \
+        ["--mode", "vars", "--first-var", n, "--count", -(-n // PACK)]
+    _, link_rss = timed([LEGO_BENCH, "--dump", dump, "--proof", dump / "proof", "--crs", BB_CRS,
+                         "--payload", dump / "payload.bin", "--runs", runs] + mode, stdout=dump / "lego.json")
+    m = json.loads((dump / "lego.json").read_text())
+    assert m["wire_commitments_match_bb"]
+    small = round(100 * m["msm_small_share"], 2)
+    note = (f"linked {'+'.join(m['linked_wires'])}; {m['msm_cells']} non-zero cells in the MSM, "
+            f"{small}% of at most 16 bits; key {(m['key_p_bytes'] + m['key_pedersen_bytes']) / 1e6:.1f} MB, "
+            f"setup {m['setup_s']:.2f} s; wire commitments recomputed from the dump match the bb proof")
+    rows = []
+    for run in range(runs):
+        prove, verify, rss = bb_once(dst, template)
+        rows.append({
+            "run": run, "constraints": gates,
+            "prover_s": max(prove - base_p, 0.0) + m["prove_runs"][run],
+            "verifier_s": max(verify - base_v, 0.0) + m["verify_runs"][run % len(m["verify_runs"])],
+            "proof_bytes": (target / "proof").stat().st_size + m["proof_bytes"],
+            "max_rss_bytes": max(rss, link_rss), "commit_s": m["commit_s"], "opening_s": m["prove_runs"][run],
+            "prover_raw_s": prove, "verifier_raw_s": verify, "baseline_prove_s": base_p,
+            "baseline_verify_s": base_v, "note": note,
+        })
+    layout = {k: v for k, v in m.items() if not k.endswith("_runs")}
+    layout.update(row=row, circuit=template, gates=gates, link_prover_rss_bytes=link_rss,
+                  bb_dump_prove_rss_bytes=dump_rss)
+    return rows, layout
+
+
+def save_layout(out, layout):
+    """Keep the layout facts of the LegoSNARK rows next to the CSV (one entry per row and size)."""
+    path = Path(out).parent / "lego_layout.json"
+    data = json.loads(path.read_text()) if path.exists() else {}
+    data[f"{layout['row']}/{layout['bytes']}"] = layout
+    path.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+
+
 def run_external(n, runs):
     """Opening of the external commitment on its own (for the bb estimate)."""
     elements = -(-n // PACK) + 1
@@ -339,11 +408,22 @@ def main():
                         print(f"  {backend:9s} {row:20s} skipped at {n} B (memory; --all-sizes to run)")
                         continue
                     template, link = SWEEP_ROWS[row]
-                    dst = instantiate(template, n, prover_toml(template, n))
+                    if row in LEGO_ROWS and not Path(BB_DUMP).exists():
+                        print(f"  {backend:9s} {row:20s} skipped: no patched bb (./run.sh setup-bb-dump)")
+                        continue
+                    dst = instantiate(template, n, prover_toml(template, n),
+                                      name=f"{row}_{n}" if row in LEGO_ROWS else None)
                     base = {"workload": "sweep", "backend": backend, "row": row, "bytes": n,
                             "version": vers[backend], "note": args.note}
-                    rows = run_provekit(dst, link, args.runs) if backend == "provekit" \
-                        else run_bb(dst, template, args.runs)
+                    if row in LEGO_ROWS:
+                        rows, layout = run_lego(dst, row, template, n, args.runs)
+                        note = "; ".join(filter(None, [args.note, rows[0]["note"]]))
+                        rows = [{**r, "note": note} for r in rows]
+                        save_layout(args.out, layout)
+                    elif backend == "provekit":
+                        rows = run_provekit(dst, link, args.runs)
+                    else:
+                        rows = run_bb(dst, template, args.runs)
                     writer.write(base, rows)
                     if args.clean_build:
                         shutil.rmtree(dst, ignore_errors=True)
