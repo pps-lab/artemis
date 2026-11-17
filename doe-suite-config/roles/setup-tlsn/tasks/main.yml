@@ -61,6 +61,10 @@
   args:
     chdir: "{{ tlsn_dir }}"
     executable: /bin/bash
+  # the build takes 10-20 min without output; run it detached and poll, so a dropped SSH session does not
+  # fail the setup (first attempt, suite 1794938675: "Data could not be sent to remote host" on all hosts)
+  async: 7200
+  poll: 30
   tags: [print_action]
 
 - name: Check the binaries the benchmark calls
