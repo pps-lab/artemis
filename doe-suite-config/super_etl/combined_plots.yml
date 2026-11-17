@@ -149,13 +149,13 @@ $ETL$:
             app: [zkml]
             x: [dlrm, mobilenet, vgg]
             kind: not_run
-            note: "SHA-256 ran out of memory on the same machines as the other schemes (DLRM 256\\,GB, MobileNet 512\\,GB, VGG and Diffusion 1\\,TB)."
+            note: "SHA-256 runs out of memory on the same machines as the other schemes (DLRM 256\\,GB, MobileNet 512\\,GB, VGG and Diffusion 1\\,TB); GPT-2, 4$\\times$ larger than Diffusion, was therefore not attempted."
           - cpsnark: [sha256]
             app: [zkml]
             pc_type: [ipa]
             x: [diffusion]
             kind: not_run
-            note: "SHA-256 ran out of memory on the same machines as the other schemes (DLRM 256\\,GB, MobileNet 512\\,GB, VGG and Diffusion 1\\,TB)."
+            note: "SHA-256 runs out of memory on the same machines as the other schemes (DLRM 256\\,GB, MobileNet 512\\,GB, VGG and Diffusion 1\\,TB); GPT-2, 4$\\times$ larger than Diffusion, was therefore not attempted."
           - cpsnark: [sha256]
             app: [zkml]
             pc_type: [kzg]
@@ -166,7 +166,7 @@ $ETL$:
             app: [zkml]
             x: [gpt2]
             kind: not_run
-            note: "SHA-256 was not run on GPT-2 (about 2{,}100 Halo2 rows per 16 weights)."
+            note: "SHA-256 runs out of memory on the same machines as the other schemes (DLRM 256\\,GB, MobileNet 512\\,GB, VGG and Diffusion 1\\,TB); GPT-2, 4$\\times$ larger than Diffusion, was therefore not attempted."
           - cpsnark: [sha256]
             app: [tlsn]
             x: [85606, 91546, 190259, 262144, 1048576]
