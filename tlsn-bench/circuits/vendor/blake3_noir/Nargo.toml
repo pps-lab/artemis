@@ -1,0 +1,3 @@
+[package]
+name = "blake3_noir"
+type = "lib"

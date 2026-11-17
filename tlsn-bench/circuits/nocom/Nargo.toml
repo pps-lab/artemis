@@ -1,0 +1,6 @@
+[package]
+name = "nocom"
+type = "bin"
+authors = [""]
+
+[dependencies]

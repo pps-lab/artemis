@@ -1,0 +1,6 @@
+[package]
+name = "artemis_estimate"
+type = "bin"
+authors = [""]
+
+[dependencies]

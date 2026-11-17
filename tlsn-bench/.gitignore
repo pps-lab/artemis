@@ -1,0 +1,9 @@
+provekit/
+.build/
+pcs/target/
+circuits/*/target/
+__pycache__/
+# local run logs and rendered plots (results.csv + summary.md are kept)
+results/log_*.txt
+results/*.png
+results/*.pdf
