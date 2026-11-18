@@ -57,3 +57,11 @@ Our artifact contains the following suites:
 __TODO__: Add CPLink models and poly_ipa?
 
 </details>
+## Results
+`doe-suite-results.zip` contains the raw results of the 41 suites behind the paper's tables and plots: the zkML suites, the SHA-256 and LegoSNARK baselines, and the TLSNotary suites `tlsn`, `tlsn-lego` and `tlsn-poseidon1`. To regenerate the outputs in `doe-suite-results-super/`, unzip it at the repository root and run the super-ETL from `doe-suite/`:
+```sh
+unzip doe-suite-results.zip
+cd doe-suite
+make etl-super config=combined_plots out=../doe-suite-results-super pipelines="prover_table results_table"
+make etl-super config=rerun_plots out=../doe-suite-results-super
+```
