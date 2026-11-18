@@ -20,7 +20,6 @@ results/                results.csv, logs, sweep_prover.{pdf,png}, summary.md
 ./run.sh setup     # clone + patch + build ProveKit (~10 min), build pcs
 ./run.sh test      # 9 soundness tests of the link, 4 tests of the pcs crate
 ./run.sh small     # age check + sweep 520 B .. 64 KiB, all rows; peak ~20 GiB RAM
-./run.sh large     # 83.6 KiB .. 1 MiB without SHA-256; peak ~20 GiB RAM
 ./run.sh plot
 ```
 
@@ -28,8 +27,8 @@ Needs `nargo` and `bb` on `PATH` for the Barretenberg rows (`NARGO=`, `BB=` over
 matplotlib, and the Rust toolchain pinned by ProveKit (`nightly-2026-03-04`, picked up from
 `rust-toolchain.toml`).
 
-On AWS: `doe-suite-config/designs/tlsn.yml` (suite `tlsn`, role `setup-tlsn`, host types `tlsn_small` =
-r6i.8xlarge and `tlsn_large` = r6i.16xlarge for SHA-256 above 64 KiB). The instances clone the `tlsn-bench`
+On AWS: `doe-suite-config/designs/tlsn.yml` (suite `tlsn`, role `setup-tlsn`, host type `tlsn_small` =
+r6i.8xlarge). The instances clone the `tlsn-bench`
 branch; each job is one `bench.py ... --out results/results.csv --clean-build` call for one backend and size.
 
 ## Backends and rows
@@ -121,7 +120,6 @@ Prover time in seconds:
 | 520 B | 0.023 | 0.120 | 0.025 | 0.027 | 0.010 | 0.207 | 0.019 | 0.012 |
 | 16 KiB | 0.048 | 1.62 | 0.065 | 0.066 | 0.100 | 5.19 | 0.190 | 0.117 |
 | 64 KiB | 0.107 | 7.20 | 0.184 | 0.151 | 0.293 | 40.1 | 0.605 | 0.349 |
-| 1 MiB | 1.18 | not run | 2.30 | 1.64 | 3.61 | not run | 7.55 | 4.32 |
 
 - **Against SHA-256 (what TLSNotary ships)** the gain grows with the payload: 4.5x at 520 B, 25x at 16 KiB,
   48x at 64 KiB on ProveKit (115x on Barretenberg, estimate), and SHA-256 needs 16 GiB of prover memory at
@@ -132,10 +130,10 @@ Prover time in seconds:
   10.7 M constraints, about 158 k per permutation without a black box), 10.4 s at 16 KiB and 39.5 s at
   64 KiB on Barretenberg with the black box. In the age check Keccak-256 costs 214 ms on ProveKit against
   25 ms for Artemis; BLAKE3 39 ms.
-- **Against Poseidon2** the prover-time gain on ProveKit is small: none below 10 kB, 1.2x to 1.7x above. The
+- **Against Poseidon2** the prover-time gain on ProveKit is small: none up to 16 KiB, 1.2x at 64 KiB. The
   Artemis circuit has 1.03x the constraints of the no-commitment circuit (Poseidon2: 2.2x), but the byte
   range checks that every row pays dominate, and Artemis proves at 1.4x the no-commitment time because of
-  the second witness block and the IPA opening (0.34 s of the 1.64 s at 1 MiB). The verifier is where
+  the second witness block and the IPA opening. The verifier is where
   Artemis is ahead of Poseidon2 on ProveKit (21 ms against 61 ms at 64 KiB).
 - **Age check as shipped (10 committed bytes)**: no measurable difference between Artemis, Poseidon2 and no
   commitment (25 ms on ProveKit); SHA-256 costs 38 ms (ProveKit) and 151 ms against 46 ms (Barretenberg).
@@ -146,12 +144,10 @@ Prover time in seconds:
    a Pedersen nor a Poseidon2 commitment comes out of TLSNotary today. The numbers cover the downstream
    predicate proof only, for the Artemis and the Poseidon2 rows alike.
 2. **Barretenberg Artemis is an estimate and not sound**: the evaluation point is a public input.
-3. **SHA-256 above 64 KiB does not fit a 48 GB laptop** (about 0.25 to 0.3 GiB of prover RAM per kB of
-   payload on both backends). `./run.sh large-sha` is for a large-memory machine.
-4. **Keccak-256 above 16 KiB without a black box** (ProveKit, and the explicit variant on Barretenberg)
+3. **Keccak-256 above 16 KiB without a black box** (ProveKit, and the explicit variant on Barretenberg)
    is skipped locally: about 50 GiB at 64 KiB by extrapolation. `bench.py --all-sizes` lifts the cap. The
    expected digests come from `pcs/src/bin/digest.rs` (`sha3`, `blake3` crates), so every run checks the
    two explicit circuits against a reference implementation.
-5. **Not built**: the whole-response predicates (plan, workload 3, including the go/no-go measurement) and
+4. **Not built**: the whole-response predicates (plan, workload 3, including the go/no-go measurement) and
    the upstream cost (plan, step 7).
-6. KZG uses a locally sampled trapdoor (timing only).
+5. KZG uses a locally sampled trapdoor (timing only).

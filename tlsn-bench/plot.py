@@ -14,6 +14,8 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+from bench import SIZES  # payload sizes of the sweep; points at other sizes are ignored
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -37,6 +39,8 @@ def load(path):
     """(workload, backend, row, bytes) -> {metric: median over runs}."""
     groups = defaultdict(list)
     for r in csv.DictReader(open(path)):
+        if r["workload"] == "sweep" and int(r["bytes"]) not in SIZES:
+            continue
         groups[(r["workload"], r["backend"], r["row"], int(r["bytes"]))].append(r)
     out = {}
     for key, rows in groups.items():

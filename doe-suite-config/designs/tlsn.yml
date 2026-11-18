@@ -1,20 +1,14 @@
 # TLSNotary benchmark (tlsn-bench/, see its README.md) on AWS: the same points as the local run
-# (tlsn-bench/results/results.csv, Apple M5 Pro) plus the SHA-256 points above 64 KiB, which need a
-# large-memory machine (~0.25-0.3 GB prover RAM per kB of payload).
+# (tlsn-bench/results/results.csv, Apple M5 Pro).
 #
 # One job = one bench.py invocation for one (workload, backend, payload size); it writes results/results.csv in
 # the bench.py format (one row per repetition), which super_etl/combined_plots.yml reads with TlsnCsvExtractor.
 # `note` records the instance type in every CSV row.
 #
 #   exp_provekit, exp_bb  r6i.8xlarge  (host type tlsn_small)  all rows the local run has, same size caps
-#   exp_sha_large         r6i.16xlarge (host type tlsn_large)  SHA-256 at 83.6 KiB .. 1 MiB, both backends;
-#                                      the 64 KiB point is repeated there as a calibration against the small
-#                                      instance and written to calibration.csv (not results.csv), so the table
-#                                      keeps one value per cell.
 #
-# Rows per size, as in tlsn-bench/run.sh: up to 64 KiB every row of the backend (`rows: ""`; Keccak-256 without
-# black box capped at 16 KiB by bench.py's LOCAL_CAP, BLAKE3 black box at 1 KiB), above 64 KiB only no-com,
-# Poseidon2 and Artemis (+ the external openings for the Barretenberg Artemis estimate).
+# Rows per size, as in tlsn-bench/run.sh: every row of the backend (`rows: ""`; Keccak-256 without black box
+# capped at 16 KiB by bench.py's LOCAL_CAP, BLAKE3 black box at 1 KiB).
 $SUITE_VARS$:
   runs: 5
   out: results.csv
@@ -45,11 +39,6 @@ exp_provekit:
     - {workload: sweep, size: 10000, rows: ""}
     - {workload: sweep, size: 16384, rows: ""}
     - {workload: sweep, size: 65536, rows: ""}
-    - {workload: sweep, size: 85606, rows: "nocom,poseidon2_t16,poseidon2_native,artemis"}
-    - {workload: sweep, size: 91546, rows: "nocom,poseidon2_t16,poseidon2_native,artemis"}
-    - {workload: sweep, size: 190259, rows: "nocom,poseidon2_t16,poseidon2_native,artemis"}
-    - {workload: sweep, size: 262144, rows: "nocom,poseidon2_t16,poseidon2_native,artemis"}
-    - {workload: sweep, size: 1048576, rows: "nocom,poseidon2_t16,poseidon2_native,artemis"}
 
 exp_bb:
   n_repetitions: 1
@@ -72,46 +61,12 @@ exp_bb:
     - {workload: sweep, size: 10000, rows: ""}
     - {workload: sweep, size: 16384, rows: ""}
     - {workload: sweep, size: 65536, rows: ""}
-    - {workload: sweep, size: 85606, rows: "nocom,poseidon2_t16,poseidon2_native,artemis_estimate,external"}
-    - {workload: sweep, size: 91546, rows: "nocom,poseidon2_t16,poseidon2_native,artemis_estimate,external"}
-    - {workload: sweep, size: 190259, rows: "nocom,poseidon2_t16,poseidon2_native,artemis_estimate,external"}
-    - {workload: sweep, size: 262144, rows: "nocom,poseidon2_t16,poseidon2_native,artemis_estimate,external"}
-    - {workload: sweep, size: 1048576, rows: "nocom,poseidon2_t16,poseidon2_native,artemis_estimate,external"}
-
-exp_sha_large:
-  n_repetitions: 1
-  host_types:
-    tlsn_large:
-      n: 1
-      init_roles: setup-tlsn
-      $CMD$: "[% my_run.cmd %]"
-  base_experiment:
-    workload: sweep
-    rows: sha256
-    note: "aws r6i.16xlarge"
-    backend: $FACTOR$
-    size: $FACTOR$
-    out: $FACTOR$
-  factor_levels:
-    # calibration point (also measured on r6i.8xlarge in exp_provekit / exp_bb)
-    - {backend: provekit, size: 65536, out: calibration.csv}
-    - {backend: bb, size: 65536, out: calibration.csv}
-    - {backend: provekit, size: 85606, out: results.csv}
-    - {backend: bb, size: 85606, out: results.csv}
-    - {backend: provekit, size: 91546, out: results.csv}
-    - {backend: bb, size: 91546, out: results.csv}
-    - {backend: provekit, size: 190259, out: results.csv}
-    - {backend: bb, size: 190259, out: results.csv}
-    - {backend: provekit, size: 262144, out: results.csv}
-    - {backend: bb, size: 262144, out: results.csv}
-    - {backend: provekit, size: 1048576, out: results.csv}
-    - {backend: bb, size: 1048576, out: results.csv}
 
 $ETL$:
   overview:
     experiments: "*"
     extractors:
-      CsvExtractor: {file_regex: ["^results\\.csv$", "^calibration\\.csv$"]}
+      CsvExtractor: {file_regex: ["^results\\.csv$"]}
       IgnoreExtractor: {file_regex: ["^stdout\\.log$", "^stderr\\.log$"]}
     transformers: []
     loaders:

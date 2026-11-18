@@ -12,11 +12,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 0.036 | 1.309 | 5.712 | 1.320 | 0.055 | 0.050 |
 | 16.0 KiB | 0.048 | 1.620 | 12.429 | 1.632 | 0.065 | 0.066 |
 | 64.0 KiB | 0.107 | 7.195 | n/a | 6.262 | 0.184 | 0.151 |
-| 83.6 KiB | 0.116 | n/a | n/a | n/a | 0.254 | 0.165 |
-| 89.4 KiB | 0.118 | n/a | n/a | n/a | 0.268 | 0.168 |
-| 185.8 KiB | 0.208 | n/a | n/a | n/a | 0.502 | 0.298 |
-| 256.0 KiB | 0.314 | n/a | n/a | n/a | 0.630 | 0.452 |
-| 1 MiB | 1.179 | n/a | n/a | n/a | 2.298 | 1.637 |
 
 ## ProveKit (WHIR, pairing-free): Constraints (ProveKit R1CS) / gates (bb circuit size)
 
@@ -28,11 +23,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 10256 | 1276503 | 6629006 | 1167546 | 22857 | 10580 |
 | 16.0 KiB | 16640 | 2026804 | 10716074 | 1820790 | 37255 | 17170 |
 | 64.0 KiB | 65792 | 7802164 | n/a | 6893430 | 146585 | 67908 |
-| 83.6 KiB | 85862 | n/a | n/a | n/a | 191854 | 88625 |
-| 89.4 KiB | 91802 | n/a | n/a | n/a | 204681 | 94757 |
-| 185.8 KiB | 190515 | n/a | n/a | n/a | 425433 | 196654 |
-| 256.0 KiB | 262400 | n/a | n/a | n/a | 585563 | 270858 |
-| 1 MiB | 1048832 | n/a | n/a | n/a | 2341501 | 1082659 |
 
 ## ProveKit (WHIR, pairing-free): Verifier time [ms]
 
@@ -44,11 +34,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 8.1 | 234.8 | 873.3 | 182.4 | 16.2 | 10.1 |
 | 16.0 KiB | 9.3 | 356.9 | 1454.1 | 264.9 | 21.1 | 11.9 |
 | 64.0 KiB | 16.2 | 1448.8 | n/a | 990.0 | 61.2 | 21.4 |
-| 83.6 KiB | 17.7 | n/a | n/a | n/a | 79.4 | 23.3 |
-| 89.4 KiB | 18.9 | n/a | n/a | n/a | 84.5 | 24.1 |
-| 185.8 KiB | 32.3 | n/a | n/a | n/a | 169.9 | 40.4 |
-| 256.0 KiB | 40.4 | n/a | n/a | n/a | 224.9 | 54.2 |
-| 1 MiB | 135.0 | n/a | n/a | n/a | 866.0 | 174.2 |
 
 ## ProveKit (WHIR, pairing-free): Proof size [kB]
 
@@ -60,11 +45,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 357.5 | 590.0 | 623.2 | 590.1 | 391.3 | 356.2 |
 | 16.0 KiB | 391.2 | 591.5 | 679.3 | 590.0 | 389.8 | 391.6 |
 | 64.0 KiB | 444.0 | 623.5 | n/a | 624.1 | 446.8 | 446.3 |
-| 83.6 KiB | 444.8 | n/a | n/a | n/a | 498.4 | 446.3 |
-| 89.4 KiB | 444.4 | n/a | n/a | n/a | 498.8 | 447.5 |
-| 185.8 KiB | 498.2 | n/a | n/a | n/a | 519.8 | 499.5 |
-| 256.0 KiB | 520.3 | n/a | n/a | n/a | 522.1 | 522.8 |
-| 1 MiB | 590.6 | n/a | n/a | n/a | 589.1 | 591.3 |
 
 ## ProveKit (WHIR, pairing-free): Prover peak memory [GiB]
 
@@ -76,11 +56,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 0.03 | 3.17 | 10.21 | 2.41 | 0.10 | 0.04 |
 | 16.0 KiB | 0.05 | 4.10 | 14.32 | 2.63 | 0.14 | 0.06 |
 | 64.0 KiB | 0.18 | 16.09 | n/a | 10.28 | 0.38 | 0.21 |
-| 83.6 KiB | 0.22 | n/a | n/a | n/a | 0.59 | 0.25 |
-| 89.4 KiB | 0.22 | n/a | n/a | n/a | 0.64 | 0.26 |
-| 185.8 KiB | 0.46 | n/a | n/a | n/a | 1.36 | 0.36 |
-| 256.0 KiB | 0.70 | n/a | n/a | n/a | 1.74 | 0.61 |
-| 1 MiB | 2.15 | n/a | n/a | n/a | 6.38 | 2.26 |
 
 ## ProveKit (WHIR, pairing-free): prover-time ratio to Artemis
 
@@ -92,11 +67,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 26.2x | 114.4x | 26.4x | 1.1x | 1.4x |
 | 16.0 KiB | 24.5x | 188.2x | 24.7x | 1.0x | 1.4x |
 | 64.0 KiB | 47.5x | n/a | 41.4x | 1.2x | 1.4x |
-| 83.6 KiB | n/a | n/a | n/a | 1.5x | 1.4x |
-| 89.4 KiB | n/a | n/a | n/a | 1.6x | 1.4x |
-| 185.8 KiB | n/a | n/a | n/a | 1.7x | 1.4x |
-| 256.0 KiB | n/a | n/a | n/a | 1.4x | 1.4x |
-| 1 MiB | n/a | n/a | n/a | 1.4x | 1.4x |
 
 ## Barretenberg (UltraHonk, KZG): Prover time [s]
 
@@ -108,11 +78,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 0.065 | 2.693 | 6.210 | 2.671 | 0.124 | 0.078 |
 | 16.0 KiB | 0.100 | 5.191 | 10.384 | 4.564 | 0.190 | 0.117 |
 | 64.0 KiB | 0.293 | 40.130 | 39.495 | 16.915 | 0.605 | 0.349 |
-| 83.6 KiB | 0.321 | n/a | n/a | n/a | 0.680 | 0.548 |
-| 89.4 KiB | 0.333 | n/a | n/a | n/a | 0.696 | 0.559 |
-| 185.8 KiB | 0.626 | n/a | n/a | n/a | 1.320 | 1.050 |
-| 256.0 KiB | 0.988 | n/a | n/a | n/a | 2.080 | 1.186 |
-| 1 MiB | 3.609 | n/a | n/a | n/a | 7.552 | 4.318 |
 
 ## Barretenberg (UltraHonk, KZG): Constraints (ProveKit R1CS) / gates (bb circuit size)
 
@@ -124,11 +89,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 12581 | 644144 | 1323847 | 791500 | 24017 | 16133 |
 | 16.0 KiB | 20561 | 1052522 | 2163051 | 1290322 | 39299 | 26378 |
 | 64.0 KiB | 82001 | 4189226 | 8609263 | 5162242 | 156724 | 105260 |
-| 83.6 KiB | 107089 | n/a | n/a | n/a | 204702 | 137469 |
-| 89.4 KiB | 114514 | n/a | n/a | n/a | 218907 | 147002 |
-| 185.8 KiB | 237905 | n/a | n/a | n/a | 454778 | 305420 |
-| 256.0 KiB | 327761 | n/a | n/a | n/a | 626570 | 420784 |
-| 1 MiB | 1310801 | n/a | n/a | n/a | 2506028 | 1682880 |
 
 ## Barretenberg (UltraHonk, KZG): Verifier time [ms]
 
@@ -140,11 +100,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 1.1 | 1.4 | 1.7 | 1.1 | 1.3 | 1.9 |
 | 16.0 KiB | 1.2 | 1.5 | 1.4 | 1.1 | 1.3 | 2.0 |
 | 64.0 KiB | 1.3 | 4.4 | 5.6 | 3.5 | 1.3 | 2.0 |
-| 83.6 KiB | 0.9 | n/a | n/a | n/a | 1.0 | 1.8 |
-| 89.4 KiB | 1.0 | n/a | n/a | n/a | 1.1 | 1.8 |
-| 185.8 KiB | 1.1 | n/a | n/a | n/a | 1.2 | 2.1 |
-| 256.0 KiB | 1.2 | n/a | n/a | n/a | 1.2 | 1.9 |
-| 1 MiB | 1.2 | n/a | n/a | n/a | 1.2 | 2.0 |
 
 ## Barretenberg (UltraHonk, KZG): Proof size [kB]
 
@@ -156,11 +111,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
 | 16.0 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
 | 64.0 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
-| 83.6 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 89.4 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 185.8 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 256.0 KiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
-| 1 MiB | 14.7 | n/a | n/a | n/a | 14.7 | 14.7 |
 
 ## Barretenberg (UltraHonk, KZG): Prover peak memory [GiB]
 
@@ -172,11 +122,6 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 | 9.8 KiB | 0.04 | 2.20 | 2.62 | 2.28 | 0.06 | 0.04 |
 | 16.0 KiB | 0.05 | 4.77 | 4.27 | 3.45 | 0.09 | 0.06 |
 | 64.0 KiB | 0.20 | 16.77 | 13.93 | 12.06 | 0.39 | 0.24 |
-| 83.6 KiB | 0.25 | n/a | n/a | n/a | 0.47 | 0.37 |
-| 89.4 KiB | 0.26 | n/a | n/a | n/a | 0.49 | 0.39 |
-| 185.8 KiB | 0.52 | n/a | n/a | n/a | 1.01 | 0.79 |
-| 256.0 KiB | 0.82 | n/a | n/a | n/a | 1.58 | 1.00 |
-| 1 MiB | 3.01 | n/a | n/a | n/a | 5.42 | 3.76 |
 
 ## Age check (10 committed bytes)
 
