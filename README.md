@@ -8,10 +8,10 @@ Rust
 
 ### Artifacts
 This repository requires several artifacts related to the model definitions used in the evaluation.
-The model definitions (msgpack files) are stored in `examples/models` (360MB) in an S3 bucket,
+The model definitions (msgpack files) are stored in `examples/models` (360MB) in a public S3 bucket and are expected in `examples/cifar`,
 and can be downloaded using the following command:
 ```sh
-aws s3 sync s3://anonymized-artemis-artifacts/examples/models examples/models --no-sign-request
+aws s3 sync s3://anonymized-artemis-artifacts/examples/models examples/cifar --no-sign-request
 ```
 
 The setup parameters for the polynomial commitments, `params_ipa` (15GB), `params_kzg` (64GB), take up a significant amount of time
