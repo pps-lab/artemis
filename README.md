@@ -1,6 +1,6 @@
 # Artemis: Efficient Commit-and-Prove SNARKs for zkML
 
-This repository contains the implementation of Apollo and Artemis, our CP-SNARK constructions from [our paper](https://arxiv.org/abs/2409.12055).
+This repository contains the implementation of Apollo and Artemis, our CP-SNARK constructions. The security proof is in [artemis_security_proof.pdf](artemis_security_proof.pdf).
 The underlying zkML implementation is based on the [zkML](https://github.com/uiuc-kang-lab/zkml) paper/repo.
 
 ## Requirements
