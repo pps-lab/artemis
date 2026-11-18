@@ -1,0 +1,35 @@
+# Trial: Poseidon (v1) commitment row for the TLSNotary benchmark, in the configuration of the zkML Poseidon
+# baseline (halo2 P128Pow5T3: width 3, rate 2, x^5, 8 full rounds; payload + field blinder), see
+# tlsn-bench/circuits/poseidon1. Same instance type (r6i.8xlarge, host type tlsn_poseidon1 = tlsn_small on the
+# tlsn-poseidon1 branch), sizes and repetitions as designs/tlsn.yml; each job also measures nocom so the
+# overhead is a same-machine, same-session difference.
+$SUITE_VARS$:
+  runs: 5
+  cmd: >-
+    python3 [% 'exp_code_dir' | at_runtime(exp_host_lst) %]/tlsn-bench/bench.py sweep
+    --sizes [% my_run.size %] --backends [% my_run.backend %] --rows nocom,poseidon1
+    --runs [% my_run.runs %] --out results/results.csv --note '[% my_run.note %]' --clean-build
+
+exp_poseidon1:
+  n_repetitions: 1
+  host_types:
+    tlsn_poseidon1:
+      n: 1
+      init_roles: setup-tlsn
+      $CMD$: "[% my_run.cmd %]"
+  base_experiment:
+    note: "aws r6i.8xlarge"
+    backend:
+      $FACTOR$: [provekit, bb]
+    size:
+      $FACTOR$: [520, 2400, 4000, 10000, 16384, 65536, 85606, 91546, 190259, 262144, 1048576]
+
+$ETL$:
+  overview:
+    experiments: "*"
+    extractors:
+      CsvExtractor: {file_regex: ["^results\\.csv$"]}
+      IgnoreExtractor: {file_regex: ["^stdout\\.log$", "^stderr\\.log$"]}
+    transformers: []
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}

@@ -66,6 +66,8 @@ SWEEP_ROWS = {
     "blake3_bb": ("blake3_bb", False),
     "poseidon2_t16": ("poseidon2_t16", False),
     "poseidon2_native": ("poseidon2_native", False),
+    # Poseidon (v1) as in the zkML Poseidon baseline: width 3, rate 2, payload + field blinder.
+    "poseidon1": ("poseidon1", False),
     "artemis": ("artemis", True),
     "artemis_estimate": ("artemis_estimate", False),
     # LegoSNARK CP_link on the real wire columns (see run_lego): the no-commitment circuit with the
@@ -75,10 +77,10 @@ SWEEP_ROWS = {
 }
 LEGO_ROWS = ("lego_estimate", "lego_packed_estimate")
 BACKEND_ROWS = {
-    "provekit": ["nocom", "sha256", "keccak256", "blake3", "poseidon2_t16", "poseidon2_native", "artemis"],
+    "provekit": ["nocom", "sha256", "keccak256", "blake3", "poseidon2_t16", "poseidon2_native", "poseidon1", "artemis"],
     # Barretenberg cannot expose a challenge, so the Artemis row is the
     # (unsound) in-circuit Horner cost estimate; add an `external` opening.
-    "bb": ["nocom", "sha256", "keccak256", "keccak256_bb", "blake3", "blake3_bb", "poseidon2_t16", "poseidon2_native", "artemis_estimate",
+    "bb": ["nocom", "sha256", "keccak256", "keccak256_bb", "blake3", "blake3_bb", "poseidon2_t16", "poseidon2_native", "poseidon1", "artemis_estimate",
            "lego_estimate", "lego_packed_estimate"],
 }
 # Largest payload that fits a 48 GB machine (prover RAM extrapolated from the
@@ -171,6 +173,8 @@ def prover_toml(template, n):
         lines.append("packed = [" + ", ".join(f'"{c}"' for c in chunks) + "]")
     if template in ("artemis", "artemis_estimate"):
         lines.append(f'mask = "{mask}"')
+    if template == "poseidon1":
+        lines.append(f'blinder = "{mask}"')
     return "\n".join(lines) + "\n"
 
 
