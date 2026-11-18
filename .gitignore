@@ -47,3 +47,7 @@ summary.msgpack
 data
 exp
 exp_8x
+# local / assistant files, not part of the artifact
+CLAUDE.md
+claude.md
+.envrc
