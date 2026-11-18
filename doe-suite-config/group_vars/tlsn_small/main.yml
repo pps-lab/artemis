@@ -1,0 +1,16 @@
+---
+# TLSNotary benchmark (designs/tlsn.yml), 32 vCPU, 256 GB: every point except SHA-256 above 64 KiB
+instance_type: r6i.8xlarge
+ec2_volume_size: 250
+
+# Stock Ubuntu 24.04 LTS (eu-west-1), set up by roles/setup-tlsn
+ec2_image_id: ami-0445442ed20a2c6f8
+ec2_volume_snapshot: snap-0798e81b434f07f27
+
+# tlsn-bench/ lives on the tlsn-bench branch (overrides group_vars/all, loaded after it)
+git_remote_repository:
+  - repo: "https://github.com/pps-lab/artemis.git"
+    version: "tlsn-bench"
+
+docker_image_id: "doe-ubuntu20"
+docker_image_tag: "latest"

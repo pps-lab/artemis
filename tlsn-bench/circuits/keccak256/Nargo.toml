@@ -1,0 +1,7 @@
+[package]
+name = "keccak256"
+type = "bin"
+authors = [""]
+
+[dependencies]
+keccak_noir = { path = "../vendor/keccak_noir" }

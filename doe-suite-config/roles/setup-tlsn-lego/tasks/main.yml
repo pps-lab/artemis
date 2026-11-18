@@ -1,0 +1,94 @@
+---
+# Machine setup for the LegoSNARK rows of the TLSNotary benchmark (designs/tlsn-lego.yml) on a stock
+# Ubuntu 24.04 AMI: build deps, clang 20 (apt.llvm.org), rustup, nargo + the stock bb, then
+# `tlsn-bench/run.sh setup-bb-dump` (Barretenberg at the same tag with barretenberg-dump.patch, and the pcs
+# crate). ProveKit is not needed for these rows.
+
+- name: Install build dependencies
+  become: True
+  apt:
+    pkg:
+      - build-essential
+      - pkg-config
+      - libssl-dev
+      - git
+      - curl
+      - wget
+      - python3
+      - zsh
+      - time
+      - cmake
+      - ninja-build
+      - lsb-release
+      - software-properties-common
+      - gnupg
+    update_cache: yes
+
+- name: Install clang 20 (apt.llvm.org)
+  become: True
+  shell: |
+    set -euo pipefail
+    command -v clang-20 && exit 0
+    wget -q https://apt.llvm.org/llvm.sh -O /tmp/llvm.sh
+    bash /tmp/llvm.sh 20
+    clang-20 --version
+  args:
+    executable: /bin/bash
+
+- name: Check if cargo is installed
+  shell: command -v cargo || test -x "$HOME/.cargo/bin/cargo"
+  register: cargo_exists
+  failed_when: false
+
+- name: Install rustup
+  when: cargo_exists.rc != 0
+  shell: |
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/sh.rustup.rs
+    sh /tmp/sh.rustup.rs -y
+  args:
+    executable: /bin/bash
+
+- name: Install nargo and bb (release binaries) into /usr/local/bin
+  become: True
+  shell: |
+    set -euo pipefail
+    tmp=$(mktemp -d)
+    curl -sSfL "{{ nargo_url }}" -o "$tmp/nargo.tar.gz"
+    curl -sSfL "{{ bb_url }}" -o "$tmp/bb.tar.gz"
+    tar xzf "$tmp/nargo.tar.gz" -C /usr/local/bin nargo
+    tar xzf "$tmp/bb.tar.gz" -C /usr/local/bin bb
+    chmod 755 /usr/local/bin/nargo /usr/local/bin/bb
+    rm -rf "$tmp"
+    nargo --version
+    bb --version
+  args:
+    executable: /bin/bash
+  register: tool_versions
+
+- debug:
+    msg: "{{ tool_versions.stdout_lines }}"
+  tags: [print_action]
+
+- name: Build Barretenberg with the wire dump and the pcs crate (tlsn-bench/run.sh setup-bb-dump)
+  shell: |
+    set -euo pipefail
+    . "$HOME/.cargo/env"
+    BB_CC=clang-20 BB_CXX=clang++-20 ./run.sh setup-bb-dump
+  args:
+    chdir: "{{ tlsn_dir }}"
+    executable: /bin/bash
+  # long build without output: run detached and poll (as in setup-tlsn)
+  async: 7200
+  poll: 30
+  tags: [print_action]
+
+- name: Check the binaries the benchmark calls
+  shell: |
+    set -euo pipefail
+    test -x aztec-packages/barretenberg/cpp/build/bin/bb
+    test -x pcs/target/release/lego_bench
+    test -x pcs/target/release/pcs_bench
+    python3 bench.py --help > /dev/null
+  args:
+    chdir: "{{ tlsn_dir }}"
+    executable: /bin/bash

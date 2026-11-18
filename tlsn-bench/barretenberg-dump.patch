@@ -1,0 +1,196 @@
+diff --git a/barretenberg/cpp/src/CMakeLists.txt b/barretenberg/cpp/src/CMakeLists.txt
+index e140ca0..14a243f 100644
+--- a/barretenberg/cpp/src/CMakeLists.txt
++++ b/barretenberg/cpp/src/CMakeLists.txt
+@@ -119,6 +119,11 @@ if(NOT BB_LITE)
+     add_subdirectory(barretenberg/lmdblib)
+ endif()
+ 
++# tlsn-bench: a BB_LITE build of the bb CLI on macOS still needs ipc (api_msgpack.cpp).
++if(BB_LITE AND NOT WASM)
++    add_subdirectory(barretenberg/ipc)
++endif()
++
+ if(NOT FUZZING AND NOT WASM AND NOT BB_LITE)
+     # Fuzzing preset cannot be built with world_state as world_state cannot compile with MULTITHREADING=OFF
+     # Mobile builds exclude these modules that require LMDB or aren't needed on mobile
+diff --git a/barretenberg/cpp/src/barretenberg/api/CMakeLists.txt b/barretenberg/cpp/src/barretenberg/api/CMakeLists.txt
+index 9fcf063..7ce8c6d 100644
+--- a/barretenberg/cpp/src/barretenberg/api/CMakeLists.txt
++++ b/barretenberg/cpp/src/barretenberg/api/CMakeLists.txt
+@@ -5,6 +5,6 @@ if(AVM_TRANSPILER_LIB)
+     target_link_libraries(api_objects PRIVATE avm_transpiler)
+ endif()
+ 
+-if(NOT WASM AND NOT BB_LITE)
++if(NOT WASM)
+     target_link_libraries(api_objects PRIVATE ipc)
+ endif()
+diff --git a/barretenberg/cpp/src/barretenberg/bb/CMakeLists.txt b/barretenberg/cpp/src/barretenberg/bb/CMakeLists.txt
+index fa6b785..70e7674 100644
+--- a/barretenberg/cpp/src/barretenberg/bb/CMakeLists.txt
++++ b/barretenberg/cpp/src/barretenberg/bb/CMakeLists.txt
+@@ -22,7 +22,7 @@ if (NOT(FUZZING))
+     if(AVM_TRANSPILER_LIB)
+         target_link_libraries(bb PRIVATE avm_transpiler)
+     endif()
+-    if(NOT WASM AND NOT BB_LITE)
++    if(NOT WASM)
+         target_link_libraries(bb PRIVATE ipc)
+     endif()
+     if(ENABLE_STACKTRACES)
+diff --git a/barretenberg/cpp/src/barretenberg/ipc/CMakeLists.txt b/barretenberg/cpp/src/barretenberg/ipc/CMakeLists.txt
+index 99e29c9..d5fe694 100644
+--- a/barretenberg/cpp/src/barretenberg/ipc/CMakeLists.txt
++++ b/barretenberg/cpp/src/barretenberg/ipc/CMakeLists.txt
+@@ -1,2 +1,4 @@
+ barretenberg_module(ipc common)
+ set_target_properties(ipc_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
++# tlsn-bench: Apple clang 21 flags a discarded atomic load in shm/spsc_shm.cpp.
++target_compile_options(ipc_objects PRIVATE -Wno-unused-result)
+diff --git a/barretenberg/cpp/src/barretenberg/trace_to_polynomials/trace_to_polynomials.cpp b/barretenberg/cpp/src/barretenberg/trace_to_polynomials/trace_to_polynomials.cpp
+index f781aa2..1d6db3a 100644
+--- a/barretenberg/cpp/src/barretenberg/trace_to_polynomials/trace_to_polynomials.cpp
++++ b/barretenberg/cpp/src/barretenberg/trace_to_polynomials/trace_to_polynomials.cpp
+@@ -14,6 +14,9 @@
+ #include "barretenberg/flavor/ultra_keccak_flavor.hpp"
+ #include "barretenberg/flavor/ultra_keccak_zk_flavor.hpp"
+ #include "barretenberg/flavor/ultra_zk_flavor.hpp"
++#include <cstdio>
++#include <cstdlib>
++#include <string>
+ namespace bb {
+ 
+ template <class Flavor>
+@@ -51,6 +54,22 @@ std::vector<CyclicPermutation> TraceToPolynomials<Flavor>::populate_wires_and_se
+     RefArray<Polynomial, NUM_WIRES> wires = polynomials.get_wires();
+     auto selectors = polynomials.get_selectors();
+ 
++    // tlsn-bench: dump of the variable held by every wire cell (BB_DUMP_WIRES=<dir>). Layout of <dir>/cells.bin
++    // (little endian): "BBCELLS1", u64 rows, u64 num_variables, then rows x 4 u32 (row-major, w_l w_r w_o w_4):
++    // the real (copy-class representative) variable index of the cell, 0xffffffff for rows outside every block;
++    // then num_variables u32: the real variable index of every builder variable.
++    const char* dump_dir = std::getenv("BB_DUMP_WIRES");
++    std::vector<uint32_t> cell_vars;
++    if (dump_dir != nullptr) {
++        uint64_t rows = 0;
++        for (auto& block : builder.blocks.get()) {
++            if (block.size() > 0) {
++                rows = std::max<uint64_t>(rows, block.trace_offset() + block.size());
++            }
++        }
++        cell_vars.assign(rows * NUM_WIRES, 0xffffffffU);
++    }
++
+     // For each block in the trace, populate wire polys, copy cycles and selector polys
+     for (auto& block : builder.blocks.get()) {
+         const uint32_t offset = block.trace_offset();
+@@ -69,6 +88,9 @@ std::vector<CyclicPermutation> TraceToPolynomials<Flavor>::populate_wires_and_se
+                     uint32_t trace_row_idx = block_row_idx + offset;
+                     // Insert the real witness values from this block into the wire polys at the correct offset
+                     wires[wire_idx].at(trace_row_idx) = builder.get_variable(var_idx);
++                    if (dump_dir != nullptr) {
++                        cell_vars[static_cast<size_t>(trace_row_idx) * NUM_WIRES + wire_idx] = real_var_idx;
++                    }
+                     // Add the address of the witness value to its corresponding copy cycle
+                     // Note that the copy_cycles are indexed by real_variable_indices.
+                     copy_cycles[real_var_idx].emplace_back(cycle_node{ wire_idx, trace_row_idx });
+@@ -88,6 +110,22 @@ std::vector<CyclicPermutation> TraceToPolynomials<Flavor>::populate_wires_and_se
+         }
+     }
+ 
++    if (dump_dir != nullptr) {
++        const std::string path = std::string(dump_dir) + "/cells.bin";
++        std::FILE* f = std::fopen(path.c_str(), "wb");
++        if (f == nullptr) {
++            throw_or_abort("BB_DUMP_WIRES: cannot open " + path);
++        }
++        const uint64_t rows = cell_vars.size() / NUM_WIRES;
++        const uint64_t num_variables = builder.get_num_variables();
++        std::fwrite("BBCELLS1", 1, 8, f);
++        std::fwrite(&rows, 8, 1, f);
++        std::fwrite(&num_variables, 8, 1, f);
++        std::fwrite(cell_vars.data(), sizeof(uint32_t), cell_vars.size(), f);
++        std::fwrite(builder.real_variable_index.data(), sizeof(uint32_t), num_variables, f);
++        std::fclose(f);
++    }
++
+     return copy_cycles;
+ }
+ 
+diff --git a/barretenberg/cpp/src/barretenberg/ultra_honk/oink_prover.cpp b/barretenberg/cpp/src/barretenberg/ultra_honk/oink_prover.cpp
+index 7f23f91..15fe495 100644
+--- a/barretenberg/cpp/src/barretenberg/ultra_honk/oink_prover.cpp
++++ b/barretenberg/cpp/src/barretenberg/ultra_honk/oink_prover.cpp
+@@ -13,9 +13,63 @@
+ #include "barretenberg/relations/databus_lookup_relation.hpp"
+ #include "barretenberg/relations/logderiv_lookup_relation.hpp"
+ #include "barretenberg/relations/permutation_relation.hpp"
++#include <cstdio>
++#include <cstdlib>
++#include <string>
+ 
+ namespace bb {
+ 
++namespace {
++// tlsn-bench: dump of the committed wire columns (BB_DUMP_WIRES=<dir>), see tlsn-bench/README.md.
++// Layout of <dir>/wires.bin (little endian): "BBWIRES1", u64 dyadic_size, u64 active_rows, u64 masked_rows;
++// per wire (w_l, w_r, w_o, w_4): commitment x, y (32 bytes each), then masked_rows tail values (32 bytes each,
++// rows dyadic_size - masked_rows ..); then per wire active_rows values (32 bytes each, canonical form).
++template <typename FieldT> void dump_field(std::FILE* f, const FieldT& v)
++{
++    const uint256_t u(v);
++    std::fwrite(u.data, sizeof(uint64_t), 4, f);
++}
++
++template <typename Instance> void dump_wires(Instance& instance)
++{
++    const char* dir = std::getenv("BB_DUMP_WIRES");
++    if (dir == nullptr) {
++        return;
++    }
++    const std::string path = std::string(dir) + "/wires.bin";
++    std::FILE* f = std::fopen(path.c_str(), "wb");
++    if (f == nullptr) {
++        throw_or_abort("BB_DUMP_WIRES: cannot open " + path);
++    }
++    const uint64_t dyadic = instance.dyadic_size();
++    const uint64_t active = instance.get_final_active_wire_idx() + 1;
++    const uint64_t masked = instance.masking_tail_data.is_active() ? NUM_MASKED_ROWS : 0;
++    std::fwrite("BBWIRES1", 1, 8, f);
++    std::fwrite(&dyadic, 8, 1, f);
++    std::fwrite(&active, 8, 1, f);
++    std::fwrite(&masked, 8, 1, f);
++    auto& polys = instance.polynomials;
++    auto& tails = instance.masking_tail_data.tails;
++    auto& coms = instance.commitments;
++    const std::array<const decltype(polys.w_l)*, 4> wires{ &polys.w_l, &polys.w_r, &polys.w_o, &polys.w_4 };
++    const std::array<const decltype(tails.w_l)*, 4> wire_tails{ &tails.w_l, &tails.w_r, &tails.w_o, &tails.w_4 };
++    const std::array<const decltype(coms.w_l)*, 4> wire_coms{ &coms.w_l, &coms.w_r, &coms.w_o, &coms.w_4 };
++    for (size_t w = 0; w < 4; w++) {
++        dump_field(f, wire_coms[w]->x);
++        dump_field(f, wire_coms[w]->y);
++        for (uint64_t j = 0; j < masked; j++) {
++            dump_field(f, (*wire_tails[w])[dyadic - masked + j]);
++        }
++    }
++    for (size_t w = 0; w < 4; w++) {
++        for (uint64_t i = 0; i < active; i++) {
++            dump_field(f, (*wires[w])[i]);
++        }
++    }
++    std::fclose(f);
++}
++} // namespace
++
+ /**
+  * @brief Commit to witnesses, compute relation parameters, and prepare for Sumcheck.
+  */
+@@ -36,6 +90,7 @@ template <typename Flavor> void OinkProver<Flavor>::prove(bool emit_alpha)
+     commit_to_masking_poly();
+     commit_to_wires();
+     commit_to_lookup_counts_and_w4();
++    dump_wires(*prover_instance);
+     commit_to_logderiv_inverses();
+     commit_to_z_perm();
+     if (emit_alpha) {

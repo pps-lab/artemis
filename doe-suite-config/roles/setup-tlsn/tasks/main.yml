@@ -1,0 +1,79 @@
+---
+# Machine setup for the TLSNotary benchmark (designs/tlsn.yml) on a stock Ubuntu 24.04 AMI:
+# build deps, rustup (ProveKit's pinned nightly comes from its rust-toolchain.toml), nargo + bb for the
+# Barretenberg rows, then `tlsn-bench/run.sh setup` (clone worldfnd/provekit @ 893f6d58, apply
+# provekit-artemis.patch, build artemis-bench and the pcs crate).
+
+- name: Install build dependencies
+  become: True
+  apt:
+    pkg:
+      - build-essential
+      - pkg-config
+      - clang
+      - libssl-dev
+      - git
+      - curl
+      - python3
+      - zsh
+      - time
+    update_cache: yes
+
+- name: Check if cargo is installed
+  shell: command -v cargo || test -x "$HOME/.cargo/bin/cargo"
+  register: cargo_exists
+  failed_when: false
+
+- name: Install rustup
+  when: cargo_exists.rc != 0
+  shell: |
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/sh.rustup.rs
+    sh /tmp/sh.rustup.rs -y
+  args:
+    executable: /bin/bash
+
+- name: Install nargo and bb (release binaries) into /usr/local/bin
+  become: True
+  shell: |
+    set -euo pipefail
+    tmp=$(mktemp -d)
+    curl -sSfL "{{ nargo_url }}" -o "$tmp/nargo.tar.gz"
+    curl -sSfL "{{ bb_url }}" -o "$tmp/bb.tar.gz"
+    tar xzf "$tmp/nargo.tar.gz" -C /usr/local/bin nargo
+    tar xzf "$tmp/bb.tar.gz" -C /usr/local/bin bb
+    chmod 755 /usr/local/bin/nargo /usr/local/bin/bb
+    rm -rf "$tmp"
+    nargo --version
+    bb --version
+  args:
+    executable: /bin/bash
+  register: tool_versions
+
+- debug:
+    msg: "{{ tool_versions.stdout_lines }}"
+  tags: [print_action]
+
+- name: Build ProveKit (patched) and the pcs crate (tlsn-bench/run.sh setup)
+  shell: |
+    set -euo pipefail
+    . "$HOME/.cargo/env"
+    ./run.sh setup
+  args:
+    chdir: "{{ tlsn_dir }}"
+    executable: /bin/bash
+  # the build takes 10-20 min without output; run it detached and poll, so a dropped SSH session does not
+  # fail the setup (first attempt, suite 1794938675: "Data could not be sent to remote host" on all hosts)
+  async: 7200
+  poll: 30
+  tags: [print_action]
+
+- name: Check the binaries the benchmark calls
+  shell: |
+    set -euo pipefail
+    test -x provekit/target/release/artemis-bench
+    test -x pcs/target/release/pcs_bench
+    test -x pcs/target/release/digest
+    python3 bench.py --help > /dev/null
+  args:
+    chdir: "{{ tlsn_dir }}"
+    executable: /bin/bash

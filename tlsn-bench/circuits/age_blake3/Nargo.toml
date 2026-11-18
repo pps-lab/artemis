@@ -1,0 +1,8 @@
+[package]
+name = "age_blake3"
+type = "bin"
+authors = [""]
+
+[dependencies]
+blake3_noir = { path = "../vendor/blake3_noir" }
+date = { tag = "v0.5.6", git = "https://github.com/madztheo/noir-date.git" }

@@ -1,0 +1,7 @@
+---
+# Same versions as the local run (tlsn-bench/README.md, results/results.csv `version` column)
+nargo_version: "1.0.0-beta.21"
+bb_version: "5.0.0-nightly.20260324"
+nargo_url: "https://github.com/noir-lang/noir/releases/download/v{{ nargo_version }}/nargo-x86_64-unknown-linux-gnu.tar.gz"
+bb_url: "https://github.com/AztecProtocol/aztec-packages/releases/download/v{{ bb_version }}/barretenberg-amd64-linux.tar.gz"
+tlsn_dir: "{{ exp_code_dir }}/tlsn-bench"

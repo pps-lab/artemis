@@ -1,0 +1,1760 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index d2fec105..15966f7a 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -257,6 +257,7 @@ dependencies = [
+  "num-bigint 0.4.6",
+  "num-integer",
+  "num-traits",
++ "rayon",
+  "zeroize",
+ ]
+ 
+@@ -274,6 +275,7 @@ dependencies = [
+  "educe",
+  "num-bigint 0.4.6",
+  "num-traits",
++ "rayon",
+  "zeroize",
+ ]
+ 
+@@ -337,6 +339,7 @@ dependencies = [
+  "ark-std",
+  "digest 0.10.7",
+  "num-bigint 0.4.6",
++ "rayon",
+  "serde_with",
+ ]
+ 
+@@ -359,6 +362,7 @@ checksum = "367c9c827ed431bff6868b7aa926e05b16eb46603cc8b6e768e4a5553fa1d155"
+ dependencies = [
+  "num-traits",
+  "rand 0.8.6",
++ "rayon",
+ ]
+ 
+ [[package]]
+@@ -376,6 +380,33 @@ dependencies = [
+  "zeroize",
+ ]
+ 
++[[package]]
++name = "artemis-bench"
++version = "0.1.0"
++dependencies = [
++ "acir",
++ "anyhow",
++ "argh",
++ "ark-ec",
++ "ark-ff",
++ "ark-serialize",
++ "ark-std",
++ "nargo",
++ "nargo_toml",
++ "noir_artifact_cli",
++ "noirc_abi",
++ "noirc_artifacts",
++ "noirc_driver",
++ "provekit-backend-bn254",
++ "provekit-common",
++ "provekit-r1cs-compiler",
++ "provekit-verifier",
++ "serde_json",
++ "sha2 0.10.9",
++ "tempfile",
++ "tlsn-bench-pcs",
++]
++
+ [[package]]
+ name = "asn1-rs"
+ version = "0.6.2"
+@@ -6462,6 +6493,20 @@ version = "0.1.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+ 
++[[package]]
++name = "tlsn-bench-pcs"
++version = "0.1.0"
++dependencies = [
++ "ark-bn254",
++ "ark-ec",
++ "ark-ff",
++ "ark-serialize",
++ "ark-std",
++ "rand 0.8.6",
++ "rayon",
++ "sha2 0.10.9",
++]
++
+ [[package]]
+ name = "tokio"
+ version = "1.52.3"
+diff --git a/Cargo.toml b/Cargo.toml
+index bce3ac54..83efa90b 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -14,6 +14,7 @@ members = [
+   "provekit/prover",
+   "provekit/verifier",
+   "tooling/cli",
++  "tooling/artemis-bench",
+   "tooling/provekit-bench",
+   "tooling/provekit-fixtures",
+   "tooling/provekit-ffi",
+diff --git a/provekit/backend/bn254/src/prove.rs b/provekit/backend/bn254/src/prove.rs
+index f1d7b97c..ed9bb13d 100644
+--- a/provekit/backend/bn254/src/prove.rs
++++ b/provekit/backend/bn254/src/prove.rs
+@@ -25,6 +25,7 @@ use {
+     anyhow::{Context, Result},
+     provekit_common::{log_commit_input, CompressedR1CS, PublicInputs, PublicInputsHash},
+     provekit_prover::WhirR1CSProver,
++    provekit_verifier::LinkedValues,
+     std::mem::size_of,
+     whir::transcript::ProverState,
+ };
+@@ -87,6 +88,29 @@ fn generate_noir_witness(
+         .witness)
+ }
+ 
++impl NoirProver {
++    /// Execute the ACIR program on `input_map` (ACVM witness generation).
++    #[cfg(all(feature = "witness-generation", not(target_arch = "wasm32")))]
++    pub fn solve_acir(&mut self, input_map: InputMap) -> Result<WitnessMap<NoirElement>> {
++        generate_noir_witness(self, input_map)
++    }
++
++    /// Prove from an ACIR witness, optionally binding the transcript to
++    /// `session` (the domain separator's session id), and return the
++    /// challenges and revealed values next to the proof. The Artemis link
++    /// passes a digest of the external commitments as the session, so the link
++    /// challenge depends on them.
++    #[instrument(skip_all)]
++    pub fn prove_linked(
++        self,
++        witness: WitnessMap<NoirElement>,
++        session: Option<[u8; 32]>,
++    ) -> Result<(ProvekitProof<Bn254Field>, LinkedValues<FieldElement>)> {
++        let (proof, _, linked) = prove_noir_inner(self, witness, false, session)?;
++        Ok((proof, linked))
++    }
++}
++
+ impl Prove for NoirProver {
+     #[cfg(all(feature = "witness-generation", not(target_arch = "wasm32")))]
+     #[instrument(skip_all)]
+@@ -108,7 +132,7 @@ impl Prove for NoirProver {
+         self,
+         witness: WitnessMap<NoirElement>,
+     ) -> Result<ProvekitProof<Bn254Field>> {
+-        let (proof, _) = prove_noir_inner(self, witness, false)?;
++        let (proof, ..) = prove_noir_inner(self, witness, false, None)?;
+         Ok(proof)
+     }
+ 
+@@ -121,7 +145,7 @@ impl Prove for NoirProver {
+         let (input_map, _return_value) =
+             read_inputs_from_file(prover_toml.as_ref(), self.witness_generator.abi())?;
+         let witness = generate_noir_witness(&mut self, input_map)?;
+-        let (proof, batch) = prove_noir_inner(self, witness, true)?;
++        let (proof, batch, _) = prove_noir_inner(self, witness, true, None)?;
+         let batch = batch
+             .ok_or_else(|| anyhow::anyhow!("SPARK query batch must be produced when requested"))?;
+         Ok((proof, batch))
+@@ -133,7 +157,12 @@ fn prove_noir_inner(
+     prover: NoirProver,
+     acir_witness_idx_to_value_map: WitnessMap<NoirElement>,
+     produce_spark_query: bool,
+-) -> Result<(ProvekitProof<Bn254Field>, Option<SparkQueryBatch>)> {
++    session: Option<[u8; 32]>,
++) -> Result<(
++    ProvekitProof<Bn254Field>,
++    Option<SparkQueryBatch>,
++    LinkedValues<FieldElement>,
++)> {
+     crate::register();
+ 
+     let mut public_input_indices = prover.program.functions[0].public_inputs().indices();
+@@ -165,10 +194,11 @@ fn prove_noir_inner(
+ 
+     // Set up transcript with public inputs bound to the instance.
+     let instance = public_inputs.hash_bytes::<Bn254Field>(prover.hash_config);
+-    let ds = prover
+-        .whir_for_witness
+-        .create_domain_separator()
+-        .instance(&instance);
++    let mut ds = prover.whir_for_witness.create_domain_separator();
++    if let Some(session) = session {
++        ds.session_id = session;
++    }
++    let ds = ds.instance(&instance);
+ 
+     let mut merlin = ProverState::new(&ds, TranscriptSponge::from_config(prover.hash_config));
+ 
+@@ -222,6 +252,10 @@ fn prove_noir_inner(
+         .commit(&mut merlin, num_witnesses, num_constraints, w1, true)
+         .context("While committing to w1")?;
+ 
++    let mut linked = LinkedValues {
++        challenges: Vec::new(),
++        exposed:    Vec::new(),
++    };
+     let commitments = if has_challenges {
+         let w2_layers = compressed_w2_layers
+             .unwrap()
+@@ -255,10 +289,28 @@ fn prove_noir_inner(
+         };
+ 
+         log_commit_input("noir_w2", &w2, prover.whir_for_witness.domain_size());
++        linked.challenges = prover
++            .whir_for_witness
++            .challenge_offsets
++            .iter()
++            .map(|offset| w2[*offset])
++            .collect();
++        let exposed: Vec<FieldElement> = prover
++            .whir_for_witness
++            .exposed_offsets
++            .iter()
++            .map(|offset| w2[*offset])
++            .collect();
+         let commitment_2 = prover
+             .whir_for_witness
+             .commit(&mut merlin, num_witnesses, num_constraints, w2, false)
+             .context("While committing to w2")?;
++        // Revealed values go into the transcript right after the second
++        // commitment (mirrored in the verifier).
++        for value in &exposed {
++            merlin.prover_message(value);
++        }
++        linked.exposed = exposed;
+ 
+         vec![commitment_1, commitment_2]
+     } else {
+@@ -309,6 +361,7 @@ fn prove_noir_inner(
+             whir_r1cs_proof,
+         },
+         r1cs_spark_queries,
++        linked,
+     ))
+ }
+ 
+diff --git a/provekit/backend/bn254/src/solver/witness_builder.rs b/provekit/backend/bn254/src/solver/witness_builder.rs
+index befbbd32..fc20e02b 100644
+--- a/provekit/backend/bn254/src/solver/witness_builder.rs
++++ b/provekit/backend/bn254/src/solver/witness_builder.rs
+@@ -89,7 +89,8 @@ impl WitnessBuilderSolver for WitnessBuilder {
+                         .fold(FieldElement::zero(), |acc, x| acc + x),
+                 );
+             }
+-            WitnessBuilder::Product(witness_idx, operand_idx_a, operand_idx_b) => {
++            WitnessBuilder::Product(witness_idx, operand_idx_a, operand_idx_b)
++            | WitnessBuilder::ArtemisEval(witness_idx, operand_idx_a, operand_idx_b) => {
+                 let a: FieldElement = get_witness(witness, *operand_idx_a);
+                 let b: FieldElement = get_witness(witness, *operand_idx_b);
+                 witness[*witness_idx] = Some(a * b);
+diff --git a/provekit/backend/bn254/src/verify.rs b/provekit/backend/bn254/src/verify.rs
+index 9a769a2b..c36c35af 100644
+--- a/provekit/backend/bn254/src/verify.rs
++++ b/provekit/backend/bn254/src/verify.rs
+@@ -9,6 +9,28 @@ pub trait Verify {
+     fn verify(&mut self, proof: &ProvekitProof<Bn254Field>) -> Result<()>;
+ }
+ 
++impl Verifier {
++    /// Verify a proof whose transcript is bound to `session` and return the
++    /// challenges and revealed values (see `WhirR1CSVerifier::verify_linked`).
++    #[instrument(skip_all)]
++    pub fn verify_linked(
++        &self,
++        proof: &ProvekitProof<Bn254Field>,
++        session: &[u8; 32],
++    ) -> Result<provekit_verifier::LinkedValues<crate::FieldElement>> {
++        crate::register();
++        self.whir_for_witness
++            .as_ref()
++            .context("Verifier has no witness scheme")?
++            .verify_linked(
++                &proof.whir_r1cs_proof,
++                &proof.public_inputs,
++                &self.r1cs,
++                Some(session),
++            )
++    }
++}
++
+ impl Verify for Verifier {
+     #[instrument(skip_all)]
+     fn verify(&mut self, proof: &ProvekitProof<Bn254Field>) -> Result<()> {
+diff --git a/provekit/backend/bn254/src/witness/scheduling/dependency.rs b/provekit/backend/bn254/src/witness/scheduling/dependency.rs
+index 801e67cc..1855632d 100644
+--- a/provekit/backend/bn254/src/witness/scheduling/dependency.rs
++++ b/provekit/backend/bn254/src/witness/scheduling/dependency.rs
+@@ -79,7 +79,9 @@ impl DependencyInfo {
+             WitnessBuilder::SumQuotient { terms, .. } => {
+                 terms.iter().map(|SumTerm(_, idx)| *idx).collect()
+             }
+-            WitnessBuilder::Product(_, a, b) => vec![*a, *b],
++            WitnessBuilder::Product(_, a, b) | WitnessBuilder::ArtemisEval(_, a, b) => {
++                vec![*a, *b]
++            }
+             WitnessBuilder::MultiplicitiesForRange(_, _, values) => values.clone(),
+             WitnessBuilder::Inverse(_, x)
+             | WitnessBuilder::SafeInverse(_, x)
+@@ -291,6 +293,7 @@ impl DependencyInfo {
+             | WitnessBuilder::Acir(idx, _)
+             | WitnessBuilder::Sum(idx, _)
+             | WitnessBuilder::Product(idx, ..)
++            | WitnessBuilder::ArtemisEval(idx, ..)
+             | WitnessBuilder::Challenge(idx)
+             | WitnessBuilder::IndexedLogUpDenominator(idx, ..)
+             | WitnessBuilder::Inverse(idx, _)
+@@ -433,6 +436,7 @@ impl DependencyInfo {
+             | WitnessBuilder::Acir(..)
+             | WitnessBuilder::Sum(..)
+             | WitnessBuilder::Product(..)
++            | WitnessBuilder::ArtemisEval(..)
+             | WitnessBuilder::Challenge(..)
+             | WitnessBuilder::IndexedLogUpDenominator(..)
+             | WitnessBuilder::Inverse(..)
+diff --git a/provekit/backend/bn254/src/witness/scheduling/remapper.rs b/provekit/backend/bn254/src/witness/scheduling/remapper.rs
+index 87abb161..3159dc2f 100644
+--- a/provekit/backend/bn254/src/witness/scheduling/remapper.rs
++++ b/provekit/backend/bn254/src/witness/scheduling/remapper.rs
+@@ -141,6 +141,9 @@ impl WitnessIndexRemapper {
+             WitnessBuilder::Product(idx, a, b) => {
+                 WitnessBuilder::Product(self.remap(*idx), self.remap(*a), self.remap(*b))
+             }
++            WitnessBuilder::ArtemisEval(idx, a, b) => {
++                WitnessBuilder::ArtemisEval(self.remap(*idx), self.remap(*a), self.remap(*b))
++            }
+             WitnessBuilder::MultiplicitiesForRange(start, range, values) => {
+                 let new_values = values.iter().map(|&v| self.remap(v)).collect();
+                 WitnessBuilder::MultiplicitiesForRange(self.remap(*start), *range, new_values)
+diff --git a/provekit/backend/bn254/src/witness/witness_builder.rs b/provekit/backend/bn254/src/witness/witness_builder.rs
+index 960d614a..7f087bad 100644
+--- a/provekit/backend/bn254/src/witness/witness_builder.rs
++++ b/provekit/backend/bn254/src/witness/witness_builder.rs
+@@ -447,6 +447,13 @@ pub enum WitnessBuilder {
+         #[serde(with = "serde_ark")]
+         divisor: FieldElement,
+     },
++    /// Artemis link: the product of an accumulator and the link challenge,
++    /// like [`WitnessBuilder::Product`], whose output is revealed to the
++    /// verifier (the masked evaluation `rho`). The separate variant lets the
++    /// scheme find the revealed column and the link challenge after the
++    /// witness split.
++    /// (witness index, accumulator witness index, challenge witness index)
++    ArtemisEval(usize, usize, usize),
+ }
+ 
+ impl WitnessBuilder {
+diff --git a/provekit/common/src/whir_r1cs.rs b/provekit/common/src/whir_r1cs.rs
+index 60975a9e..eff00d15 100644
+--- a/provekit/common/src/whir_r1cs.rs
++++ b/provekit/common/src/whir_r1cs.rs
+@@ -156,6 +156,15 @@ pub struct WhirR1CSScheme<P: ProofField> {
+     pub a_num_terms:       usize,
+     pub num_challenges:    usize,
+     pub challenge_offsets: Vec<usize>,
++    /// Offsets in the second witness block whose values the prover reveals
++    /// (Artemis: the masked evaluation `rho`). The prover sends each value
++    /// right after the second commitment and the joint opening binds it,
++    /// with the same linear form that binds the challenges.
++    #[serde(default)]
++    pub exposed_offsets:   Vec<usize>,
++    /// Index into `challenge_offsets` of the Artemis link challenge `beta`.
++    #[serde(default)]
++    pub link_challenge:    Option<usize>,
+     pub has_public_inputs: bool,
+     /// Base-field witness commitment, via zook. Two-stage witnesses open
+     /// jointly.
+@@ -193,6 +202,16 @@ impl<P: ProofField> WhirR1CSScheme<P> {
+         Ok(())
+     }
+ 
++    /// Offsets in the second block bound by the joint opening: the challenges
++    /// followed by the revealed values.
++    pub fn binding_offsets(&self) -> Vec<usize> {
++        self.challenge_offsets
++            .iter()
++            .chain(&self.exposed_offsets)
++            .copied()
++            .collect()
++    }
++
+     /// Create a domain separator for the provekit outer protocol.
+     ///
+     /// The domain separator serializes the entire scheme (including
+@@ -229,6 +248,17 @@ impl<P: FieldHash> WhirR1CSScheme<P> {
+                     .all(|offset| *offset < block_size),
+                 "Challenge offset exceeds the second commitment block"
+             );
++            anyhow::ensure!(
++                self.exposed_offsets
++                    .iter()
++                    .all(|offset| *offset < block_size),
++                "Exposed offset exceeds the second commitment block"
++            );
++            anyhow::ensure!(
++                self.link_challenge
++                    .is_none_or(|index| index < self.num_challenges),
++                "Link challenge index out of range"
++            );
+             anyhow::ensure!(
+                 self.whir_witness.tuning().vector_size == block_size,
+                 "Joint opening source size does not match the witness block"
+@@ -236,6 +266,11 @@ impl<P: FieldHash> WhirR1CSScheme<P> {
+             self.whir_witness
+                 .validate_pair()
+                 .map_err(|_| anyhow::anyhow!("Invalid joint opening parameters"))?;
++        } else {
++            anyhow::ensure!(
++                self.exposed_offsets.is_empty() && self.link_challenge.is_none(),
++                "Exposed values need a second witness block"
++            );
+         }
+         Ok(())
+     }
+@@ -312,6 +347,8 @@ impl<P: FieldHash> WhirR1CSScheme<P> {
+             w1_size,
+             num_challenges,
+             challenge_offsets,
++            exposed_offsets: Vec::new(),
++            link_challenge: None,
+             has_public_inputs,
+             r1cs_hash: R1csHash::UNSET,
+             hash_config,
+diff --git a/provekit/prover/src/whir_r1cs.rs b/provekit/prover/src/whir_r1cs.rs
+index 5de2422c..a83e1245 100644
+--- a/provekit/prover/src/whir_r1cs.rs
++++ b/provekit/prover/src/whir_r1cs.rs
+@@ -426,13 +426,14 @@ where
+             &c1.polynomial,
+             &c2.polynomial,
+         ])?;
++        let binding_offsets = scheme.binding_offsets();
+         let forms = build_joint_forms(
+             scheme.m,
+             scheme.w1_size,
+             alphas,
+             x,
+             public_inputs_len,
+-            &scheme.challenge_offsets,
++            &binding_offsets,
+         )?;
+         let mut evaluations = matrix_evals.to_vec();
+         if public_inputs_len > 0 {
+@@ -443,11 +444,11 @@ where
+                 &c1.polynomial,
+             ));
+         }
+-        if !scheme.challenge_offsets.is_empty() {
++        if !binding_offsets.is_empty() {
+             evaluations.push(compute_challenge_eval(
+                 &embedding,
+                 x,
+-                &scheme.challenge_offsets,
++                &binding_offsets,
+                 &c2.polynomial,
+             ));
+         }
+diff --git a/provekit/r1cs-compiler/src/artemis.rs b/provekit/r1cs-compiler/src/artemis.rs
+new file mode 100644
+index 00000000..91005f0d
+--- /dev/null
++++ b/provekit/r1cs-compiler/src/artemis.rs
+@@ -0,0 +1,164 @@
++//! Artemis commit-and-prove link.
++//!
++//! The link ties a private `[u8; N]` parameter of the Noir program (the
++//! payload) to an external homomorphic commitment, without recomputing the
++//! commitment in the circuit. The payload is packed into field elements
++//! `u_0..u_{k-1}` (`bytes_per_element` bytes each, little endian) and the
++//! circuit computes
++//!
++//! ```text
++//! rho = beta * (u_0 + u_1 beta + ... + u_{k-1} beta^{k-1} + mask * beta^k)
++//! ```
++//!
++//! for a challenge `beta` drawn after the first witness block (which holds
++//! the payload and the mask) is committed. `rho` lives in the second block
++//! and is revealed to the verifier, who checks an opening of the external
++//! commitment at `beta` to `rho / beta`.
++//!
++//! The Horner recurrence costs `k + 1` multiplication constraints. Packing is
++//! a linear combination and costs none. The trailing factor `beta` makes every
++//! packed element feed a product with the challenge, which is what forces the
++//! witness splitter to place the payload in the first block; the compiler
++//! re-checks that placement after the split.
++
++use {
++    crate::noir_to_r1cs::NoirToR1CSCompiler,
++    acir::native_types::Witness as NoirWitness,
++    anyhow::{bail, ensure, Context as _, Result},
++    ark_ff::{Field, One},
++    noirc_abi::{Abi, AbiType, Sign},
++    provekit_backend_bn254::{
++        witness::{SumTerm, WitnessBuilder},
++        FieldElement,
++    },
++    std::collections::HashSet,
++};
++
++/// Which parameters of `main` take part in the link.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct ArtemisConfig {
++    /// Name of the private `[u8; N]` parameter holding the committed bytes.
++    pub payload:           String,
++    /// Name of the private `Field` parameter holding the mask coefficient.
++    pub mask:              String,
++    /// Bytes packed into one field element.
++    pub bytes_per_element: usize,
++}
++
++impl Default for ArtemisConfig {
++    fn default() -> Self {
++        Self {
++            payload:           "payload".into(),
++            mask:              "mask".into(),
++            bytes_per_element: 31,
++        }
++    }
++}
++
++/// ACIR witness indices of the linked parameters.
++#[derive(Debug, Clone)]
++pub(crate) struct LinkedParams {
++    pub(crate) payload: Vec<u32>,
++    pub(crate) mask:    u32,
++}
++
++impl LinkedParams {
++    pub(crate) fn all(&self) -> impl Iterator<Item = u32> + '_ {
++        self.payload.iter().copied().chain([self.mask])
++    }
++}
++
++/// Locate the linked parameters in the ABI. `main` parameters occupy ACIR
++/// witnesses `0..` in declaration order.
++pub(crate) fn locate_params(abi: &Abi, config: &ArtemisConfig) -> Result<LinkedParams> {
++    ensure!(
++        (1..=31).contains(&config.bytes_per_element),
++        "bytes_per_element must be in 1..=31 so a packed element fits the field"
++    );
++    let (mut payload, mut mask) = (None, None);
++    let mut next = 0u32;
++    for param in &abi.parameters {
++        let count = param.typ.field_count();
++        if param.name == config.payload {
++            ensure!(
++                param.visibility == noirc_abi::AbiVisibility::Private,
++                "the linked payload must be a private parameter"
++            );
++            match &param.typ {
++                AbiType::Array { typ, .. }
++                    if matches!(**typ, AbiType::Integer {
++                        sign: Sign::Unsigned,
++                        width: 8,
++                    }) => {}
++                other => bail!("the linked payload must be a [u8; N], found {other:?}"),
++            }
++            payload = Some((next..next + count).collect::<Vec<_>>());
++        } else if param.name == config.mask {
++            ensure!(
++                param.visibility == noirc_abi::AbiVisibility::Private
++                    && matches!(param.typ, AbiType::Field),
++                "the mask must be a private Field parameter"
++            );
++            mask = Some(next);
++        }
++        next += count;
++    }
++    Ok(LinkedParams {
++        payload: payload
++            .with_context(|| format!("no parameter named `{}` in main", config.payload))?,
++        mask:    mask.with_context(|| format!("no parameter named `{}` in main", config.mask))?,
++    })
++}
++
++/// Add the link constraints. Returns the R1CS columns that must stay
++/// committed witnesses (payload bytes, mask, `rho`).
++pub(crate) fn add_link(
++    compiler: &mut NoirToR1CSCompiler,
++    params: &LinkedParams,
++    bytes_per_element: usize,
++) -> HashSet<usize> {
++    let bytes: Vec<usize> = params
++        .payload
++        .iter()
++        .map(|w| compiler.fetch_r1cs_witness_index(NoirWitness(*w)))
++        .collect();
++    let mask = compiler.fetch_r1cs_witness_index(NoirWitness(params.mask));
++    let beta =
++        compiler.add_witness_builder(WitnessBuilder::Challenge(compiler.num_witnesses()));
++
++    let radix = FieldElement::from(256u64);
++    let mut acc = mask;
++    for chunk in bytes.chunks(bytes_per_element).rev() {
++        let shifted = compiler.add_product(acc, beta);
++        let mut terms = Vec::with_capacity(chunk.len() + 1);
++        terms.push(SumTerm(None, shifted));
++        let mut weight = FieldElement::one();
++        for byte in chunk {
++            terms.push(SumTerm(Some(weight), *byte));
++            weight *= radix;
++        }
++        acc = compiler.add_sum(terms);
++    }
++    let rho = compiler.add_witness_builder(WitnessBuilder::ArtemisEval(
++        compiler.num_witnesses(),
++        acc,
++        beta,
++    ));
++    compiler.r1cs.add_constraint(
++        &[(FieldElement::one(), acc)],
++        &[(FieldElement::one(), beta)],
++        &[(FieldElement::one(), rho)],
++    );
++
++    let mut protected: HashSet<usize> = bytes.into_iter().collect();
++    protected.insert(mask);
++    protected.insert(rho);
++    protected
++}
++
++/// The verifier-side relation between the revealed `rho`, the challenge
++/// `beta`, and the evaluation of the committed polynomial `(u, mask)` at
++/// `beta`. Returns `None` for `beta = 0`, which the verifier must reject.
++pub fn committed_evaluation(rho: FieldElement, beta: FieldElement) -> Option<FieldElement> {
++    beta.inverse().map(|inv| rho * inv)
++}
+diff --git a/provekit/r1cs-compiler/src/lib.rs b/provekit/r1cs-compiler/src/lib.rs
+index 96f78132..8d5160f2 100644
+--- a/provekit/r1cs-compiler/src/lib.rs
++++ b/provekit/r1cs-compiler/src/lib.rs
+@@ -1,3 +1,4 @@
++mod artemis;
+ mod binops;
+ mod constraint_helpers;
+ mod digits;
+@@ -16,7 +17,8 @@ mod whir_r1cs;
+ mod witness_generator;
+ 
+ pub use {
++    artemis::{committed_evaluation, ArtemisConfig},
+     noir_proof_scheme::{MavrosCompiler, NoirCompiler},
+     noir_to_r1cs::{noir_to_r1cs, noir_to_r1cs_with_breakdown, R1CSBreakdown},
+-    optimize::{optimize_r1cs, OptimizationStats},
++    optimize::{optimize_r1cs, optimize_r1cs_protected, OptimizationStats},
+ };
+diff --git a/provekit/r1cs-compiler/src/noir_proof_scheme.rs b/provekit/r1cs-compiler/src/noir_proof_scheme.rs
+index 958783e8..1bd4a0a5 100644
+--- a/provekit/r1cs-compiler/src/noir_proof_scheme.rs
++++ b/provekit/r1cs-compiler/src/noir_proof_scheme.rs
+@@ -102,6 +102,18 @@ impl NoirCompiler {
+         program: ProgramArtifact,
+         hash_config: provekit_common::HashConfig,
+         witness_mode: provekit_common::WitnessCommitmentMode,
++    ) -> Result<NoirProofScheme> {
++        Self::from_program_linked(program, hash_config, witness_mode, None)
++    }
++
++    /// Like [`Self::from_program`], optionally adding an Artemis link for the
++    /// parameters named in `artemis`.
++    #[instrument(skip_all)]
++    pub fn from_program_linked(
++        program: ProgramArtifact,
++        hash_config: provekit_common::HashConfig,
++        witness_mode: provekit_common::WitnessCommitmentMode,
++        artemis: Option<&crate::ArtemisConfig>,
+     ) -> Result<NoirProofScheme> {
+         provekit_backend_bn254::register();
+ 
+@@ -115,7 +127,21 @@ impl NoirCompiler {
+         let main = &program.bytecode.functions[0];
+         info!("ACIR: {} opcodes.", main.opcodes.len());
+ 
+-        let (mut r1cs, mut witness_map, mut witness_builders) = noir_to_r1cs(main)?;
++        let linked = artemis
++            .map(|config| crate::artemis::locate_params(&program.abi, config))
++            .transpose()?;
++        let (mut r1cs, mut witness_map, mut witness_builders, protected_cols) = {
++            let mut compiler = crate::noir_to_r1cs::NoirToR1CSCompiler::new();
++            compiler.add_circuit(main)?;
++            let protected = match (&linked, artemis) {
++                (Some(params), Some(config)) => {
++                    crate::artemis::add_link(&mut compiler, params, config.bytes_per_element)
++                }
++                _ => HashSet::new(),
++            };
++            let (r1cs, map, builders) = compiler.finalize();
++            (r1cs, map, builders, protected)
++        };
+         info!(
+             "R1CS {} constraints, {} witnesses, A {} entries, B {} entries, C {} entries",
+             r1cs.num_constraints(),
+@@ -130,11 +156,12 @@ impl NoirCompiler {
+         r1cs.num_public_inputs = acir_public_inputs_indices_set.len();
+ 
+         // Gaussian elimination optimization pass
+-        let opt_stats = crate::optimize_r1cs(
++        let opt_stats = crate::optimize_r1cs_protected(
+             &mut r1cs,
+             &mut witness_builders,
+             &mut witness_map,
+             &acir_public_inputs_indices_set,
++            &protected_cols,
+         )?;
+         info!(
+             "After GE optimization: {} constraints, {} witnesses ({} eliminated, {:.1}% \
+@@ -163,10 +190,50 @@ impl NoirCompiler {
+             num_virtual
+         );
+ 
++        // Artemis: find the revealed column and the link challenge, and check
++        // that the split committed the payload and the mask before the
++        // challenge.
++        let link = if let Some(params) = &linked {
++            let w1_size = split_witness_builders.w1_size;
++            let (rho, beta) = split_witness_builders
++                .w2_layers
++                .layers
++                .iter()
++                .flat_map(|layer| &layer.witness_builders)
++                .find_map(|b| match b {
++                    WitnessBuilder::ArtemisEval(rho, _, beta) => Some((*rho, *beta)),
++                    _ => None,
++                })
++                .context("Artemis link was pruned from the second witness block")?;
++            ensure!(
++                rho >= w1_size && rho < num_real,
++                "rho is not a committed second-block witness"
++            );
++            let link_challenge = challenge_offsets
++                .iter()
++                .position(|offset| offset + w1_size == beta)
++                .context("link challenge is not a second-block challenge")?;
++            for acir_idx in params.all() {
++                let col = remapped_witness_map
++                    .get(acir_idx as usize)
++                    .copied()
++                    .flatten()
++                    .context("linked parameter has no R1CS column")?
++                    .get() as usize;
++                ensure!(
++                    col < w1_size,
++                    "linked parameter (ACIR witness {acir_idx}) is not in the first witness block"
++                );
++            }
++            Some((rho - w1_size, link_challenge))
++        } else {
++            None
++        };
++
+         let witness_generator =
+             NoirWitnessGenerator::new(&program, remapped_witness_map, num_real + num_virtual);
+ 
+-        let whir_for_witness = WhirR1CSScheme::<Bn254Field>::new_for_r1cs(
++        let mut whir_for_witness = WhirR1CSScheme::<Bn254Field>::new_for_r1cs(
+             &remapped_r1cs,
+             split_witness_builders.w1_size,
+             num_challenges,
+@@ -175,6 +242,11 @@ impl NoirCompiler {
+             hash_config,
+             witness_mode,
+         )?;
++        if let Some((rho_offset, link_challenge)) = link {
++            whir_for_witness.exposed_offsets = vec![rho_offset];
++            whir_for_witness.link_challenge = Some(link_challenge);
++            whir_for_witness.validate_joint_opening()?;
++        }
+ 
+         Ok(NoirProofScheme::Noir(NoirSchemeData {
+             program: program.bytecode,
+diff --git a/provekit/r1cs-compiler/src/noir_to_r1cs.rs b/provekit/r1cs-compiler/src/noir_to_r1cs.rs
+index 5713b7a9..c0e59cf2 100644
+--- a/provekit/r1cs-compiler/src/noir_to_r1cs.rs
++++ b/provekit/r1cs-compiler/src/noir_to_r1cs.rs
+@@ -548,7 +548,7 @@ impl NoirToR1CSCompiler {
+         Ok(())
+     }
+ 
+-    fn add_circuit(&mut self, circuit: &Circuit<NoirElement>) -> Result<()> {
++    pub(crate) fn add_circuit(&mut self, circuit: &Circuit<NoirElement>) -> Result<()> {
+         self.add_circuit_with_breakdown(circuit)?;
+         Ok(())
+     }
+diff --git a/provekit/r1cs-compiler/src/optimize.rs b/provekit/r1cs-compiler/src/optimize.rs
+index cf08c568..8278e1d6 100644
+--- a/provekit/r1cs-compiler/src/optimize.rs
++++ b/provekit/r1cs-compiler/src/optimize.rs
+@@ -78,6 +78,26 @@ pub fn optimize_r1cs(
+     witness_builders: &mut Vec<WitnessBuilder>,
+     witness_map: &mut [Option<std::num::NonZeroU32>],
+     acir_public_inputs_indices_set: &HashSet<u32>,
++) -> Result<OptimizationStats> {
++    optimize_r1cs_protected(
++        r1cs,
++        witness_builders,
++        witness_map,
++        acir_public_inputs_indices_set,
++        &HashSet::new(),
++    )
++}
++
++/// Like [`optimize_r1cs`], with extra columns that must stay committed
++/// witnesses and are therefore never chosen as pivots. The Artemis link needs
++/// this for the linked payload: a pivoted payload column would be defined by
++/// other columns, possibly ones committed after the link challenge.
++pub fn optimize_r1cs_protected(
++    r1cs: &mut R1CS<FieldElement>,
++    witness_builders: &mut Vec<WitnessBuilder>,
++    witness_map: &mut [Option<std::num::NonZeroU32>],
++    acir_public_inputs_indices_set: &HashSet<u32>,
++    protected_cols: &HashSet<usize>,
+ ) -> Result<OptimizationStats> {
+     let constraints_before = r1cs.num_constraints();
+     let witnesses_before = r1cs.num_witnesses();
+@@ -107,6 +127,7 @@ pub fn optimize_r1cs(
+         forbidden.insert(i);
+     }
+     forbidden.extend(public_input_cols.iter().copied());
++    forbidden.extend(protected_cols.iter().copied());
+ 
+     // Phase 1: Identify all linear constraints
+     let mut linear_rows: Vec<usize> = Vec::new();
+diff --git a/provekit/verifier/src/lib.rs b/provekit/verifier/src/lib.rs
+index 24f977cf..4437a105 100644
+--- a/provekit/verifier/src/lib.rs
++++ b/provekit/verifier/src/lib.rs
+@@ -1,3 +1,3 @@
+ mod whir_r1cs;
+ 
+-pub use whir_r1cs::WhirR1CSVerifier;
++pub use whir_r1cs::{LinkedValues, WhirR1CSVerifier};
+diff --git a/provekit/verifier/src/whir_r1cs.rs b/provekit/verifier/src/whir_r1cs.rs
+index 944f0056..e61811cb 100644
+--- a/provekit/verifier/src/whir_r1cs.rs
++++ b/provekit/verifier/src/whir_r1cs.rs
+@@ -47,7 +47,30 @@ pub trait WhirR1CSVerifier<P: ProofField> {
+         public_inputs: &PublicInputs<Base<P>>,
+         r1cs: &R1CS<Base<P>>,
+         session: Option<&[u8; 32]>,
+-    ) -> Result<()>;
++    ) -> Result<()> {
++        self.verify_linked(proof, public_inputs, r1cs, session)
++            .map(|_| ())
++    }
++
++    /// Verify and return what an Artemis link needs: the Fiat-Shamir
++    /// challenges drawn after the first witness commitment and the values the
++    /// prover revealed from the second witness block.
++    fn verify_linked(
++        &self,
++        proof: &WhirR1CSProof,
++        public_inputs: &PublicInputs<Base<P>>,
++        r1cs: &R1CS<Base<P>>,
++        session: Option<&[u8; 32]>,
++    ) -> Result<LinkedValues<Ext<P>>>;
++}
++
++/// Transcript values an outer protocol links against.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct LinkedValues<F> {
++    /// Challenges, in `challenge_offsets` order.
++    pub challenges: Vec<F>,
++    /// Revealed second-block values, in `exposed_offsets` order.
++    pub exposed:    Vec<F>,
+ }
+ 
+ impl<P: FieldHash> WhirR1CSVerifier<P> for WhirR1CSScheme<P>
+@@ -55,13 +78,13 @@ where
+     Standard: Distribution<Ext<P>>,
+ {
+     #[instrument(skip_all)]
+-    fn verify_with_session(
++    fn verify_linked(
+         &self,
+         proof: &WhirR1CSProof,
+         public_inputs: &PublicInputs<Base<P>>,
+         r1cs: &R1CS<Base<P>>,
+         session: Option<&[u8; 32]>,
+-    ) -> Result<()> {
++    ) -> Result<LinkedValues<Ext<P>>> {
+         self.validate_joint_opening()?;
+         let actual_r1cs_hash = r1cs.hash();
+         anyhow::ensure!(
+@@ -115,6 +138,16 @@ where
+         } else {
+             (None, None)
+         };
++        // Revealed second-block values: read before any later challenge, so
++        // the binding point `x` below is drawn after them.
++        let mut exposed: Vec<Ext<P>> = Vec::with_capacity(self.exposed_offsets.len());
++        for _ in &self.exposed_offsets {
++            exposed.push(
++                arthur
++                    .prover_message()
++                    .map_err(|_| anyhow::anyhow!("Failed to read exposed value"))?,
++            );
++        }
+         let (transposed, sumcheck_result) = rayon::join(
+             || transpose_r1cs_matrices(r1cs),
+             || run_sumcheck_verifier::<Ext<P>, _>(&mut arthur, self.m_0),
+@@ -153,7 +186,7 @@ where
+                 alphas,
+                 x,
+                 public_inputs.len(),
+-                &self.challenge_offsets,
++                &self.binding_offsets(),
+             )?;
+             let matrix_evals: [Ext<P>; 3] = [
+                 arthur
+@@ -178,7 +211,8 @@ where
+                 let challenge_eval = arthur
+                     .prover_message()
+                     .map_err(|_| anyhow::anyhow!("Failed to read joint challenge evaluation"))?;
+-                verify_challenge_binding(challenge_eval, x, challenges)?;
++                let bound: Vec<Ext<P>> = challenges.iter().chain(&exposed).copied().collect();
++                verify_challenge_binding(challenge_eval, x, &bound)?;
+                 evaluations.push(challenge_eval);
+             }
+             let form_refs = linear_form_refs(&forms);
+@@ -262,7 +296,11 @@ where
+ 
+         arthur
+             .check_eof()
+-            .map_err(|_| anyhow::anyhow!("Proof contains unparsed trailing bytes"))
++            .map_err(|_| anyhow::anyhow!("Proof contains unparsed trailing bytes"))?;
++        Ok(LinkedValues {
++            challenges: logup_challenges.unwrap_or_default(),
++            exposed,
++        })
+     }
+ }
+ 
+diff --git a/tooling/artemis-bench/Cargo.toml b/tooling/artemis-bench/Cargo.toml
+new file mode 100644
+index 00000000..b3380dcf
+--- /dev/null
++++ b/tooling/artemis-bench/Cargo.toml
+@@ -0,0 +1,35 @@
++[package]
++name = "artemis-bench"
++version = "0.1.0"
++edition.workspace = true
++rust-version.workspace = true
++license.workspace = true
++description = "Artemis commit-and-prove link on ProveKit: driver and benchmark for TLSNotary-style predicate proofs."
++
++[dependencies]
++provekit-common.workspace = true
++provekit-backend-bn254 = { workspace = true, features = ["witness-generation", "parallel"] }
++provekit-r1cs-compiler.workspace = true
++provekit-verifier.workspace = true
++tlsn-bench-pcs = { path = "../../../pcs" }
++
++acir.workspace = true
++nargo.workspace = true
++nargo_toml.workspace = true
++noir_artifact_cli.workspace = true
++noirc_abi.workspace = true
++noirc_artifacts.workspace = true
++noirc_driver.workspace = true
++
++ark-ec = "0.6"
++ark-ff.workspace = true
++ark-serialize.workspace = true
++ark-std.workspace = true
++
++anyhow.workspace = true
++argh.workspace = true
++serde_json.workspace = true
++sha2.workspace = true
++
++[dev-dependencies]
++tempfile.workspace = true
+diff --git a/tooling/artemis-bench/src/lib.rs b/tooling/artemis-bench/src/lib.rs
+new file mode 100644
+index 00000000..bb8786d3
+--- /dev/null
++++ b/tooling/artemis-bench/src/lib.rs
+@@ -0,0 +1,285 @@
++//! Artemis commit-and-prove link on ProveKit.
++//!
++//! The ProveKit proof shows a predicate over a private `payload: [u8; N]` and
++//! reveals `rho`, the masked evaluation of the packed payload at a challenge
++//! `beta` drawn after the payload is committed (see
++//! `provekit_r1cs_compiler::ArtemisConfig`). An IPA opening of the external
++//! Pedersen commitment at `beta` then ties the payload in the proof to the
++//! commitment. The external commitments are bound into the transcript through
++//! the domain separator's session id, before `beta` is drawn.
++
++use {
++    acir::AcirField as _,
++    anyhow::{anyhow, bail, ensure, Context as _, Result},
++    ark_ec::CurveGroup,
++    ark_serialize::CanonicalSerialize,
++    nargo::{
++        insert_all_files_for_workspace_into_file_manager,
++        ops::{check_program, compile_program, report_errors},
++        parse_all,
++    },
++    nargo_toml::{get_package_manifest, resolve_workspace_from_toml, PackageSelection},
++    noirc_abi::{input_parser::InputValue, InputMap},
++    noirc_artifacts::program::ProgramArtifact,
++    noirc_driver::{CompileOptions, NOIR_ARTIFACT_VERSION_STRING},
++    provekit_backend_bn254::{
++        noir_to_native, Bn254Field, FieldElement, NoirProofScheme, NoirProver, Prover, Verifier,
++    },
++    provekit_common::{HashConfig, ProvekitProof, WitnessCommitmentMode},
++    provekit_r1cs_compiler::{committed_evaluation, ArtemisConfig, NoirCompiler},
++    sha2::{Digest, Sha256},
++    std::path::Path,
++    tlsn_bench_pcs::{ipa, G1Affine},
++};
++
++pub use provekit_r1cs_compiler::ArtemisConfig as LinkConfig;
++
++/// Compile the Noir package in `dir` with the Noir version ProveKit pins.
++pub fn compile_package(dir: &Path) -> Result<ProgramArtifact> {
++    let dir = std::fs::canonicalize(dir).with_context(|| format!("no such dir {dir:?}"))?;
++    let workspace = resolve_workspace_from_toml(
++        &get_package_manifest(&dir)?,
++        PackageSelection::DefaultOrAll,
++        Some(NOIR_ARTIFACT_VERSION_STRING.to_owned()),
++    )?;
++    let options = CompileOptions {
++        silence_warnings: true,
++        ..CompileOptions::default()
++    };
++    let mut file_manager = workspace.new_file_manager();
++    insert_all_files_for_workspace_into_file_manager(&workspace, &mut file_manager);
++    let parsed_files = parse_all(&file_manager);
++    let package = workspace
++        .into_iter()
++        .find(|p| p.is_binary())
++        .context("no binary package")?;
++    let result = compile_program(
++        &file_manager,
++        &parsed_files,
++        &workspace,
++        package,
++        &options,
++        None,
++    )
++    .and_then(|(program, warnings)| {
++        check_program(&program)?;
++        Ok((program, warnings))
++    });
++    let program = report_errors(result, &file_manager, &parsed_files, false, true)
++        .map_err(|e| anyhow!("Noir compilation failed: {e}"))?;
++    Ok(program.into())
++}
++
++/// Build the ProveKit scheme, with the Artemis link when `link` is set.
++pub fn build_scheme(program: ProgramArtifact, link: Option<&ArtemisConfig>) -> Result<NoirProofScheme> {
++    NoirCompiler::from_program_linked(
++        program,
++        HashConfig::default(),
++        WitnessCommitmentMode::default(),
++        link,
++    )
++}
++
++/// Split a compiled scheme into the prover and verifier keys.
++pub fn keys(scheme: NoirProofScheme) -> (Prover, Verifier) {
++    (
++        Prover::from_noir_proof_scheme(scheme.clone()),
++        Verifier::from_noir_proof_scheme(scheme),
++    )
++}
++
++/// The committed coefficient vector: the packed payload followed by the mask.
++pub struct Committed {
++    pub coeffs: Vec<FieldElement>,
++}
++
++impl Committed {
++    /// Read the linked parameters from the prover inputs.
++    pub fn from_inputs(inputs: &InputMap, config: &ArtemisConfig) -> Result<Self> {
++        let bytes: Vec<u8> = match inputs.get(&config.payload) {
++            Some(InputValue::Vec(values)) => values
++                .iter()
++                .map(|v| match v {
++                    InputValue::Field(f) => {
++                        let n = f.to_u128();
++                        ensure!(n < 256, "payload element is not a byte");
++                        Ok(n as u8)
++                    }
++                    _ => bail!("payload element is not a field"),
++                })
++                .collect::<Result<_>>()?,
++            _ => bail!("input `{}` missing or not an array", config.payload),
++        };
++        let mask = match inputs.get(&config.mask) {
++            Some(InputValue::Field(f)) => noir_to_native(*f),
++            _ => bail!("input `{}` missing or not a field", config.mask),
++        };
++        ensure!(
++            config.bytes_per_element == 31,
++            "the external commitment packs 31 bytes per element"
++        );
++        let mut coeffs = tlsn_bench_pcs::pack_bytes(&bytes);
++        coeffs.push(mask);
++        Ok(Self { coeffs })
++    }
++
++    /// Number of packed payload elements (the mask sits at this index).
++    pub fn payload_len(&self) -> usize {
++        self.coeffs.len() - 1
++    }
++}
++
++/// The external commitments: `c` to the payload (in a deployment this comes
++/// from the TLSNotary session) and `c_mu` to the mask (chosen by the prover).
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub struct Commitments {
++    pub c:    G1Affine,
++    pub c_mu: G1Affine,
++}
++
++impl Commitments {
++    /// Transcript session id: binds both commitments before `beta` is drawn.
++    pub fn session(&self) -> [u8; 32] {
++        let mut bytes = Vec::with_capacity(64);
++        self.c
++            .serialize_compressed(&mut bytes)
++            .expect("serializing to a Vec");
++        self.c_mu
++            .serialize_compressed(&mut bytes)
++            .expect("serializing to a Vec");
++        let mut h = Sha256::new();
++        h.update(b"artemis-provekit/session/v1");
++        h.update(&bytes);
++        h.finalize().into()
++    }
++
++    /// The commitment to the masked polynomial.
++    pub fn combined(&self) -> G1Affine {
++        (self.c + self.c_mu).into_affine()
++    }
++}
++
++/// Blinding factors of the two commitments.
++#[derive(Clone, Copy, Debug)]
++pub struct Blinds {
++    pub r:    FieldElement,
++    pub r_mu: FieldElement,
++}
++
++/// Commit to the payload and to the mask.
++pub fn commit(ck: &ipa::CommitKey, committed: &Committed, blinds: Blinds) -> Commitments {
++    let k = committed.payload_len();
++    Commitments {
++        c:    ck.commit(&committed.coeffs[..k], blinds.r).into_affine(),
++        c_mu: ck
++            .commit_at(k, &committed.coeffs[k..], blinds.r_mu)
++            .into_affine(),
++    }
++}
++
++/// An Artemis proof: the ProveKit proof (which carries `rho`), the mask
++/// commitment and the opening of `c + c_mu` at `beta`.
++#[derive(Clone, Debug)]
++pub struct LinkedProof {
++    pub proof:   ProvekitProof<Bn254Field>,
++    pub c_mu:    G1Affine,
++    pub opening: ipa::Proof,
++}
++
++impl LinkedProof {
++    /// Proof size in bytes: ProveKit transcript and hints, public inputs, the
++    /// mask commitment and the opening (points compressed).
++    pub fn size_bytes(&self) -> usize {
++        proof_size_bytes(&self.proof) + 32 + self.opening.size_bytes()
++    }
++}
++
++/// Size of a ProveKit proof: transcript, hints and public inputs.
++pub fn proof_size_bytes(proof: &ProvekitProof<Bn254Field>) -> usize {
++    proof.whir_r1cs_proof.narg_string.len()
++        + proof.whir_r1cs_proof.hints.len()
++        + 32 * proof.public_inputs.len()
++}
++
++/// Wall-clock split of [`prove_linked`], in seconds.
++#[derive(Clone, Copy, Debug, Default)]
++pub struct ProveTimes {
++    pub snark:   f64,
++    pub opening: f64,
++}
++
++/// Produce the linked proof from a solved ACIR witness.
++pub fn prove_linked(
++    prover: NoirProver,
++    acir_witness: acir::native_types::WitnessMap<provekit_backend_bn254::NoirElement>,
++    ck: &ipa::CommitKey,
++    committed: &Committed,
++    commitments: &Commitments,
++    blinds: Blinds,
++) -> Result<(LinkedProof, ProveTimes)> {
++    let link_challenge = prover
++        .whir_for_witness
++        .link_challenge
++        .context("prover key has no Artemis link")?;
++    let t = std::time::Instant::now();
++    let (proof, linked) = prover.prove_linked(acir_witness, Some(commitments.session()))?;
++    let snark = t.elapsed().as_secs_f64();
++
++    let t = std::time::Instant::now();
++    let beta = linked.challenges[link_challenge];
++    let rho = *linked.exposed.first().context("no revealed value")?;
++    let value = committed_evaluation(rho, beta).context("link challenge is zero")?;
++    let opening = ipa::open(
++        ck,
++        &committed.coeffs,
++        blinds.r + blinds.r_mu,
++        &commitments.combined(),
++        beta,
++        value,
++        &mut ark_std::rand::thread_rng(),
++    );
++    let opening_time = t.elapsed().as_secs_f64();
++    Ok((
++        LinkedProof {
++            proof,
++            c_mu: commitments.c_mu,
++            opening,
++        },
++        ProveTimes {
++            snark,
++            opening: opening_time,
++        },
++    ))
++}
++
++/// Verify a linked proof against the payload commitment `c`.
++pub fn verify_linked(
++    verifier: &Verifier,
++    ck: &ipa::CommitKey,
++    c: &G1Affine,
++    proof: &LinkedProof,
++) -> Result<()> {
++    let scheme = verifier
++        .whir_for_witness
++        .as_ref()
++        .context("verifier key has no witness scheme")?;
++    let link_challenge = scheme
++        .link_challenge
++        .context("verifier key has no Artemis link")?;
++    ensure!(
++        scheme.exposed_offsets.len() == 1,
++        "verifier key must reveal exactly one value"
++    );
++    let commitments = Commitments {
++        c:    *c,
++        c_mu: proof.c_mu,
++    };
++    let linked = verifier.verify_linked(&proof.proof, &commitments.session())?;
++    let beta = linked.challenges[link_challenge];
++    let value = committed_evaluation(linked.exposed[0], beta).context("link challenge is zero")?;
++    ensure!(
++        ipa::verify(ck, &commitments.combined(), beta, value, &proof.opening),
++        "opening of the external commitment failed"
++    );
++    Ok(())
++}
+diff --git a/tooling/artemis-bench/src/main.rs b/tooling/artemis-bench/src/main.rs
+new file mode 100644
+index 00000000..ebb41790
+--- /dev/null
++++ b/tooling/artemis-bench/src/main.rs
+@@ -0,0 +1,231 @@
++//! Benchmark driver. Two subcommands, run as separate processes so that the
++//! peak memory of `prove` does not include compilation and key generation:
++//!
++//! * `prepare`: compile a Noir package, build the R1CS and write the keys.
++//! * `prove`: load the keys, prove once, verify `--verify-reps` times, and
++//!   print one JSON object with the measurements.
++
++use {
++    anyhow::{Context as _, Result},
++    argh::FromArgs,
++    ark_ff::UniformRand,
++    artemis_bench::{
++        build_scheme, commit, compile_package, keys, proof_size_bytes, prove_linked,
++        verify_linked, Blinds, Committed, LinkConfig,
++    },
++    noir_artifact_cli::fs::inputs::read_inputs_from_file,
++    provekit_backend_bn254::{FieldElement, Prover, Verifier, Verify},
++    provekit_common::file::{read, write},
++    serde_json::json,
++    std::{path::PathBuf, time::Instant},
++    tlsn_bench_pcs::ipa,
++};
++
++#[derive(FromArgs)]
++/// Artemis on ProveKit: benchmark driver.
++struct Args {
++    #[argh(subcommand)]
++    cmd: Cmd,
++}
++
++#[derive(FromArgs)]
++#[argh(subcommand)]
++enum Cmd {
++    Prepare(Prepare),
++    Prove(Prove),
++}
++
++#[derive(FromArgs)]
++/// Compile a Noir package and write prover.pkp / verifier.pkv.
++#[argh(subcommand, name = "prepare")]
++struct Prepare {
++    /// noir package directory
++    #[argh(option)]
++    circuit: PathBuf,
++    /// output directory for the keys
++    #[argh(option)]
++    out:     PathBuf,
++    /// add the Artemis link for parameters `payload` and `mask`
++    #[argh(switch)]
++    artemis: bool,
++}
++
++#[derive(FromArgs)]
++/// Prove once and verify.
++#[argh(subcommand, name = "prove")]
++struct Prove {
++    /// directory holding the keys
++    #[argh(option)]
++    keys:        PathBuf,
++    /// prover inputs (Prover.toml)
++    #[argh(option)]
++    input:       PathBuf,
++    /// the keys carry an Artemis link
++    #[argh(switch)]
++    artemis:     bool,
++    /// number of verifier repetitions
++    #[argh(option, default = "5")]
++    verify_reps: usize,
++}
++
++/// Peak resident set size of this process in bytes.
++fn max_rss_bytes() -> u64 {
++    // SAFETY: `getrusage` only writes into the struct we pass.
++    let usage = unsafe {
++        let mut usage = std::mem::zeroed::<Rusage>();
++        getrusage(0, &mut usage);
++        usage
++    };
++    let raw = usage.ru_maxrss as u64;
++    if cfg!(target_os = "macos") {
++        raw
++    } else {
++        raw * 1024
++    }
++}
++
++#[repr(C)]
++struct Rusage {
++    ru_utime:  [i64; 2],
++    ru_stime:  [i64; 2],
++    ru_maxrss: i64,
++    rest:      [i64; 13],
++}
++
++extern "C" {
++    fn getrusage(who: i32, usage: *mut Rusage) -> i32;
++}
++
++fn mean_std(xs: &[f64]) -> (f64, f64) {
++    let n = xs.len() as f64;
++    let mean = xs.iter().sum::<f64>() / n;
++    let var = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
++    (mean, var.sqrt())
++}
++
++fn prepare(args: Prepare) -> Result<()> {
++    let t = Instant::now();
++    let program = compile_package(&args.circuit)?;
++    let compile_s = t.elapsed().as_secs_f64();
++    let acir_opcodes = program.bytecode.functions[0].opcodes.len();
++    let t = Instant::now();
++    let config = LinkConfig::default();
++    let scheme = build_scheme(program, args.artemis.then_some(&config))?;
++    let (prover, verifier) = keys(scheme);
++    let keygen_s = t.elapsed().as_secs_f64();
++    std::fs::create_dir_all(&args.out)?;
++    write(&prover, &args.out.join("prover.pkp")).context("writing prover key")?;
++    write(&verifier, &args.out.join("verifier.pkv")).context("writing verifier key")?;
++    let (constraints, witnesses) = prover.size();
++    let whir = prover.whir_for_witness();
++    println!(
++        "{}",
++        json!({
++            "acir_opcodes": acir_opcodes,
++            "constraints": constraints,
++            "witnesses": witnesses,
++            "w1_size": whir.w1_size,
++            "num_challenges": whir.num_challenges,
++            "log_witness_domain": whir.m,
++            "compile_s": compile_s,
++            "keygen_s": keygen_s,
++        })
++    );
++    Ok(())
++}
++
++fn prove(args: Prove) -> Result<()> {
++    let prover: Prover = read(&args.keys.join("prover.pkp")).context("reading prover key")?;
++    let mut verifier: Verifier =
++        read(&args.keys.join("verifier.pkv")).context("reading verifier key")?;
++    let Prover::Noir(mut prover) = prover else {
++        anyhow::bail!("expected a Noir prover key");
++    };
++    let (inputs, _) = read_inputs_from_file(&args.input, prover.witness_generator.abi())?;
++
++    let out = if args.artemis {
++        let config = LinkConfig::default();
++        let committed = Committed::from_inputs(&inputs, &config)?;
++        // Setup (not timed): transparent generators.
++        let ck = ipa::CommitKey::setup(committed.coeffs.len());
++        let mut rng = ark_std::rand::thread_rng();
++        let blinds = Blinds {
++            r:    FieldElement::rand(&mut rng),
++            r_mu: FieldElement::rand(&mut rng),
++        };
++        // Commit phase: timed, reported, not part of the prover time (the
++        // payload commitment is the CP-SNARK's input).
++        let t = Instant::now();
++        let commitments = commit(&ck, &committed, blinds);
++        let commit_s = t.elapsed().as_secs_f64();
++
++        let t = Instant::now();
++        let witness = prover.solve_acir(inputs)?;
++        let witgen_s = t.elapsed().as_secs_f64();
++
++        let (proof, times) =
++            prove_linked(prover, witness, &ck, &committed, &commitments, blinds)?;
++        let rss = max_rss_bytes();
++
++        let mut verify = Vec::with_capacity(args.verify_reps);
++        for _ in 0..args.verify_reps {
++            let t = Instant::now();
++            verify_linked(&verifier, &ck, &commitments.c, &proof)?;
++            verify.push(t.elapsed().as_secs_f64());
++        }
++        let (verify_mean, verify_std) = mean_std(&verify);
++        json!({
++            "commit_s": commit_s,
++            "witgen_s": witgen_s,
++            "snark_prove_s": times.snark,
++            "opening_s": times.opening,
++            "prover_s": times.snark + times.opening,
++            "verifier_s": verify_mean,
++            "verifier_std_s": verify_std,
++            "proof_bytes": proof.size_bytes(),
++            "snark_proof_bytes": proof_size_bytes(&proof.proof),
++            "opening_bytes": proof.opening.size_bytes() + 32,
++            "committed_elements": committed.coeffs.len(),
++            "max_rss_bytes": rss,
++        })
++    } else {
++        let t = Instant::now();
++        let witness = prover.solve_acir(inputs)?;
++        let witgen_s = t.elapsed().as_secs_f64();
++        let t = Instant::now();
++        let (proof, _) = prover.prove_linked(witness, None)?;
++        let prove_s = t.elapsed().as_secs_f64();
++        let rss = max_rss_bytes();
++
++        let mut verify = Vec::with_capacity(args.verify_reps);
++        for _ in 0..args.verify_reps {
++            // `Verify::verify` consumes the scheme; verify on a clone and
++            // keep the clone out of the timed region.
++            let mut v = verifier.clone();
++            let t = Instant::now();
++            v.verify(&proof)?;
++            verify.push(t.elapsed().as_secs_f64());
++        }
++        let _ = &mut verifier;
++        let (verify_mean, verify_std) = mean_std(&verify);
++        json!({
++            "witgen_s": witgen_s,
++            "snark_prove_s": prove_s,
++            "prover_s": prove_s,
++            "verifier_s": verify_mean,
++            "verifier_std_s": verify_std,
++            "proof_bytes": proof_size_bytes(&proof),
++            "snark_proof_bytes": proof_size_bytes(&proof),
++            "max_rss_bytes": rss,
++        })
++    };
++    println!("{out}");
++    Ok(())
++}
++
++fn main() -> Result<()> {
++    match argh::from_env::<Args>().cmd {
++        Cmd::Prepare(args) => prepare(args),
++        Cmd::Prove(args) => prove(args),
++    }
++}
+diff --git a/tooling/artemis-bench/tests/soundness.rs b/tooling/artemis-bench/tests/soundness.rs
+new file mode 100644
+index 00000000..8a8f474d
+--- /dev/null
++++ b/tooling/artemis-bench/tests/soundness.rs
+@@ -0,0 +1,249 @@
++//! End-to-end and soundness tests of the Artemis link on ProveKit.
++
++use {
++    ark_ff::{One, UniformRand},
++    ark_serialize::CanonicalSerialize,
++    artemis_bench::*,
++    noir_artifact_cli::fs::inputs::read_inputs_from_file,
++    provekit_backend_bn254::{FieldElement, NoirProver, Prover, Verifier},
++    provekit_r1cs_compiler::committed_evaluation,
++    std::{fs, path::Path},
++    tlsn_bench_pcs::{eval_poly, ipa},
++};
++
++const N: usize = 100;
++
++fn write_package(dir: &Path, main: &str, payload: &[u8]) {
++    fs::create_dir_all(dir.join("src")).unwrap();
++    fs::write(
++        dir.join("Nargo.toml"),
++        "[package]\nname = \"link\"\ntype = \"bin\"\nauthors = [\"\"]\n\n[dependencies]\n",
++    )
++    .unwrap();
++    fs::write(dir.join("src/main.nr"), main).unwrap();
++    fs::write(
++        dir.join("Prover.toml"),
++        format!("payload = {payload:?}\nmask = \"0x2a\"\n"),
++    )
++    .unwrap();
++}
++
++fn main_source(visibility: &str) -> String {
++    format!(
++        "fn main(payload: {visibility} [u8; {N}], mask: Field) {{\n    assert(payload[3] != \
++         payload[4]);\n    let _ = mask;\n}}\n"
++    )
++}
++
++fn payload(seed: u8) -> Vec<u8> {
++    (0..N).map(|i| (i as u8).wrapping_mul(7).wrapping_add(seed)).collect()
++}
++
++struct Fixture {
++    prover:   NoirProver,
++    verifier: Verifier,
++    ck:       ipa::CommitKey,
++    dir:      tempfile::TempDir,
++}
++
++fn fixture(seed: u8) -> Fixture {
++    let dir = tempfile::tempdir().unwrap();
++    write_package(dir.path(), &main_source(""), &payload(seed));
++    let program = compile_package(dir.path()).unwrap();
++    let scheme = build_scheme(program, Some(&LinkConfig::default())).unwrap();
++    let (prover, verifier) = keys(scheme);
++    let Prover::Noir(prover) = prover else {
++        panic!("expected a Noir prover")
++    };
++    Fixture {
++        prover,
++        verifier,
++        ck: ipa::CommitKey::setup(N.div_ceil(31) + 1),
++        dir,
++    }
++}
++
++fn blinds() -> Blinds {
++    let mut rng = ark_std::rand::thread_rng();
++    Blinds {
++        r:    FieldElement::rand(&mut rng),
++        r_mu: FieldElement::rand(&mut rng),
++    }
++}
++
++/// Prove for the payload in the fixture's Prover.toml, opening `opened`
++/// against `commitments`.
++fn prove(
++    f: &Fixture,
++    opened: &Committed,
++    commitments: &Commitments,
++    blinds: Blinds,
++) -> LinkedProof {
++    let mut prover = f.prover.clone();
++    let (inputs, _) =
++        read_inputs_from_file(&f.dir.path().join("Prover.toml"), prover.witness_generator.abi())
++            .unwrap();
++    let witness = prover.solve_acir(inputs).unwrap();
++    prove_linked(prover, witness, &f.ck, opened, commitments, blinds)
++        .unwrap()
++        .0
++}
++
++fn committed(f: &Fixture) -> Committed {
++    let (inputs, _) = read_inputs_from_file(
++        &f.dir.path().join("Prover.toml"),
++        f.prover.witness_generator.abi(),
++    )
++    .unwrap();
++    Committed::from_inputs(&inputs, &LinkConfig::default()).unwrap()
++}
++
++#[test]
++fn honest_proof_verifies_and_rho_is_the_masked_evaluation() {
++    let f = fixture(1);
++    let committed = committed(&f);
++    let blinds = blinds();
++    let commitments = commit(&f.ck, &committed, blinds);
++    let proof = prove(&f, &committed, &commitments, blinds);
++    verify_linked(&f.verifier, &f.ck, &commitments.c, &proof).unwrap();
++
++    // rho / beta equals the committed polynomial (payload, mask) at beta.
++    let scheme = f.verifier.whir_for_witness.as_ref().unwrap();
++    let linked = f
++        .verifier
++        .verify_linked(&proof.proof, &commitments.session())
++        .unwrap();
++    let beta = linked.challenges[scheme.link_challenge.unwrap()];
++    let value = committed_evaluation(linked.exposed[0], beta).unwrap();
++    assert_eq!(value, eval_poly(&committed.coeffs, beta));
++}
++
++#[test]
++fn payload_in_the_first_witness_block() {
++    // The link is only sound if the payload and the mask are committed before
++    // beta is drawn; the compiler checks this, and so do we.
++    let f = fixture(1);
++    let scheme = &f.prover.whir_for_witness;
++    assert_eq!(scheme.exposed_offsets.len(), 1);
++    assert!(scheme.link_challenge.is_some());
++    assert!(scheme.w1_size > N);
++}
++
++#[test]
++fn commitment_to_another_payload_is_rejected() {
++    let f = fixture(1);
++    let real = committed(&f);
++    let mut other = Committed {
++        coeffs: real.coeffs.clone(),
++    };
++    other.coeffs[1] += FieldElement::one();
++    let blinds = blinds();
++    let commitments = commit(&f.ck, &other, blinds);
++
++    // The circuit ran on the real payload. Opening either polynomial against
++    // the commitment to the other payload fails.
++    let proof = prove(&f, &other, &commitments, blinds);
++    let err = verify_linked(&f.verifier, &f.ck, &commitments.c, &proof).unwrap_err();
++    assert!(err.to_string().contains("opening"), "{err}");
++    let proof = prove(&f, &real, &commitments, blinds);
++    let err = verify_linked(&f.verifier, &f.ck, &commitments.c, &proof).unwrap_err();
++    assert!(err.to_string().contains("opening"), "{err}");
++}
++
++#[test]
++fn wrong_mask_commitment_is_rejected() {
++    let f = fixture(1);
++    let committed = committed(&f);
++    let blinds = blinds();
++    let commitments = commit(&f.ck, &committed, blinds);
++    let mut proof = prove(&f, &committed, &commitments, blinds);
++    proof.c_mu = commitments.c;
++    assert!(verify_linked(&f.verifier, &f.ck, &commitments.c, &proof).is_err());
++}
++
++#[test]
++fn proof_is_bound_to_the_commitments_it_was_made_for() {
++    // Challenge reuse: a proof made under one pair of commitments does not
++    // verify under another, because beta is derived from them.
++    let f = fixture(1);
++    let committed = committed(&f);
++    let (b1, b2) = (blinds(), blinds());
++    let (c1, c2) = (commit(&f.ck, &committed, b1), commit(&f.ck, &committed, b2));
++    assert_ne!(c1, c2);
++    let p1 = prove(&f, &committed, &c1, b1);
++    let p2 = prove(&f, &committed, &c2, b2);
++    verify_linked(&f.verifier, &f.ck, &c1.c, &p1).unwrap();
++    verify_linked(&f.verifier, &f.ck, &c2.c, &p2).unwrap();
++    assert!(verify_linked(&f.verifier, &f.ck, &c2.c, &p1).is_err());
++
++    let scheme = f.verifier.whir_for_witness.as_ref().unwrap();
++    let idx = scheme.link_challenge.unwrap();
++    let beta1 = f.verifier.verify_linked(&p1.proof, &c1.session()).unwrap().challenges[idx];
++    let beta2 = f.verifier.verify_linked(&p2.proof, &c2.session()).unwrap().challenges[idx];
++    assert_ne!(beta1, beta2);
++
++    // The SNARK alone under the wrong session is rejected too.
++    assert!(f.verifier.verify_linked(&p1.proof, &c2.session()).is_err());
++}
++
++#[test]
++fn tampered_rho_is_rejected() {
++    let f = fixture(1);
++    let committed = committed(&f);
++    let blinds = blinds();
++    let commitments = commit(&f.ck, &committed, blinds);
++    let mut proof = prove(&f, &committed, &commitments, blinds);
++    let rho = f
++        .verifier
++        .verify_linked(&proof.proof, &commitments.session())
++        .unwrap()
++        .exposed[0];
++
++    // Locate rho in the transcript and replace it.
++    let mut le = Vec::new();
++    rho.serialize_compressed(&mut le).unwrap();
++    let be: Vec<u8> = le.iter().rev().copied().collect();
++    let narg = &mut proof.proof.whir_r1cs_proof.narg_string;
++    let pos = narg
++        .windows(32)
++        .position(|w| w == le.as_slice() || w == be.as_slice())
++        .expect("rho is in the transcript");
++    narg[pos + 7] ^= 1;
++    assert!(f
++        .verifier
++        .verify_linked(&proof.proof, &commitments.session())
++        .is_err());
++    assert!(verify_linked(&f.verifier, &f.ck, &commitments.c, &proof).is_err());
++}
++
++#[test]
++fn plain_verification_rejects_a_session_bound_proof() {
++    use provekit_backend_bn254::Verify;
++    let f = fixture(1);
++    let committed = committed(&f);
++    let blinds = blinds();
++    let commitments = commit(&f.ck, &committed, blinds);
++    let proof = prove(&f, &committed, &commitments, blinds);
++    let mut verifier = f.verifier.clone();
++    assert!(verifier.verify(&proof.proof).is_err());
++}
++
++#[test]
++fn public_payload_is_refused() {
++    let dir = tempfile::tempdir().unwrap();
++    write_package(dir.path(), &main_source("pub"), &payload(1));
++    let program = compile_package(dir.path()).unwrap();
++    let err = build_scheme(program, Some(&LinkConfig::default())).unwrap_err();
++    assert!(err.to_string().contains("private"), "{err}");
++}
++
++#[test]
++fn unlinked_scheme_is_unchanged() {
++    // Without a link the scheme reveals nothing.
++    let dir = tempfile::tempdir().unwrap();
++    write_package(dir.path(), &main_source(""), &payload(1));
++    let program = compile_package(dir.path()).unwrap();
++    let (prover, _) = keys(build_scheme(program, None).unwrap());
++    assert!(prover.whir_for_witness().exposed_offsets.is_empty());
++    assert!(prover.whir_for_witness().link_challenge.is_none());
++}
