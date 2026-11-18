@@ -2,10 +2,8 @@
 # Combined evaluation: prover time of the zkML application (Nov 2026 rerun, see rerun_plots.yml) and of the
 # TLSNotary application (tlsn-bench) in one table, replacing the zkML-only prover-time figure.
 #
-# TLSNotary has no doe-suite design yet: `python3 tlsn-bench/to_doe_suite.py` imports the local results
-# (tlsn-bench/results/results.csv) as the pseudo-suite `tlsn-local_<csv mtime>` in doe-suite-results/ and prints
-# its id. Once a design exists, replace `tlsn-local` below by that suite (each run must write results.csv in the
-# bench.py format).
+# TLSNotary: suite `tlsn` (designs/tlsn.yml, AWS). The local Mac run can still be imported with
+# `python3 tlsn-bench/to_doe_suite.py` as the pseudo-suite `tlsn-local_<csv mtime>` (commented out below).
 #
 #   make etl-super config=combined_plots out=../doe-suite-results-super
 #   -> doe-suite-results-super/combined_plots/prover_table/prover_time_table.tex
@@ -45,12 +43,17 @@ $SUITE_ID$:
   cplink_fast-large: "1794665663"
   xlarge-poseidon_kzg: "1794665702"
   xlarge-poseidon_ipa: "1794665743"
-  # TLSNotary, local run (Apple M5 Pro, 48 GB), imported with tlsn-bench/to_doe_suite.py
-  tlsn-local: "1794952892"
+  # TLSNotary on AWS (designs/tlsn.yml, 17-18 Nov 2026, project suffix NA): r6i.8xlarge; only the sizes in
+  # `tlsn_sizes` below are used
+  tlsn: "1794941917"
+  tlsn-lego: "1794953544"   # LegoSNARK CP_link estimate on Barretenberg, AWS r6i.8xlarge (18 Nov 2026)
+  # TLSNotary, local run (Apple M5 Pro, 48 GB), imported with tlsn-bench/to_doe_suite.py; replaced by the AWS suites
+  # above (to use it again: uncomment here and under `experiments`, drop `tlsn`/`tlsn-lego` and `tlsn_suite_rows`)
+  # tlsn-local: "1794952892"
 
 $ETL$:
   prover_table:
-    experiments:
+    experiments: &experiments
       nocom-small: "*"
       nocom-small-ipa: "*"
       poly-small: "*"
@@ -83,16 +86,21 @@ $ETL$:
       cplink_fast-large: "*"
       xlarge-poseidon_kzg: "*"
       xlarge-poseidon_ipa: "*"
-      tlsn-local: "*"
+      tlsn: "*"
+      tlsn-lego: "*"
+      # tlsn-local: "*"
     extractors:
       CsvExtractor: {file_regex: ["^output.csv$"]}        # zkML
       TlsnCsvExtractor: {file_regex: ["^results.csv$"]}   # TLSNotary (bench.py format)
-      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml"]}
+      # calibration.csv: SHA-256 calibration runs of suite tlsn, not part of the table
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "runtime_info.yaml", "calibration.csv", "lego_layout.json"]}
     transformers:
       - name: CombinedProverTimeTransformer
         zkml_pc_map: {kzg_bls: kzg}   # Poseidon on diffusion runs on BLS12-381, shown in the KZG block
         tlsn_workload: sweep
         tlsn_backend_pc: {bb: kzg, provekit: ipa}
+        tlsn_suite_rows: {tlsn-lego: [lego_estimate]}   # LegoSNARK link prover; rebased on the nocom row of `tlsn`
+        tlsn_sizes: [520, 2400, 4000, 10000, 16384, 65536]   # tlsn-extension use cases (tlsn-bench/bench.py SIZES)
     loaders:
       CsvSummaryLoader: {skip_empty: True}
       CombinedProverTableLoader:
@@ -102,9 +110,8 @@ $ETL$:
         transpose: true   # rows: models / payload sizes; columns: schemes per proof-system family
         caption: >-
           Prover time in seconds for zkML (Halo2) and TLSNotary (Noir), for pairing-based
-          (left) and transparent (right) proof systems. zkML rows are models (number of parameters), TLSNotary rows use cases (response size): a bank statement (Bank), an Uber ride history (Uber), an ID.me identity (ID.me), a government traffic-penalty record (Gov.) and a synthetic 1\,MiB response (Synth.). Lego: LegoSNARK; on TLSNotary a cost estimate (No Com. plus the CP\_link prover on the wire commitments of a real proof).
-          zkML ran on AWS r6i instances, TLSNotary on an Apple M5 Pro (48\,GB).
-        apps:
+          (left) and transparent (right) proof systems. zkML rows are models (number of parameters).
+        apps: &apps
           - key: zkml
             label: "zkML"
             systems: {kzg: "KZG (Halo2)", ipa: "IPA (Halo2)"}
@@ -122,14 +129,14 @@ $ETL$:
             columns:
             # use case (tlsn-bench/bench.py SIZE_NAMES), payload size as sublabel like the zkML parameter counts
               - {key: 520, label: Bank, sublabel: "520\\,B"}
+              - {key: 2400, label: Spotify, sublabel: "2.3\\,KiB"}
+              - {key: 10000, label: Discord, sublabel: "9.8\\,KiB"}
               - {key: 16384, label: Uber, sublabel: "16\\,KiB"}
               - {key: 65536, label: ID.me, sublabel: "64\\,KiB"}
-              - {key: 190259, label: Gov., sublabel: "186\\,KiB"}
-              - {key: 1048576, label: Synth., sublabel: "1\\,MiB"}
         blocks:
           - {key: kzg, label: "Pairing-based: prover time [s]"}
           - {key: ipa, label: "Transparent: prover time [s]"}
-        rows:
+        rows: &rows
           - {key: no_com, label: No Com.}
           - {key: poly, label: Artemis}
           - {key: cp_link_lego, label: Lego}
@@ -137,7 +144,7 @@ $ETL$:
           - {key: poseidon, label: Poseidon}
           - {key: sha256, label: SHA-256}
         # first match wins; a missing cell without a rule is shown as not run
-        missing:
+        missing: &missing
           - cpsnark: [cp_link+, cp_link_fast, cp_link_lego]
             pc_type: [ipa]
             kind: unsupported
@@ -146,6 +153,7 @@ $ETL$:
             app: [tlsn]
             pc_type: [kzg]
             kind: not_implemented
+            merge: false   # \bot in every Lunar cell
             note: "Lunar is not implemented for UltraHonk (sumcheck-based): its linking argument relies on the univariate evaluation domain of a Plonkish proof system."
           - cpsnark: [sha256]
             app: [zkml]
@@ -161,26 +169,94 @@ $ETL$:
           - cpsnark: [sha256]
             app: [zkml]
             pc_type: [kzg]
-            x: [diffusion]
+            x: [diffusion, gpt2]
             kind: not_run
-            note: "With SHA-256 the Diffusion circuit needs an FFT domain of $2^{30}$, beyond the $2^{28}$ supported by BN254."
+            note: "The circuit needs an FFT domain beyond the $2^{28}$ supported by BN254 (SHA-256: $2^{30}$ for Diffusion, $2^{31}$ for GPT-2; Poseidon: $2^{29}$ for GPT-2)."
           - cpsnark: [sha256]
             app: [zkml]
             x: [gpt2]
             kind: not_run
             note: "SHA-256 runs out of memory on the same machines as the other schemes (DLRM 256\\,GB, MobileNet 512\\,GB, VGG and Diffusion 1\\,TB); GPT-2, 4$\\times$ larger than Diffusion, was therefore not attempted."
-          - cpsnark: [sha256]
-            app: [tlsn]
-            x: [85606, 91546, 190259, 262144, 1048576]
-            kind: not_run
-            note: "SHA-256 above 64\\,KiB needs more than the 48\\,GB of the benchmark machine (about 0.25--0.3\\,GB per kB)."
           - cpsnark: [poseidon]
             app: [zkml]
+            pc_type: [kzg]
             x: [gpt2]
             kind: not_run
-            note: "Poseidon does not scale to GPT-2."
-          - cpsnark: [no_com]
+            note: "The circuit needs an FFT domain beyond the $2^{28}$ supported by BN254 (SHA-256: $2^{30}$ for Diffusion, $2^{31}$ for GPT-2; Poseidon: $2^{29}$ for GPT-2)."
+          - cpsnark: [poseidon]
             app: [zkml]
-            x: [diffusion, gpt2]
+            pc_type: [ipa]
+            x: [gpt2]
             kind: not_run
-            note: "Not re-run on the large models."
+            note: "Poseidon on GPT-2 needs more than the 4\\,TB of memory of the largest instance available to us."
+
+  # Table 2 (tab:results): proof size, verifier time and prover memory of zkML, in the layout of the original
+  # hand-written table (paper figures/evaluation/table.tex)
+  #   -> doe-suite-results-super/combined_plots/results_table/results_table.tex
+  results_table:
+    experiments: *experiments
+    extractors:
+      CsvExtractor: {file_regex: ["^output.csv$"]}
+      RuntimeInfoExtractor: {file_regex: ["^runtime_info.yaml$"]}   # peak memory (/usr/bin/time max_rss)
+      TlsnCsvExtractor: {file_regex: ["^results.csv$"]}
+      IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "calibration.csv", "lego_layout.json"]}
+    transformers:   # (not a YAML alias: doe-suite pops `name` from the shared dict)
+      - name: CombinedProverTimeTransformer
+        zkml_pc_map: {kzg_bls: kzg}
+        tlsn_workload: sweep
+        tlsn_backend_pc: {bb: kzg, provekit: ipa}
+        tlsn_suite_rows: {tlsn-lego: [lego_estimate]}
+        tlsn_sizes: [520, 2400, 4000, 10000, 16384, 65536]   # tlsn-extension use cases (tlsn-bench/bench.py SIZES)
+    loaders:
+      CsvSummaryLoader: {skip_empty: True}
+      ResultsMatrixLoader:
+        file_name: results_table
+        label: tab:results
+        sections:
+          - app: zkml
+            label: zkML
+            columns:
+              - {key: mnist, label: MNST}
+              - {key: resnet18, label: R18}
+              - {key: dlrm, label: DLRM}
+              - {key: mobilenet, label: Mob}
+              - {key: vgg, label: VGG}
+              - {key: diffusion, label: Diff}
+              - {key: gpt2, label: GPT}
+            blocks:
+              - {key: kzg, label: KZG}
+              - {key: ipa, label: IPA}
+          - app: tlsn
+            label: TLSNotary
+            fmt: {verifier_time_sec: sig}
+            columns:
+              - {key: 520, label: Bank}
+              - {key: 2400, label: Spotify}
+              - {key: 10000, label: Discord}
+              - {key: 16384, label: Uber}
+              - {key: 65536, label: ID.me}
+            blocks:
+              - {key: kzg, label: KZG}
+              - {key: ipa, label: WHIR}
+        rows:
+          - {key: no_com, label: No Com.}
+          - {key: poly, label: Artemis}
+          - {key: cp_link_lego, label: Lego}
+          - {key: cp_link_fast, label: Lunar}
+          - {key: poseidon, label: Poseidon}
+          - {key: sha256, label: SHA-256}
+        metrics:
+          - {key: proof_size_bytes, label: "Proof Size (kB)", scale: 1000, fmt: int}
+          - {key: verifier_time_sec, label: "Verifier Time (ms)", scale: 0.001, fmt: k}
+          - {key: max_rss_bytes, label: "Prover Memory (GB)", scale: 1000000000, fmt: mem}
+        caption: >-
+          Proof size, verifier time, and prover memory for pairing-based and transparent proof systems.
+          zkML (Halo2 with KZG or IPA): \gls{mnist} (MNST), \gls{resnet18} (R18), \gls{dlrm} (DLRM), \gls{mobilenet}
+          (Mob), \gls{vgg} (VGG), \gls{diffusion} (Diff), and \gls{gpt2} (GPT).
+          TLSNotary (Noir on Barretenberg UltraHonk with KZG, or ProveKit with WHIR): the use cases of
+          \Cref{tab:eval:prover}; Artemis on Barretenberg and Lego are cost
+          estimates, and the Barretenberg verifier time is the wall-clock of \texttt{bb verify} minus that on an
+          empty circuit. Lego: LegoSNARK.
+          Missing entries (-): Lunar and LegoSNARK require a pairing-based proof system and Lunar is not implemented
+          for UltraHonk; Poseidon fails to scale to GPT-2; SHA-256 and the remaining TLSNotary entries were not run
+          or ran out of memory, as described in~\Cref{sec:eval:results} and \Cref{tab:eval:prover}.
