@@ -1,7 +1,0 @@
-[package]
-name = "age_poseidon2"
-type = "bin"
-authors = [""]
-
-[dependencies]
-date = { tag = "v0.5.6", git = "https://github.com/madztheo/noir-date.git" }

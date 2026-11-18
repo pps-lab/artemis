@@ -1,6 +1,0 @@
-[package]
-name = "poseidon2_native"
-type = "bin"
-authors = [""]
-
-[dependencies]

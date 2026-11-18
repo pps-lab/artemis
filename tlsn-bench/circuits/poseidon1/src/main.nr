@@ -2,7 +2,7 @@
 //! (src/commitments/poseidon_commit.rs: halo2 Pow5Chip, P128Pow5T3): width 3, rate 2, x^5 S-box,
 //! 8 full rounds, sponge over the committed values followed by a field blinder. The permutation is
 //! noir-lang/poseidon's BN254 `x5_3` (circomlib constants, 57 partial rounds; halo2's P128Pow5T3 has
-//! 56). The payload is packed 31 bytes per field element in the circuit, as in the Poseidon2 rows.
+//! 56). The payload is packed 31 bytes per field element in the circuit, as in the Artemis rows.
 
 use poseidon::poseidon::bn254::perm::x5_3;
 

@@ -1,7 +1,0 @@
-[package]
-name = "poseidon2_t16"
-type = "bin"
-authors = [""]
-
-[dependencies]
-poseidon2 = { path = "../vendor/taceo-noir-poseidon/poseidon2" }

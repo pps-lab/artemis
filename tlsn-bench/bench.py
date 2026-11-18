@@ -58,8 +58,6 @@ SWEEP_ROWS = {
     "keccak256_bb": ("keccak256_bb", False),
     "blake3": ("blake3", False),
     "blake3_bb": ("blake3_bb", False),
-    "poseidon2_t16": ("poseidon2_t16", False),
-    "poseidon2_native": ("poseidon2_native", False),
     # Poseidon (v1) as in the zkML Poseidon baseline: width 3, rate 2, payload + field blinder.
     "poseidon1": ("poseidon1", False),
     "artemis": ("artemis", True),
@@ -71,10 +69,10 @@ SWEEP_ROWS = {
 }
 LEGO_ROWS = ("lego_estimate", "lego_packed_estimate")
 BACKEND_ROWS = {
-    "provekit": ["nocom", "sha256", "keccak256", "blake3", "poseidon2_t16", "poseidon2_native", "poseidon1", "artemis"],
+    "provekit": ["nocom", "sha256", "keccak256", "blake3", "poseidon1", "artemis"],
     # Barretenberg cannot expose a challenge, so the Artemis row is the
     # (unsound) in-circuit Horner cost estimate; add an `external` opening.
-    "bb": ["nocom", "sha256", "keccak256", "keccak256_bb", "blake3", "blake3_bb", "poseidon2_t16", "poseidon2_native", "poseidon1", "artemis_estimate",
+    "bb": ["nocom", "sha256", "keccak256", "keccak256_bb", "blake3", "blake3_bb", "poseidon1", "artemis_estimate",
            "lego_estimate", "lego_packed_estimate"],
 }
 # Largest payload that fits a 48 GB machine (prover RAM extrapolated from the
@@ -82,9 +80,9 @@ BACKEND_ROWS = {
 LOCAL_CAP = {("provekit", "keccak256"): 16384, ("bb", "keccak256"): 16384}
 AGE_ROWS = {
     "provekit": [("age_nocom", False), ("age_sha256", False), ("age_keccak256", False),
-                 ("age_blake3", False), ("age_poseidon2", False), ("age_artemis", True)],
+                 ("age_blake3", False), ("age_artemis", True)],
     "bb": [("age_nocom", False), ("age_sha256", False), ("age_keccak256", False), ("age_keccak256_bb", False),
-           ("age_blake3", False), ("age_blake3_bb", False), ("age_poseidon2", False)],
+           ("age_blake3", False), ("age_blake3_bb", False)],
 }
 
 FIELDS = [
@@ -178,8 +176,6 @@ def age_toml(template):
     if hash_alg(template):
         lines.append(f"blinder = {blinder}")
         lines.append(f"committed_hash = {digest(hash_alg(template), dob + blinder)}")
-    if template == "age_poseidon2":
-        lines.append('blinder = "0x0f1e2d3c4b5a6978"')
     if template == "age_artemis":
         lines.append('mask = "0x0f1e2d3c4b5a6978"')
     lines.append("\n[proof_date]\nyear = 2025\nmonth = 9\nday = 2")

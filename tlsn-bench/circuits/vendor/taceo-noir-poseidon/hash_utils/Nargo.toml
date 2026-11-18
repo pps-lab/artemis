@@ -1,7 +1,0 @@
-[package]
-name = "hash_utils"
-type = "lib"
-authors = ["TACEO"]
-compiler_version = ">=0.36.0"
-
-[dependencies]
