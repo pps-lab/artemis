@@ -23,6 +23,8 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+from bench import SIZES  # payload sizes of the sweep; points at other sizes are ignored
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -56,6 +58,8 @@ def load(sources):
         own = defaultdict(list)
         for path in source_files(source, "results.csv"):
             for r in csv.DictReader(open(path)):
+                if r["workload"] == "sweep" and int(r["bytes"]) not in SIZES:
+                    continue
                 own[(r["workload"], r["backend"], r["row"], int(r["bytes"]))].append(r)
         for key, rows in own.items():
             groups.setdefault(key, rows)
@@ -222,7 +226,7 @@ def lego_table(data, layout):
     lines = []
     for row, title in (("lego_estimate", "no-commitment circuit, byte cells linked (the plotted row)"),
                        ("lego_packed_estimate", "variant that packs in the circuit, packed cells linked")):
-        sizes = sorted(int(k.split("/")[1]) for k in layout if k.split("/")[0] == row)
+        sizes = sorted(int(k.split("/")[1]) for k in layout if k.split("/")[0] == row and int(k.split("/")[1]) in SIZES)
         if not sizes:
             continue
         lines += [f"## Barretenberg: LegoSNARK CP_link, {title}", "",

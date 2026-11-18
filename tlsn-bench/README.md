@@ -23,7 +23,6 @@ results/                results.csv, lego_layout.json, logs, sweep_prover.{pdf,p
 ./run.sh setup     # clone + patch + build ProveKit (~10 min), build pcs
 ./run.sh test      # 9 soundness tests of the link, 6 tests of the pcs crate
 ./run.sh small     # age check + sweep 520 B .. 64 KiB, all rows; peak ~20 GiB RAM
-./run.sh large     # 83.6 KiB .. 1 MiB without SHA-256; peak ~20 GiB RAM
 ./run.sh setup-bb-dump   # clone + patch + build Barretenberg (~5 min), only for the LegoSNARK rows
 ./run.sh lego            # LegoSNARK rows on Barretenberg, all sizes; peak ~4 GiB RAM
 ./run.sh plot
@@ -34,8 +33,8 @@ matplotlib, and the Rust toolchain pinned by ProveKit (`nightly-2026-03-04`, pic
 `rust-toolchain.toml`). `./run.sh setup-bb-dump` needs `cmake`, `ninja` and a C++20 clang (Apple clang 21
 works); without the patched binary the LegoSNARK rows are skipped.
 
-On AWS: `doe-suite-config/designs/tlsn.yml` (suite `tlsn`, role `setup-tlsn`, host types `tlsn_small` =
-r6i.8xlarge and `tlsn_large` = r6i.16xlarge for SHA-256 above 64 KiB). The instances clone the `tlsn-bench`
+On AWS: `doe-suite-config/designs/tlsn.yml` (suite `tlsn`, role `setup-tlsn`, host type `tlsn_small` =
+r6i.8xlarge). The instances clone the `tlsn-bench`
 branch; each job is one `bench.py ... --out results/results.csv --clean-build` call for one backend and size.
 
 ## Backends and rows
@@ -145,23 +144,22 @@ What the dump shows for `nocom` (all sizes; `results/lego_layout.json`, tables i
   wire, `w_l`; three pairings.**
 - The range check adds a sorted copy of the bytes, four per row, so `w_l` holds `N + N/4` byte-sized
   values. The MSM runs over the non-zero cells of `w_l`: 1.25 N cells minus the zero bytes, all of at most
-  8 bits except the three masking values (20 461 cells at 16 KiB, 1 305 745 at 1 MiB; 99.6% to 100% small).
+  8 bits except the three masking values (20 461 cells at 16 KiB; 99.6% to 100% small).
   arkworks' MSM puts 8-bit scalars into 255 buckets, which is why the link prover is cheap: 2.4 ms at
-  16 KiB, 3.1 ms at 64 KiB, 28.6 ms at 1 MiB.
+  16 KiB, 3.1 ms at 64 KiB.
 - LegoSNARK adds no gate, so the circuit never crosses a power of two that `nocom` does not cross. The
   Artemis estimate adds about 0.35 gates per byte, nearly all of them for the packing (the circuit below,
-  which packs and has no Horner evaluation, has 3 or 4 gates fewer), and has twice the dyadic size of
-  `nocom` at 83.6 KiB, 89.4 KiB and 185.8 KiB.
+  which packs and has no Horner evaluation, has 3 or 4 gates fewer).
 
 `lego_packed_estimate` is the variant that packs inside the circuit (`circuits/lego_packed`) and links the
 cells of the packed elements. It is the weaker baseline: 1.28x the gates, the packed elements end up in
 two wires at most sizes (four pairings), and its overhead over no commitment (17 ms at 16 KiB, 70 ms at
-64 KiB, 703 ms at 1 MiB) is that of the Artemis estimate. It is in the CSV and in `summary.md`, not in
+64 KiB) is that of the Artemis estimate. It is in the CSV and in `summary.md`, not in
 the plot.
 
 Per-circuit setup (not counted): a trapdoor `k` and the key `P`, one G1 point per cell of `w_l` up to the
 last used row plus the masking rows, and the Pedersen key: 1.4 MB and 0.15 s at 16 KiB, 5.4 MB and 0.6 s
-at 64 KiB, 86 MB and 10 s at 1 MiB. The key depends on the circuit (the position of the payload cells), so
+at 64 KiB. The key depends on the circuit (the position of the payload cells), so
 every predicate and payload size needs its own trusted setup, in addition to the KZG reference string.
 
 ## What is measured
@@ -197,7 +195,6 @@ Prover time in seconds:
 | 520 B | 0.023 | 0.120 | 0.025 | 0.027 | 0.010 | 0.207 | 0.019 | 0.012 | 0.011 |
 | 16 KiB | 0.048 | 1.62 | 0.065 | 0.066 | 0.100 | 5.19 | 0.190 | 0.117 | 0.102 |
 | 64 KiB | 0.107 | 7.20 | 0.184 | 0.151 | 0.293 | 40.1 | 0.605 | 0.349 | 0.297 |
-| 1 MiB | 1.18 | not run | 2.30 | 1.64 | 3.61 | not run | 7.55 | 4.32 | 3.64 |
 
 - **Against SHA-256 (what TLSNotary ships)** the gain grows with the payload: 4.5x at 520 B, 25x at 16 KiB,
   48x at 64 KiB on ProveKit (115x on Barretenberg, estimate), and SHA-256 needs 16 GiB of prover memory at
@@ -208,10 +205,10 @@ Prover time in seconds:
   10.7 M constraints, about 158 k per permutation without a black box), 10.4 s at 16 KiB and 39.5 s at
   64 KiB on Barretenberg with the black box. In the age check Keccak-256 costs 214 ms on ProveKit against
   25 ms for Artemis; BLAKE3 39 ms.
-- **Against Poseidon2** the prover-time gain on ProveKit is small: none below 10 kB, 1.2x to 1.7x above. The
+- **Against Poseidon2** the prover-time gain on ProveKit is small: none up to 16 KiB, 1.2x at 64 KiB. The
   Artemis circuit has 1.03x the constraints of the no-commitment circuit (Poseidon2: 2.2x), but the byte
   range checks that every row pays dominate, and Artemis proves at 1.4x the no-commitment time because of
-  the second witness block and the IPA opening (0.34 s of the 1.64 s at 1 MiB). The verifier is where
+  the second witness block and the IPA opening. The verifier is where
   Artemis is ahead of Poseidon2 on ProveKit (21 ms against 61 ms at 64 KiB).
 - **LegoSNARK on Barretenberg** is cheaper for the prover than the Artemis estimate at every size. Prover
   overhead over no commitment:
@@ -220,12 +217,11 @@ Prover time in seconds:
   |---|---|---|
   | 16 KiB | 2.4 ms (2.4%) | 17.0 ms (17%) |
   | 64 KiB | 3.1 ms (1.1%) | 55 ms (19%) |
-  | 1 MiB | 28.6 ms (0.8%) | 709 ms (20%) |
 
   The link adds no gate and its MSM runs over byte-sized scalars; the Artemis estimate pays for packing
   the bytes in the circuit (0.35 gates per byte) plus a KZG opening over full-size scalars. The link verifier costs
   0.4 ms (three pairings) and the proof grows by 32 bytes. The price is a trusted setup per circuit with
-  a key of 82 bytes per payload byte (86 MB at 1 MiB), and the scheme needs KZG wire commitments, so it
+  a key of 82 bytes per payload byte (5.4 MB at 64 KiB), and the scheme needs KZG wire commitments, so it
   does not exist on ProveKit.
 
   The same on AWS (r6i.8xlarge, doe-suite suite `tlsn-lego_1794953544`, design `tlsn-lego`), with the other
@@ -235,12 +231,10 @@ Prover time in seconds:
   |---|---|---|---|
   | 16 KiB | 0.163 s | 5.5 ms (3.4%) | 31.5 ms (19%) |
   | 64 KiB | 0.469 s | 8.5 ms (1.8%) | 97 ms (21%) |
-  | 186 KiB | 1.037 s | 16.2 ms (1.6%) | 668 ms (64%) |
-  | 1 MiB | 6.347 s | 123 ms (1.9%) | 1301 ms (20%) |
 
   The LegoSNARK prover time is always the no-commitment time plus the link prover. The CSV rows of
   `lego_estimate` hold the sum with a `bb prove` run of their own, which differs from the `nocom` median by
-  run-to-run noise of a few percent in either direction (at 520 B and 256 KiB on AWS it came out below
+  run-to-run noise of a few percent in either direction (at 520 B on AWS it came out below
   `nocom`); plot, summary and the combined table therefore use `nocom` + link.
 
   ```bash
@@ -256,16 +250,14 @@ Prover time in seconds:
    a Pedersen nor a Poseidon2 commitment comes out of TLSNotary today. The numbers cover the downstream
    predicate proof only, for the Artemis and the Poseidon2 rows alike.
 2. **Barretenberg Artemis is an estimate and not sound**: the evaluation point is a public input.
-3. **SHA-256 above 64 KiB does not fit a 48 GB laptop** (about 0.25 to 0.3 GiB of prover RAM per kB of
-   payload on both backends). `./run.sh large-sha` is for a large-memory machine.
-4. **Keccak-256 above 16 KiB without a black box** (ProveKit, and the explicit variant on Barretenberg)
+3. **Keccak-256 above 16 KiB without a black box** (ProveKit, and the explicit variant on Barretenberg)
    is skipped locally: about 50 GiB at 64 KiB by extrapolation. `bench.py --all-sizes` lifts the cap. The
    expected digests come from `pcs/src/bin/digest.rs` (`sha3`, `blake3` crates), so every run checks the
    two explicit circuits against a reference implementation.
-5. **Not built**: the whole-response predicates (plan, workload 3, including the go/no-go measurement) and
+4. **Not built**: the whole-response predicates (plan, workload 3, including the go/no-go measurement) and
    the upstream cost (plan, step 7).
-6. KZG uses a locally sampled trapdoor (timing only).
-7. **Barretenberg LegoSNARK is a cost estimate, not an integrated prover.** Real: the circuit, the wire
+5. KZG uses a locally sampled trapdoor (timing only).
+6. **Barretenberg LegoSNARK is a cost estimate, not an integrated prover.** Real: the circuit, the wire
    values, their position, the masking values, the reference-string points, the wire commitments (taken
    from a proof that the stock `bb verify` accepts) and the link itself, which verifies against those
    commitments. Not real: the link prover is a separate process that reads a dump written by a patched
@@ -275,7 +267,7 @@ Prover time in seconds:
    extractable and the linked cells to be fixed by the circuit, which holds for the layout that the
    verification key commits to. The layout was read from Barretenberg `v5.0.0-nightly.20260324` and can
    change with the version.
-8. The LegoSNARK MSM time depends on the MSM implementation's handling of small scalars (arkworks 0.6
+7. The LegoSNARK MSM time depends on the MSM implementation's handling of small scalars (arkworks 0.6
    buckets 8-bit and 16-bit scalars separately). The same MSM with full-size random scalars takes 10 ms
-   for the 20 461 cells at 16 KiB and 354 ms for the 1 305 745 cells at 1 MiB (`pcs_bench kzg <cells>`,
-   `commit_s`), against 2.4 ms and 28.6 ms on the real values.
+   for the 20 461 cells at 16 KiB (`pcs_bench kzg <cells>`,
+   `commit_s`), against 2.4 ms on the real values.

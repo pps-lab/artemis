@@ -4,8 +4,6 @@
 #   ./run.sh setup            clone + patch + build ProveKit, build the pcs crate
 #   ./run.sh test             soundness tests of the Artemis link and the pcs crate
 #   ./run.sh small            age check + sweep up to 64 KiB, all rows (peak ~20 GiB RAM)
-#   ./run.sh large            sweep above 64 KiB, without the SHA-256 rows
-#   ./run.sh large-sha        SHA-256 rows above 64 KiB (needs ~0.3 GiB RAM per kB of payload)
 #   ./run.sh setup-bb-dump    clone + patch + build Barretenberg with the wire dump (LegoSNARK rows)
 #   ./run.sh lego             LegoSNARK CP_link rows on Barretenberg, all sizes
 #   ./run.sh plot             plots and tables from results/results.csv
@@ -16,7 +14,7 @@ PROVEKIT_REV=893f6d58
 BB_TAG=v5.0.0-nightly.20260324   # the release of the `bb` binary used for timing
 NOTE=${NOTE:-}
 RUNS=${RUNS:-5}
-LARGE_SIZES=${LARGE_SIZES:-85606,91546,190259,262144,1048576}
+SIZES=520,2400,4000,10000,16384,65536
 
 case "${1:-}" in
   setup)
@@ -44,7 +42,7 @@ case "${1:-}" in
     (cd pcs && cargo build --release)
     ;;
   lego)
-    python3 bench.py sweep --sizes "520,2400,4000,10000,16384,65536,$LARGE_SIZES" --runs "$RUNS" --note "$NOTE" \
+    python3 bench.py sweep --sizes "$SIZES" --runs "$RUNS" --note "$NOTE" \
       --backends bb --rows lego_estimate,lego_packed_estimate
     ;;
   test)
@@ -53,18 +51,11 @@ case "${1:-}" in
     ;;
   small)
     python3 bench.py age --runs "$RUNS" --note "$NOTE"
-    python3 bench.py sweep --sizes 520,2400,4000,10000,16384,65536 --runs "$RUNS" --note "$NOTE"
-    ;;
-  large)
-    python3 bench.py sweep --sizes "$LARGE_SIZES" --runs "$RUNS" --note "$NOTE" \
-      --rows nocom,poseidon2_t16,poseidon2_native,artemis,artemis_estimate,external
-    ;;
-  large-sha)
-    python3 bench.py sweep --sizes "$LARGE_SIZES" --runs "$RUNS" --note "$NOTE" --rows sha256
+    python3 bench.py sweep --sizes "$SIZES" --runs "$RUNS" --note "$NOTE"
     ;;
   plot)
     python3 plot.py
     ;;
   *)
-    sed -n '2,12p' "$0"; exit 2 ;;
+    sed -n '2,9p' "$0"; exit 2 ;;
 esac

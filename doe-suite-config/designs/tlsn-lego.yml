@@ -23,7 +23,7 @@ exp_lego:
   base_experiment:
     note: "aws r6i.8xlarge"
     size:
-      $FACTOR$: [520, 2400, 4000, 10000, 16384, 65536, 85606, 91546, 190259, 262144, 1048576]
+      $FACTOR$: [520, 2400, 4000, 10000, 16384, 65536]
 
 $ETL$:
   overview:
