@@ -227,6 +227,26 @@ Prover time in seconds:
   0.4 ms (three pairings) and the proof grows by 32 bytes. The price is a trusted setup per circuit with
   a key of 82 bytes per payload byte (86 MB at 1 MiB), and the scheme needs KZG wire commitments, so it
   does not exist on ProveKit.
+
+  The same on AWS (r6i.8xlarge, doe-suite suite `tlsn-lego_1794953544`, design `tlsn-lego`), with the other
+  Barretenberg rows from suite `tlsn_1794941917`; figure and tables in `results/aws/`:
+
+  | Payload | No commitment | LegoSNARK CP_link overhead | Artemis (estimate) overhead |
+  |---|---|---|---|
+  | 16 KiB | 0.163 s | 5.5 ms (3.4%) | 31.5 ms (19%) |
+  | 64 KiB | 0.469 s | 8.5 ms (1.8%) | 97 ms (21%) |
+  | 186 KiB | 1.037 s | 16.2 ms (1.6%) | 668 ms (64%) |
+  | 1 MiB | 6.347 s | 123 ms (1.9%) | 1301 ms (20%) |
+
+  The LegoSNARK prover time is always the no-commitment time plus the link prover. The CSV rows of
+  `lego_estimate` hold the sum with a `bb prove` run of their own, which differs from the `nocom` median by
+  run-to-run noise of a few percent in either direction (at 520 B and 256 KiB on AWS it came out below
+  `nocom`); plot, summary and the combined table therefore use `nocom` + link.
+
+  ```bash
+  R=../doe-suite-results
+  python3 plot.py $R/tlsn_1794941917 $R/tlsn-lego_1794953544 --out results/aws --backends bb --machine "AWS r6i.8xlarge"
+  ```
 - **Age check as shipped (10 committed bytes)**: no measurable difference between Artemis, Poseidon2 and no
   commitment (25 ms on ProveKit); SHA-256 costs 38 ms (ProveKit) and 151 ms against 46 ms (Barretenberg).
 

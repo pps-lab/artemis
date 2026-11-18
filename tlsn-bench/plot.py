@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """Plots and tables for the TLSNotary / Artemis benchmark.
 
-  plot.py [results/results.csv] [--out results]
+  plot.py [results/results.csv | <dir> ...] [--out results] [--backends bb] [--machine NAME]
 
 Writes sweep_prover.{pdf,png} (prover time against payload size, one panel per
 backend, log-log, median over runs) and summary.md (tables for the sweep and
 the age check).
+
+Several sources can be given; a directory stands for every results.csv below it
+(a doe-suite result folder) together with its lego_layout.json files. A point
+(workload, backend, row, bytes) is taken from the first source that has it, so
+runs of different sessions or machines are never mixed in one median. AWS:
+
+  plot.py ../doe-suite-results/tlsn_<id> ../doe-suite-results/tlsn-lego_<id> \
+      --out results/aws --backends bb --machine "AWS r6i.8xlarge"
 """
 
 import argparse
@@ -35,11 +43,22 @@ STYLE = {
 PANELS = [("provekit", "ProveKit (WHIR, pairing-free)"), ("bb", "Barretenberg (UltraHonk, KZG)")]
 
 
-def load(path):
-    """(workload, backend, row, bytes) -> {metric: median over runs}."""
-    groups = defaultdict(list)
-    for r in csv.DictReader(open(path)):
-        groups[(r["workload"], r["backend"], r["row"], int(r["bytes"]))].append(r)
+def source_files(source, name):
+    """A file, or every file called `name` below a directory."""
+    source = Path(source)
+    return sorted(source.rglob(name)) if source.is_dir() else [source]
+
+
+def load(sources):
+    """(workload, backend, row, bytes) -> {metric: median over runs}; first source wins per point."""
+    groups = {}
+    for source in sources:
+        own = defaultdict(list)
+        for path in source_files(source, "results.csv"):
+            for r in csv.DictReader(open(path)):
+                own[(r["workload"], r["backend"], r["row"], int(r["bytes"]))].append(r)
+        for key, rows in own.items():
+            groups.setdefault(key, rows)
     out = {}
     for key, rows in groups.items():
         med = {}
@@ -93,10 +112,12 @@ def fmt_bytes(n):
     return f"{n} B" if n < 1024 else (f"{n / 1024:.1f} KiB" if n < 2**20 else f"{n / 2**20:.0f} MiB")
 
 
-def plot(data, out):
+def plot(data, out, panels, machine=None):
     plt.rcParams.update({"font.size": 10, "axes.spines.top": False, "axes.spines.right": False})
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
-    for ax, (backend, title) in zip(axes, PANELS):
+    fig, axes = plt.subplots(1, len(panels), figsize=(10 if len(panels) > 1 else 6.4, 4.4), sharey=True,
+                             squeeze=False)
+    axes = axes[0]
+    for ax, (backend, title) in zip(axes, panels):
         rows = series(data, backend)
         for row, (label, colour, marker, ls) in STYLE.items():
             pts = sorted(rows.get(row, {}).items())
@@ -110,7 +131,7 @@ def plot(data, out):
             ax.plot(xs, ys, color=colour, marker=marker, linestyle=ls, linewidth=2, label=label, **extra)
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
-        ax.set_title(title, fontsize=10)
+        ax.set_title(title + (f", {machine}" if machine else ""), fontsize=10)
         ax.set_xlabel("Committed payload size [bytes]")
         ax.grid(True, which="major", color="#dddddd", linewidth=0.6)
     axes[0].set_ylabel("Prover time [s]")
@@ -118,20 +139,21 @@ def plot(data, out):
     for ax in axes:
         for h, l in zip(*ax.get_legend_handles_labels()):
             handles.setdefault(l, h)
-    fig.legend(handles.values(), handles.keys(), frameon=False, fontsize=8, ncol=4, loc="lower center")
-    fig.tight_layout(rect=(0, 0.11, 1, 1))
+    fig.legend(handles.values(), handles.keys(), frameon=False, fontsize=8,
+               ncol=4 if len(panels) > 1 else 2, loc="lower center")
+    fig.tight_layout(rect=(0, 0.11 if len(panels) > 1 else 0.17, 1, 1))
     for ext in ("pdf", "png"):
         fig.savefig(out / f"sweep_prover.{ext}", dpi=200)
 
 
-def tables(data, out):
-    lines = ["# TLSNotary / Artemis benchmark: summary", "",
+def tables(data, out, panels, layout, machine=None):
+    lines = ["# TLSNotary / Artemis benchmark: summary" + (f" ({machine})" if machine else ""), "",
              "Medians over the runs in the CSV. Prover time excludes ACVM witness generation, "
              "key generation and setup; the Artemis rows include the IPA opening "
              "(ProveKit) or the KZG opening (Barretenberg estimate). The LegoSNARK row is the no-commitment "
              "row plus the CP_link prover on the wire columns of a real Barretenberg proof (same circuit; "
              "the CSV rows hold the sum with a `bb prove` run of their own session).", ""]
-    for backend, title in PANELS:
+    for backend, title in panels:
         rows = series(data, backend)
         order = [r for r in ("nocom", "sha256", "keccak", "blake3", "poseidon2", "artemis", "artemis_estimate",
                              "lego_estimate") if r in rows]
@@ -169,7 +191,7 @@ def tables(data, out):
                     return f"{(a / v if inv else v / a):.1f}x"
                 lines.append(f"| {fmt_bytes(n)} | {ratio('sha256')} | {ratio('keccak')} | {ratio('blake3')} | {ratio('poseidon2')} | {ratio('nocom', True)} |")
             lines.append("")
-    lines += lego_table(data, out)
+    lines += lego_table(data, layout)
     age = {(b, row): m for (w, b, row, _), m in data.items() if w == "age"}
     if age:
         lines += ["## Age check (10 committed bytes)", "",
@@ -182,12 +204,21 @@ def tables(data, out):
     (out / "summary.md").write_text("\n".join(lines))
 
 
-def lego_table(data, out):
-    """Layout facts and link cost of the LegoSNARK rows (lego_layout.json is written by bench.py)."""
-    path = out / "lego_layout.json"
-    if not path.exists():
-        return []
-    layout = json.loads(path.read_text())
+def load_layout(sources, out):
+    """lego_layout.json (written by bench.py) next to a CSV source or below a directory source."""
+    layout = {}
+    for source in sources:
+        source = Path(source)
+        files = source_files(source, "lego_layout.json") if source.is_dir() else [source.parent / "lego_layout.json"]
+        for path in files:
+            if path.exists():
+                for key, val in json.loads(path.read_text()).items():
+                    layout.setdefault(key, val)
+    return layout
+
+
+def lego_table(data, layout):
+    """Layout facts and link cost of the LegoSNARK rows."""
     lines = []
     for row, title in (("lego_estimate", "no-commitment circuit, byte cells linked (the plotted row)"),
                        ("lego_packed_estimate", "variant that packs in the circuit, packed cells linked")):
@@ -227,14 +258,18 @@ def lego_table(data, out):
 def main():
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser()
-    ap.add_argument("csv", nargs="?", default=str(here / "results/results.csv"))
+    ap.add_argument("sources", nargs="*", default=[str(here / "results/results.csv")],
+                    help="results.csv files or directories holding them; first source wins per point")
     ap.add_argument("--out", default=str(here / "results"))
+    ap.add_argument("--backends", default="provekit,bb", help="panels to draw")
+    ap.add_argument("--machine", default=None, help="machine name for the panel titles and the summary")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    data = load(args.csv)
-    plot(data, out)
-    tables(data, out)
+    panels = [p for p in PANELS if p[0] in args.backends.split(",")]
+    data = load(args.sources)
+    plot(data, out, panels, args.machine)
+    tables(data, out, panels, load_layout(args.sources, out), args.machine)
     print(f"wrote {out}/sweep_prover.pdf, sweep_prover.png, summary.md")
 
 
