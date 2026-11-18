@@ -22,24 +22,24 @@
 \cmidrule(lr){3-14}
 MNIST & {\scriptsize 8k} & 2.89 & 3.10 & \textbf{3.02} & 3.75 & 53.3 & 76.6 & 3.80 & \textbf{4.06} & \multicolumn{2}{c}{\cpFill} & 72.4 & 98.7 \\
 R18 & {\scriptsize 280k} & 55.3 & 57.6 & \textbf{56.7} & 68.8 & 209 & 1153 & 73.6 & \textbf{76.0} & \multicolumn{2}{c}{\cpFill} & 266 & 1343 \\
-DLRM & {\scriptsize 764k} & 22.0 & 24.3 & \textbf{23.8} & 30.6 & 286 & \multicolumn{1}{c}{\cpNotRun$^{b}$} & 32.8 & \textbf{46.0} & \multicolumn{2}{c}{\cpFill} & 370 & \multicolumn{1}{c}{\cpNotRun$^{b}$} \\
-Mob. & {\scriptsize 3.5M} & 1071 & 1092 & \textbf{1077} & 1291 & 3520 & \multicolumn{1}{c}{\cpNotRun$^{b}$} & 1286 & \textbf{1323} & \multicolumn{2}{c}{\cpFill} & 4148 & \multicolumn{1}{c}{\cpNotRun$^{b}$} \\
-VGG & {\scriptsize 15M} & 459 & 483 & \textbf{476} & 528 & 5391 & \multicolumn{1}{c}{\cpNotRun$^{b}$} & 538 & \textbf{615} & \multicolumn{2}{c}{\cpFill} & 6258 & \multicolumn{1}{c}{\cpNotRun$^{b}$} \\
-Diff. & {\scriptsize 19.5M} & 4433 & 4533 & \textbf{4505} & 5067 & 17\,269 & \multicolumn{1}{c}{\cpNotRun$^{c}$} & 5111 & \textbf{5358} & \multicolumn{2}{c}{\cpFill} & 16\,378 & \multicolumn{1}{c}{\cpNotRun$^{b}$} \\
-GPT-2 & {\scriptsize 81M} & 3964 & 4279 & \textbf{4103} & 4578 & \multicolumn{1}{c}{\cpNotRun$^{c}$} & \multicolumn{1}{c}{\cpNotRun$^{c}$} & 4658 & \textbf{5306} & \multicolumn{2}{c}{\cpFill\multirow{-7}{*}{\cpUnsupportedShort$^{a}$}} & \multicolumn{1}{c}{\cpNotRun$^{d}$} & \multicolumn{1}{c}{\cpNotRun$^{b}$} \\
+Mob. & {\scriptsize 3.5M} & 1071 & 1092 & \textbf{1077} & 1291 & 3520 & \multicolumn{1}{c}{\cpNotRun$^{a}$} & 1286 & \textbf{1323} & \multicolumn{2}{c}{\cpFill} & 4148 & \multicolumn{1}{c}{\cpNotRun$^{a}$} \\
+VGG & {\scriptsize 15M} & 459 & 483 & \textbf{476} & 528 & 5391 & \multicolumn{1}{c}{\cpNotRun$^{a}$} & 538 & \textbf{615} & \multicolumn{2}{c}{\cpFill} & 6258 & \multicolumn{1}{c}{\cpNotRun$^{a}$} \\
+Diff. & {\scriptsize 19.5M} & 4433 & 4533 & \textbf{4505} & 5067 & 17\,269 & \multicolumn{1}{c}{\cpNotRun$^{b}$} & 5111 & \textbf{5358} & \multicolumn{2}{c}{\cpFill} & 16\,378 & \multicolumn{1}{c}{\cpNotRun$^{a}$} \\
+GPT-2 & {\scriptsize 81M} & 3964 & 4279 & \textbf{4103} & 4578 & \multicolumn{1}{c}{\cpNotRun$^{b}$} & \multicolumn{1}{c}{\cpNotRun$^{b}$} & 4658 & \textbf{5306} & \multicolumn{2}{c}{\cpFill\multirow{-6}{*}{\cpUnsupportedShort}} & \multicolumn{1}{c}{\cpNotRun$^{c}$} & \multicolumn{1}{c}{\cpNotRun$^{a}$} \\
 \midrule
 \multicolumn{2}{l}{\textit{TLSNotary}} & \multicolumn{6}{c}{\textit{KZG (Barretenberg UltraHonk)}} & \multicolumn{6}{c}{\textit{WHIR (ProveKit)}} \\
 \cmidrule(lr){3-14}
-Bank & {\scriptsize 520\,B} & 0.019 & 0.022 & \textbf{0.021} & \multicolumn{1}{c}{\cpNotImplShort$^{e}$} & 0.14 & 0.34 & 0.040 & 0.048 & \multicolumn{2}{c}{\cpFill} & \textbf{0.044} & 0.25 \\
+Bank & {\scriptsize 520\,B} & 0.019 & 0.022 & \textbf{0.021} & \multicolumn{1}{c}{\cpNotImplShort} & 0.14 & 0.34 & 0.040 & 0.048 & \multicolumn{2}{c}{\cpFill} & \textbf{0.044} & 0.25 \\
 Spotify & {\scriptsize 2.3\,KiB} & 0.044 & 0.054 & \textbf{0.046} & \multicolumn{1}{c}{\cpNotImplShort} & 0.38 & 1.08 & 0.042 & 0.064 & \multicolumn{2}{c}{\cpFill} & \textbf{0.056} & 0.93 \\
+Twitter & {\scriptsize 3.9\,KiB} & 0.066 & 0.078 & \textbf{0.069} & \multicolumn{1}{c}{\cpNotImplShort} & 0.61 & 1.52 & 0.045 & \textbf{0.074} & \multicolumn{2}{c}{\cpFill} & 0.077 & 1.62 \\
 Discord & {\scriptsize 9.8\,KiB} & 0.12 & 0.14 & \textbf{0.12} & \multicolumn{1}{c}{\cpNotImplShort} & 1.25 & 4.68 & 0.061 & \textbf{0.10} & \multicolumn{2}{c}{\cpFill} & 0.13 & 3.26 \\
 Uber & {\scriptsize 16\,KiB} & 0.16 & 0.19 & \textbf{0.17} & \multicolumn{1}{c}{\cpNotImplShort} & 2.14 & 9.22 & 0.084 & \textbf{0.14} & \multicolumn{2}{c}{\cpFill} & 0.20 & 4.03 \\
-ID.me & {\scriptsize 64\,KiB} & 0.47 & 0.57 & \textbf{0.48} & \multicolumn{1}{c}{\cpNotImplShort} & 8.00 & 71.0 & 0.21 & \textbf{0.31} & \multicolumn{2}{c}{\cpFill\multirow{-5}{*}{\cpUnsupportedShort$^{a}$}} & 0.72 & 14.5 \\
+ID.me & {\scriptsize 64\,KiB} & 0.47 & 0.57 & \textbf{0.48} & \multicolumn{1}{c}{\cpNotImplShort} & 8.00 & 71.0 & 0.21 & \textbf{0.31} & \multicolumn{2}{c}{\cpFill\multirow{-6}{*}{\cpUnsupportedShort}} & 0.72 & 14.5 \\
 \bottomrule
 \end{tabular}
 
 \vspace{0.3em}
-\parbox{\textwidth}{\footnotesize $\bot$: the scheme does not support the proof system; \cpNotRun{}: not run; \textbf{bold}: fastest scheme with a commitment. \\ $^{a}$Lunar and LegoSNARK require a pairing-based (KZG) proof system. $^{b}$SHA-256 runs out of memory on the same machines as the other schemes (DLRM 256\,GB, MobileNet 512\,GB, VGG and Diffusion 1\,TB); GPT-2, 4$\times$ larger than Diffusion, was therefore not attempted. $^{c}$The circuit needs an FFT domain beyond the $2^{28}$ supported by BN254 (SHA-256: $2^{30}$ for Diffusion, $2^{31}$ for GPT-2; Poseidon: $2^{29}$ for GPT-2). $^{d}$Poseidon on GPT-2 needs more than the 4\,TB of memory of the largest instance available to us. $^{e}$Lunar is not implemented for UltraHonk (sumcheck-based): its linking argument relies on the univariate evaluation domain of a Plonkish proof system.}
-\caption{Prover time in seconds for zkML (Halo2) and TLSNotary (Noir), for pairing-based (left) and transparent (right) proof systems. zkML rows are models (number of parameters).}
+\parbox{\textwidth}{\footnotesize $\bot$: the scheme does not support the proof system; \cpNotRun{}: not run; \textbf{bold}: fastest scheme with a commitment. \\ $^{a}$SHA-256 runs out of memory on the same machines as the other schemes (MobileNet 512\,GB, VGG and Diffusion 1\,TB); GPT-2, 4$\times$ larger than Diffusion, was therefore not attempted. $^{b}$The circuit needs an FFT domain beyond the $2^{28}$ supported by BN254 (SHA-256: $2^{30}$ for Diffusion, $2^{31}$ for GPT-2; Poseidon: $2^{29}$ for GPT-2). $^{c}$Poseidon on GPT-2 needs more than the 4\,TB of memory of the largest instance available to us.}
+\caption{Prover time in seconds for zkML and TLSNotary, for pairing-based and transparent proof systems. Lunar and LegoSNARK (Lego) require a pairing-based (KZG) proof system.}
 \label{tab:eval:prover}
 \end{table*}

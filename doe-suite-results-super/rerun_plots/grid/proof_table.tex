@@ -1,0 +1,32 @@
+\begin{table*}[t]
+                            \centering
+                            \setlength{\tabcolsep}{2pt}
+                            \begin{tabular}{ll*{7}{c}*{7}{c}*{7}{c}}
+                            \toprule
+                            & & 
+                            \multicolumn{7}{c}{Proof Size (kB)} & 
+                            \multicolumn{7}{c}{Verifier Time (s)} & 
+                            \multicolumn{7}{c}{Memory (GB)} \\
+                            \cmidrule(lr){3-9} \cmidrule(lr){10-16} \cmidrule(lr){17-23}
+                            & System & MNST & R18 & DLRM & Mob & VGG & Diff & GPT2
+                                    & MNST & R18 & DLRM & Mob & VGG & Diff & GPT2
+                                    & MNST & R18 & DLRM & Mob & VGG & Diff & GPT2 \\
+                            \midrule
+                                \multirow{6}{*}{\rotatebox{90}{KZG}} & No Com. & 9 & 14 & 5 & 18 & 16 & 32 & 15 & 6 & 8 & 4 & 9 & 9 & 15 & 9 & - & - & - & - & - & - & - \\
+     & Artemis & 10 & 15 & 6 & 18 & 17 & 33 & 15 & 6 & 8 & 6 & 9 & 12 & 16 & 11 & - & - & - & - & - & - & - \\
+     & Apollo & 10 & 15 & 6 & 18 & 17 & - & - & 10 & 9 & 7 & 10 & 14 & - & - & - & - & - & - & - & - & - \\
+     & Lunar & 12 & 18 & 8 & 22 & 20 & 39 & 18 & 23 & 32 & 24 & 40 & 49 & 66 & 40 & - & - & - & - & - & - & - \\
+     & LegoSNARK & 10 & 15 & 6 & 18 & 16 & 33 & 15 & 7 & 9 & 6 & 10 & 11 & 16 & 10 & - & - & - & - & - & - & - \\
+     & Poseidon & 12 & 16 & 10 & 21 & 15 & 25 & - & 7 & 8 & 6 & 10 & 9 & 42 & - & - & - & - & - & - & - & - \\
+\midrule
+    \multirow{6}{*}{\rotatebox{90}{IPA}} & No Com. & 10 & 16 & 7 & 19 & 17 & 34 & 17 & 25 & 279 & 275 & 1.7k & 699 & 3.1k & 8.5k & - & - & - & - & - & - & - \\
+     & Artemis & 11 & 16 & 9 & 20 & 20 & 36 & 19 & 26 & 283 & 734 & 1.7k & 3.3k & 10.1k & 35.2k & - & - & - & - & - & - & - \\
+     & Apollo & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - \\
+     & Lunar & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - \\
+     & LegoSNARK & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - & - \\
+     & Poseidon & 14 & 18 & 11 & 23 & 17 & 23 & - & 283 & 490 & 1.1k & 3.7k & 6.4k & 11.8k & - & - & - & - & - & - & - & - \\
+                            \bottomrule
+                            \end{tabular}
+                            \vspace{0.7em}
+                            \end{table*}
+                        
