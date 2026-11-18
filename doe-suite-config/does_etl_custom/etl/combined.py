@@ -63,8 +63,8 @@ class CombinedProverTimeTransformer(Transformer):
     - zkML: `x` is the model; median over runs if a configuration appears more than once.
     - TLSNotary: `x` is the payload size in bytes (as a string), only rows of `tlsn_workload`. The backend
       is mapped to the proof-system family (`tlsn_backend_pc`), circuit rows to schemes (`tlsn_rows`, a list
-      of rows or a dict backend -> rows; Poseidon2 is fixed per backend: TACEO's width-16 sponge on ProveKit,
-      the native width-4 permutation on Barretenberg; with several rows the faster median wins), and the Barretenberg Artemis
+      of rows or a dict backend -> rows; Poseidon is Noir's Poseidon (v1, width 3) on both backends; with
+      several rows the faster median wins), and the Barretenberg Artemis
       estimate is completed with the external KZG opening (`tlsn_add_external`).
     - LegoSNARK (`tlsn_rebase`): the circuit is the no-commitment circuit, so the value is the `nocom` median of
       the table's TLSNotary suite plus the median link prover time (`opening_s`) of the LegoSNARK rows, as in
@@ -79,7 +79,7 @@ class CombinedProverTimeTransformer(Transformer):
     tlsn_rows: Dict[str, Any] = {
         "no_com": ["nocom"],
         "poly": ["artemis", "artemis_estimate"],
-        "poseidon": {"provekit": ["poseidon2_t16"], "bb": ["poseidon2_native"]},
+        "poseidon": ["poseidon1"],
         "sha256": ["sha256"],
         "keccak": ["keccak256", "keccak256_bb"],
         "blake3": ["blake3", "blake3_bb"],

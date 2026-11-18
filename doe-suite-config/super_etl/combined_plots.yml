@@ -47,6 +47,7 @@ $SUITE_ID$:
   # `tlsn_sizes` below are used
   tlsn: "1794941917"
   tlsn-lego: "1794953544"   # LegoSNARK CP_link estimate on Barretenberg, AWS r6i.8xlarge (18 Nov 2026)
+  tlsn-poseidon1: "1794989519"   # Poseidon (v1, noir-lang/poseidon x5_3) on both backends, AWS r6i.8xlarge (18 Nov 2026)
   # TLSNotary, local run (Apple M5 Pro, 48 GB), imported with tlsn-bench/to_doe_suite.py; replaced by the AWS suites
   # above (to use it again: uncomment here and under `experiments`, drop `tlsn`/`tlsn-lego` and `tlsn_suite_rows`)
   # tlsn-local: "1794952892"
@@ -88,6 +89,7 @@ $ETL$:
       xlarge-poseidon_ipa: "*"
       tlsn: "*"
       tlsn-lego: "*"
+      tlsn-poseidon1: "*"
       # tlsn-local: "*"
     extractors:
       CsvExtractor: {file_regex: ["^output.csv$"]}        # zkML
@@ -99,7 +101,7 @@ $ETL$:
         zkml_pc_map: {kzg_bls: kzg}   # Poseidon on diffusion runs on BLS12-381, shown in the KZG block
         tlsn_workload: sweep
         tlsn_backend_pc: {bb: kzg, provekit: ipa}
-        tlsn_suite_rows: {tlsn-lego: [lego_estimate]}   # LegoSNARK link prover; rebased on the nocom row of `tlsn`
+        tlsn_suite_rows: {tlsn-lego: [lego_estimate], tlsn-poseidon1: [poseidon1]}   # LegoSNARK link prover; rebased on the nocom row of `tlsn`
         tlsn_sizes: [520, 2400, 4000, 10000, 16384, 65536]   # tlsn-extension use cases (tlsn-bench/bench.py SIZES)
     loaders:
       CsvSummaryLoader: {skip_empty: True}
@@ -205,7 +207,7 @@ $ETL$:
         zkml_pc_map: {kzg_bls: kzg}
         tlsn_workload: sweep
         tlsn_backend_pc: {bb: kzg, provekit: ipa}
-        tlsn_suite_rows: {tlsn-lego: [lego_estimate]}
+        tlsn_suite_rows: {tlsn-lego: [lego_estimate], tlsn-poseidon1: [poseidon1]}
         tlsn_sizes: [520, 2400, 4000, 10000, 16384, 65536]   # tlsn-extension use cases (tlsn-bench/bench.py SIZES)
     loaders:
       CsvSummaryLoader: {skip_empty: True}
