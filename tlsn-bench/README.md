@@ -1,6 +1,6 @@
 # TLSNotary benchmark for Artemis
 
-Implements `zkml-commitments-paper/tlsn-eval-plan.md`: a TLSNotary-style predicate proof over a committed
+A TLSNotary-style predicate proof over a committed
 response of `n` bytes, where the commitment is either recomputed in the circuit (SHA-256 as TLSNotary
 ships it, or Poseidon2) or linked with Artemis (Horner evaluation in the circuit, one opening outside).
 
@@ -97,8 +97,8 @@ Tests (`provekit/tooling/artemis-bench/tests/soundness.rs`): honest proof and `r
 commitment to another payload, wrong mask commitment, proof replayed under other commitments (different
 `beta`), tampered `rho`, plain verification of a session-bound proof, public payload refused.
 
-Not covered: a security proof for this instantiation. Section 6.6 of the plan (the theorem's assumptions
-for Spartan + WHIR with a two-block commitment) is still open; the code only matches the protocol shape.
+Not covered: a security proof for this instantiation. The theorem's assumptions
+for Spartan + WHIR with a two-block commitment are not shown here; the code only matches the protocol shape.
 
 ## LegoSNARK CP_link on Barretenberg
 
@@ -246,7 +246,7 @@ Prover time in seconds:
 
 ## Caveats
 
-1. **Upstream binding is not covered** (plan, Section 6.1). TLSNotary authenticates SHA-256 hashes; neither
+1. **Upstream binding is not covered**. TLSNotary authenticates SHA-256 hashes; neither
    a Pedersen nor a Poseidon2 commitment comes out of TLSNotary today. The numbers cover the downstream
    predicate proof only, for the Artemis and the Poseidon2 rows alike.
 2. **Barretenberg Artemis is an estimate and not sound**: the evaluation point is a public input.
@@ -254,8 +254,7 @@ Prover time in seconds:
    is skipped locally: about 50 GiB at 64 KiB by extrapolation. `bench.py --all-sizes` lifts the cap. The
    expected digests come from `pcs/src/bin/digest.rs` (`sha3`, `blake3` crates), so every run checks the
    two explicit circuits against a reference implementation.
-4. **Not built**: the whole-response predicates (plan, workload 3, including the go/no-go measurement) and
-   the upstream cost (plan, step 7).
+4. **Not built**: the whole-response predicates and the upstream cost.
 5. KZG uses a locally sampled trapdoor (timing only).
 6. **Barretenberg LegoSNARK is a cost estimate, not an integrated prover.** Real: the circuit, the wire
    values, their position, the masking values, the reference-string points, the wire commitments (taken

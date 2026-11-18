@@ -11,7 +11,7 @@ This repository requires several artifacts related to the model definitions used
 The model definitions (msgpack files) are stored in `examples/models` (360MB) in an S3 bucket,
 and can be downloaded using the following command:
 ```sh
-aws s3 sync s3://pps-artemis-artifacts/models examples/models
+aws s3 sync s3://anonymized-artemis-artifacts/models examples/models
 ```
 
 The setup parameters for the polynomial commitments, `params_ipa` (15GB), `params_kzg` (64GB), take up a significant amount of time

@@ -9,7 +9,7 @@ ec2_volume_snapshot: snap-0798e81b434f07f27
 
 # the poseidon1 row lives on the tlsn-poseidon1 branch (overrides group_vars/all, loaded after it)
 git_remote_repository:
-  - repo: "https://github.com/pps-lab/artemis.git"
+  - repo: "https://github.com/anonymous/artemis.git"
     version: "tlsn-poseidon1"
 
 docker_image_id: "doe-ubuntu20"
