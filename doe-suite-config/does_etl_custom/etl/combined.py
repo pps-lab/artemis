@@ -34,6 +34,8 @@ class TlsnCsvExtractor(Extractor):
     file_regex: List[str] = [r"^results\.csv$"]
 
     def extract(self, path: str, options: Dict) -> List[Dict]:
+        if os.path.getsize(path) == 0:   # a run that died before its first measurement (e.g. out of memory)
+            return []
         df = pd.read_csv(path)
         df = df.rename(columns={"run": "tlsn_rep"})
         df["app"] = "tlsn"
@@ -48,6 +50,10 @@ class CombinedProverTimeTransformer(Transformer):
       is mapped to the proof-system family (`tlsn_backend_pc`), circuit rows to schemes (`tlsn_rows`; with
       several variants the faster median wins, as in `tlsn-bench/plot.py`), and the Barretenberg Artemis
       estimate is completed with the external KZG opening (`tlsn_add_external`).
+    - LegoSNARK (`tlsn_rebase`): the circuit is the no-commitment circuit, so the value is the `nocom` median of
+      the table's TLSNotary suite plus the median link prover time (`opening_s`) of the LegoSNARK rows, as in
+      `tlsn-bench/plot.py`. `tlsn_suite_rows` restricts a suite to the listed circuit rows, so that the
+      reference rows a LegoSNARK suite measures for itself (`nocom`, ...) are not pooled with the main suite.
     """
 
     zkml_pc_map: Dict[str, str] = {"kzg_bls": "kzg"}
@@ -61,10 +67,15 @@ class CombinedProverTimeTransformer(Transformer):
         "sha256": ["sha256"],
         "keccak": ["keccak256", "keccak256_bb"],
         "blake3": ["blake3", "blake3_bb"],
+        "cp_link_lego": ["lego_estimate"],
     }
-    tlsn_estimate_rows: List[str] = ["artemis_estimate"]
+    tlsn_estimate_rows: List[str] = ["artemis_estimate", "lego_estimate"]
     # circuit row -> external (pcs_bench) row whose prover time is added
     tlsn_add_external: Dict[str, str] = {"artemis_estimate": "kzg"}
+    # circuit row -> row whose prover time replaces the row's own proof time; the row's `opening_s` is added
+    tlsn_rebase: Dict[str, str] = {"lego_estimate": "nocom"}
+    # suite name -> circuit rows taken from that suite (suites not listed contribute all their rows)
+    tlsn_suite_rows: Dict[str, List[str]] = {}
 
     def transform(self, df: pd.DataFrame, options: Dict) -> pd.DataFrame:
         out = []
@@ -94,6 +105,10 @@ class CombinedProverTimeTransformer(Transformer):
         df = df[df["workload"] == self.tlsn_workload].copy()
         df["bytes"] = df["bytes"].astype(int)
         df["prover_s"] = pd.to_numeric(df["prover_s"], errors="coerce")
+        df["opening_s"] = pd.to_numeric(df["opening_s"], errors="coerce") if "opening_s" in df else float("nan")
+        for suite, keep in self.tlsn_suite_rows.items():
+            df = df[(df["suite_name"] != suite) | df["row"].isin(keep)]
+        open_med = df.groupby(["backend", "row", "bytes"])["opening_s"].median().to_dict()
 
         med = (df.groupby(["backend", "row", "bytes"])["prover_s"]
                  .agg(["median", "size"]).rename(columns={"median": "t", "size": "n"}))
@@ -116,6 +131,12 @@ class CombinedProverTimeTransformer(Transformer):
                             if t_ext is None:
                                 continue  # an incomplete estimate is not shown
                             t = t + t_ext
+                        base = self.tlsn_rebase.get(v)
+                        if base is not None:
+                            t_base, t_open = t_med.get((backend, base, b)), open_med.get((backend, v, b))
+                            if t_base is None or t_open is None or math.isnan(t_open):
+                                continue
+                            t = t_base + t_open
                         cands.append((t, v))
                     if not cands:
                         continue

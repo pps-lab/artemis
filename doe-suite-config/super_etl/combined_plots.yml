@@ -38,6 +38,7 @@ $SUITE_ID$:
   lego-med: "1794650787"
   # zkML, large (only poly / lego / cplink_fast / poseidon-diffusion were re-run)
   nocom-large: "1794942375"
+  nocom-large-ipa: "1794942415"
   poly-large: "1794665782"
   poly-large-ipa: "1794665823"
   lego-large: "1794665863"
@@ -45,7 +46,7 @@ $SUITE_ID$:
   xlarge-poseidon_kzg: "1794665702"
   xlarge-poseidon_ipa: "1794665743"
   # TLSNotary, local run (Apple M5 Pro, 48 GB), imported with tlsn-bench/to_doe_suite.py
-  tlsn-local: "1794933326"
+  tlsn-local: "1794952892"
 
 $ETL$:
   prover_table:
@@ -75,6 +76,7 @@ $ETL$:
       poseidon-med_ipa: "*"
       lego-med: "*"
       nocom-large: "*"
+      nocom-large-ipa: "*"
       poly-large: "*"
       poly-large-ipa: "*"
       lego-large: "*"
@@ -100,7 +102,7 @@ $ETL$:
         transpose: true   # rows: models / payload sizes; columns: schemes per proof-system family
         caption: >-
           Prover time in seconds for zkML (Halo2) and TLSNotary (Noir), for pairing-based
-          (left) and transparent (right) proof systems. zkML rows are models (number of parameters), TLSNotary rows use cases (response size): a bank statement (Bank), an Uber ride history (Uber), an ID.me identity (ID.me), a government traffic-penalty record (Gov.) and a synthetic 1\,MiB response (Synth.). Lego: LegoSNARK.
+          (left) and transparent (right) proof systems. zkML rows are models (number of parameters), TLSNotary rows use cases (response size): a bank statement (Bank), an Uber ride history (Uber), an ID.me identity (ID.me), a government traffic-penalty record (Gov.) and a synthetic 1\,MiB response (Synth.). Lego: LegoSNARK; on TLSNotary a cost estimate (No Com. plus the CP\_link prover on the wire commitments of a real proof).
           zkML ran on AWS r6i instances, TLSNotary on an Apple M5 Pro (48\,GB).
         apps:
           - key: zkml
@@ -130,8 +132,8 @@ $ETL$:
         rows:
           - {key: no_com, label: No Com.}
           - {key: poly, label: Artemis}
-          - {key: cp_link_fast, label: Lunar}
           - {key: cp_link_lego, label: Lego}
+          - {key: cp_link_fast, label: Lunar}
           - {key: poseidon, label: Poseidon}
           - {key: sha256, label: SHA-256}
         # first match wins; a missing cell without a rule is shown as not run
@@ -144,7 +146,7 @@ $ETL$:
             app: [tlsn]
             pc_type: [kzg]
             kind: not_implemented
-            note: "Lunar and LegoSNARK are not implemented for UltraHonk, which commits to multilinear polynomials (sumcheck-based); their linking targets univariate Plonkish column commitments."
+            note: "Lunar is not implemented for UltraHonk (sumcheck-based): its linking argument relies on the univariate evaluation domain of a Plonkish proof system."
           - cpsnark: [sha256]
             app: [zkml]
             x: [dlrm, mobilenet, vgg]

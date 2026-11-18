@@ -1,5 +1,7 @@
 pc_type,cpsnark,x,prover_time_sec,n,app,estimate,variant
+ipa,no_com,diffusion,5111.382726385,1,zkml,False,no_com
 ipa,no_com,dlrm,32.787722261,1,zkml,False,no_com
+ipa,no_com,gpt2,4658.099356964,1,zkml,False,no_com
 ipa,no_com,mnist,3.796885918,1,zkml,False,no_com
 ipa,no_com,mobilenet,1285.924383838,1,zkml,False,no_com
 ipa,no_com,resnet18,73.594439554,1,zkml,False,no_com
@@ -111,6 +113,17 @@ kzg,blake3,4000,1.2077391249999891,5,tlsn,False,bb:blake3
 kzg,blake3,10000,2.671186750000061,5,tlsn,False,bb:blake3
 kzg,blake3,16384,4.564012292000143,5,tlsn,False,bb:blake3
 kzg,blake3,65536,16.914566249999325,5,tlsn,False,bb:blake3
+kzg,cp_link_lego,520,0.0110385010000011,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,2400,0.0277022500000003,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,4000,0.0456503340000029,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,10000,0.0669297500000042,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,16384,0.10227620799996501,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,65536,0.2965670830003053,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,85606,0.3250437079999869,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,91546,0.3369302909999934,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,190259,0.6320398739999793,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,262144,0.9965399580000056,5,tlsn,True,bb:lego_estimate
+kzg,cp_link_lego,1048576,3.637362747999906,5,tlsn,True,bb:lego_estimate
 ipa,no_com,520,0.023240208,5,tlsn,False,provekit:nocom
 ipa,no_com,2400,0.024857125,5,tlsn,False,provekit:nocom
 ipa,no_com,4000,0.026543458,5,tlsn,False,provekit:nocom
