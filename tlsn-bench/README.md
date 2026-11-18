@@ -2,7 +2,7 @@
 
 A TLSNotary-style predicate proof over a committed
 response of `n` bytes, where the commitment is either recomputed in the circuit (SHA-256 as TLSNotary
-ships it, or Poseidon2) or linked with Artemis (Horner evaluation in the circuit, one opening outside).
+ships it, or Poseidon) or linked with Artemis (Horner evaluation in the circuit, one opening outside).
 
 ```
 circuits/               Noir packages (one source tree for both backends), N is set per run
@@ -45,12 +45,12 @@ r6i.8xlarge). The instances clone the repository configured in
 | SHA-256 | `sha256` (`sha256_var` over the bytes) | yes | yes |
 | Keccak-256 | `keccak256`: explicit Noir code (ProveKit's `csp-benchmarks/keccak_lib`, u32 split lanes); `keccak256_bb`: `noir-lang/keccak256` over the `keccakf1600` black box | `keccak256` (no Keccak black box), up to 16 KiB | both, the plot takes the faster one (`keccak256` up to 16 KiB) |
 | BLAKE3 | `blake3`: explicit Noir code (`circuits/vendor/blake3_noir`, written for this benchmark); `blake3_bb`: `std::hash::blake3` | `blake3` (no BLAKE3 black box) | both, the plot takes the faster one; the black box takes at most 1024 bytes |
-| Poseidon2 | `poseidon2_t16` (TACEO width 16, rate 15) and `poseidon2_native` (width-4 black box, rate 3); the plot takes the faster one per backend | yes | yes |
+| Poseidon | `poseidon1`: Poseidon (v1) in the configuration of the zkML Poseidon baseline (width 3, rate 2, x^5 S-box, sponge over the payload followed by a field blinder; `noir-lang/poseidon` `x5_3`) | yes | yes |
 | Artemis | `artemis` + hook + IPA opening | **implemented, sound** | `artemis_estimate` + KZG opening: **cost estimate only** |
 | LegoSNARK | `nocom` + CP_link on the wire commitments | not applicable (no KZG columns, no pairing) | `lego_estimate`: **cost estimate**, link run on the wire columns of a real proof (below) |
 | Lunar | n/a | not applicable (no KZG columns, no pairing) | not implemented |
 
-All rows take `payload: [u8; N]`, so every row pays for the same byte range checks, and the Poseidon2 and
+All rows take `payload: [u8; N]`, so every row pays for the same byte range checks, and the Poseidon and
 Artemis rows pack 31 bytes per field element inside the proof system.
 
 - **ProveKit** (`worldfnd/provekit` @ `893f6d58`, Noir `v1.0.0-beta.26`, Spartan + WHIR over the BN254
@@ -190,11 +190,11 @@ Barretenberg Artemis estimate.
 
 Prover time in seconds:
 
-| Payload | ProveKit no com. | SHA-256 | Poseidon2 | Artemis | bb no com. | SHA-256 | Poseidon2 | Artemis (estimate) | LegoSNARK (estimate) |
-|---|---|---|---|---|---|---|---|---|---|
-| 520 B | 0.023 | 0.120 | 0.025 | 0.027 | 0.010 | 0.207 | 0.019 | 0.012 | 0.011 |
-| 16 KiB | 0.048 | 1.62 | 0.065 | 0.066 | 0.100 | 5.19 | 0.190 | 0.117 | 0.102 |
-| 64 KiB | 0.107 | 7.20 | 0.184 | 0.151 | 0.293 | 40.1 | 0.605 | 0.349 | 0.297 |
+| Payload | ProveKit no com. | SHA-256 | Artemis | bb no com. | SHA-256 | Artemis (estimate) | LegoSNARK (estimate) |
+|---|---|---|---|---|---|---|---|
+| 520 B | 0.023 | 0.120 | 0.027 | 0.010 | 0.207 | 0.012 | 0.011 |
+| 16 KiB | 0.048 | 1.62 | 0.066 | 0.100 | 5.19 | 0.117 | 0.102 |
+| 64 KiB | 0.107 | 7.20 | 0.151 | 0.293 | 40.1 | 0.349 | 0.297 |
 
 - **Against SHA-256 (what TLSNotary ships)** the gain grows with the payload: 4.5x at 520 B, 25x at 16 KiB,
   48x at 64 KiB on ProveKit (115x on Barretenberg, estimate), and SHA-256 needs 16 GiB of prover memory at
@@ -205,11 +205,12 @@ Prover time in seconds:
   10.7 M constraints, about 158 k per permutation without a black box), 10.4 s at 16 KiB and 39.5 s at
   64 KiB on Barretenberg with the black box. In the age check Keccak-256 costs 214 ms on ProveKit against
   25 ms for Artemis; BLAKE3 39 ms.
-- **Against Poseidon2** the prover-time gain on ProveKit is small: none up to 16 KiB, 1.2x at 64 KiB. The
-  Artemis circuit has 1.03x the constraints of the no-commitment circuit (Poseidon2: 2.2x), but the byte
-  range checks that every row pays dominate, and Artemis proves at 1.4x the no-commitment time because of
-  the second witness block and the IPA opening. The verifier is where
-  Artemis is ahead of Poseidon2 on ProveKit (21 ms against 61 ms at 64 KiB).
+- **Against Poseidon** (measured on AWS, r6i.8xlarge, suite `tlsn-poseidon1_1794989519`, design
+  `tlsn-poseidon1`): on ProveKit the Poseidon circuit has 4.9x the constraints of the no-commitment circuit
+  (Artemis: 1.03x), and Artemis proves 1.5x faster at 16 KiB and 2.3x faster at 64 KiB (0.31 s against
+  0.72 s); at 520 B Poseidon is slightly faster (0.044 s against 0.048 s). The ProveKit verifier takes 54 ms for Artemis against 317 ms for
+  Poseidon at 64 KiB. On Barretenberg the Artemis estimate is 11x (16 KiB) to 14x (64 KiB) faster than
+  Poseidon (0.57 s against 8.0 s at 64 KiB). All tables in `results/aws/summary.md`.
 - **LegoSNARK on Barretenberg** is cheaper for the prover than the Artemis estimate at every size. Prover
   overhead over no commitment:
 
@@ -238,17 +239,17 @@ Prover time in seconds:
   `nocom`); plot, summary and the combined table therefore use `nocom` + link.
 
   ```bash
-  R=../doe-suite-results
-  python3 plot.py $R/tlsn_1794941917 $R/tlsn-lego_1794953544 --out results/aws --backends bb --machine "AWS r6i.8xlarge"
+  R=../doe-suite-results   # unzip ../doe-suite-results.zip first
+  python3 plot.py $R/tlsn_1794941917 $R/tlsn-lego_1794953544 $R/tlsn-poseidon1_1794989519 --out results/aws --backends bb --machine "AWS r6i.8xlarge"
   ```
-- **Age check as shipped (10 committed bytes)**: no measurable difference between Artemis, Poseidon2 and no
+- **Age check as shipped (10 committed bytes)**: no measurable difference between Artemis and no
   commitment (25 ms on ProveKit); SHA-256 costs 38 ms (ProveKit) and 151 ms against 46 ms (Barretenberg).
 
 ## Caveats
 
 1. **Upstream binding is not covered**. TLSNotary authenticates SHA-256 hashes; neither
-   a Pedersen nor a Poseidon2 commitment comes out of TLSNotary today. The numbers cover the downstream
-   predicate proof only, for the Artemis and the Poseidon2 rows alike.
+   a Pedersen nor a Poseidon commitment comes out of TLSNotary today. The numbers cover the downstream
+   predicate proof only, for the Artemis and the Poseidon rows alike.
 2. **Barretenberg Artemis is a cost estimate, not a protocol instantiation**: the evaluation point is a public input.
 3. **Keccak-256 above 16 KiB without a black box** (ProveKit, and the explicit variant on Barretenberg)
    is skipped locally: about 50 GiB at 64 KiB by extrapolation. `bench.py --all-sizes` lifts the cap. The

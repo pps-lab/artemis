@@ -36,7 +36,7 @@ STYLE = {
     "sha256": ("SHA-256 (as shipped)", "#0072B2", "o", "-"),
     "keccak": ("Keccak-256", "#CC79A7", "^", "-"),
     "blake3": ("BLAKE3", "#E69F00", "v", "-"),
-    "poseidon2": ("Poseidon2 (faster of t16 / native)", "#D55E00", "s", "-"),
+    "poseidon1": ("Poseidon", "#D55E00", "s", "-"),
     "artemis": ("Artemis", "#009E73", "D", "-"),
     "artemis_estimate": ("Artemis (cost estimate)", "#009E73", "D", ":"),
     "lego_estimate": ("LegoSNARK CP_link (cost estimate)", "#56B4E9", "P", (0, (1, 1.5))),
@@ -78,7 +78,7 @@ def load(sources):
 def series(data, backend):
     """row -> {bytes: metrics}, with the bb Artemis estimate completed by the
     external KZG opening, the bb LegoSNARK estimate rebased on the nocom row,
-    and Poseidon2 reduced to its faster variant."""
+    and Keccak-256 / BLAKE3 reduced to their faster variant."""
     rows = defaultdict(dict)
     for (workload, b, row, n), m in data.items():
         if workload == "sweep" and b == backend:
@@ -98,8 +98,7 @@ def series(data, backend):
             if base and m.get("opening_s") is not None:
                 m["prover_s"] = base["prover_s"] + m["opening_s"]
     # Rows with several circuit variants: keep the faster one per size.
-    for name, variants in (("poseidon2", ("poseidon2_t16", "poseidon2_native")),
-                           ("keccak", ("keccak256", "keccak256_bb")),
+    for name, variants in (("keccak", ("keccak256", "keccak256_bb")),
                            ("blake3", ("blake3", "blake3_bb"))):
         variants = [v for v in variants if v in rows]
         best = {}
@@ -159,7 +158,7 @@ def tables(data, out, panels, layout, machine=None):
              "the CSV rows hold the sum with a `bb prove` run of their own session).", ""]
     for backend, title in panels:
         rows = series(data, backend)
-        order = [r for r in ("nocom", "sha256", "keccak", "blake3", "poseidon2", "artemis", "artemis_estimate",
+        order = [r for r in ("nocom", "sha256", "keccak", "blake3", "poseidon1", "artemis", "artemis_estimate",
                              "lego_estimate") if r in rows]
         sizes = sorted({n for r in order for n in rows[r]})
         if not sizes:
@@ -184,7 +183,7 @@ def tables(data, out, panels, layout, machine=None):
         if "artemis" in rows and "sha256" in rows:
             lines += [f"## {title}: prover-time ratio to Artemis", "",
                       "| Payload | SHA-256 / Artemis | Keccak-256 / Artemis | BLAKE3 / Artemis | "
-                      "Poseidon2 / Artemis | Artemis / No commitment |",
+                      "Poseidon / Artemis | Artemis / No commitment |",
                       "|---|---|---|---|---|---|"]
             for n in sizes:
                 a = rows["artemis"].get(n, {}).get("prover_s")
@@ -193,7 +192,7 @@ def tables(data, out, panels, layout, machine=None):
                     if not a or not v:
                         return "n/a"
                     return f"{(a / v if inv else v / a):.1f}x"
-                lines.append(f"| {fmt_bytes(n)} | {ratio('sha256')} | {ratio('keccak')} | {ratio('blake3')} | {ratio('poseidon2')} | {ratio('nocom', True)} |")
+                lines.append(f"| {fmt_bytes(n)} | {ratio('sha256')} | {ratio('keccak')} | {ratio('blake3')} | {ratio('poseidon1')} | {ratio('nocom', True)} |")
             lines.append("")
     lines += lego_table(data, layout)
     age = {(b, row): m for (w, b, row, _), m in data.items() if w == "age"}
