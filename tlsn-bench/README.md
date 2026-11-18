@@ -34,8 +34,8 @@ matplotlib, and the Rust toolchain pinned by ProveKit (`nightly-2026-03-04`, pic
 works); without the patched binary the LegoSNARK rows are skipped.
 
 On AWS: `doe-suite-config/designs/tlsn.yml` (suite `tlsn`, role `setup-tlsn`, host type `tlsn_small` =
-r6i.8xlarge). The instances clone the `tlsn-bench`
-branch; each job is one `bench.py ... --out results/results.csv --clean-build` call for one backend and size.
+r6i.8xlarge). The instances clone the repository configured in
+`doe-suite-config/group_vars/all/main.yml`; each job is one `bench.py ... --out results/results.csv --clean-build` call for one backend and size.
 
 ## Backends and rows
 
@@ -97,8 +97,8 @@ Tests (`provekit/tooling/artemis-bench/tests/soundness.rs`): honest proof and `r
 commitment to another payload, wrong mask commitment, proof replayed under other commitments (different
 `beta`), tampered `rho`, plain verification of a session-bound proof, public payload refused.
 
-Not covered: a security proof for this instantiation. The theorem's assumptions
-for Spartan + WHIR with a two-block commitment are not shown here; the code only matches the protocol shape.
+The security proof (`artemis_security_proof.pdf` at the repository root) covers the general construction;
+this benchmark does not separately check its assumptions for Spartan + WHIR with a two-block commitment.
 
 ## LegoSNARK CP_link on Barretenberg
 
@@ -249,7 +249,7 @@ Prover time in seconds:
 1. **Upstream binding is not covered**. TLSNotary authenticates SHA-256 hashes; neither
    a Pedersen nor a Poseidon2 commitment comes out of TLSNotary today. The numbers cover the downstream
    predicate proof only, for the Artemis and the Poseidon2 rows alike.
-2. **Barretenberg Artemis is an estimate and not sound**: the evaluation point is a public input.
+2. **Barretenberg Artemis is a cost estimate, not a protocol instantiation**: the evaluation point is a public input.
 3. **Keccak-256 above 16 KiB without a black box** (ProveKit, and the explicit variant on Barretenberg)
    is skipped locally: about 50 GiB at 64 KiB by extrapolation. `bench.py --all-sizes` lifts the cap. The
    expected digests come from `pcs/src/bin/digest.rs` (`sha3`, `blake3` crates), so every run checks the

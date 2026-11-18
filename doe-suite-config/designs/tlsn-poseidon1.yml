@@ -1,7 +1,6 @@
-# Trial: Poseidon (v1) commitment row for the TLSNotary benchmark, in the configuration of the zkML Poseidon
+# Poseidon (v1) commitment row for the TLSNotary benchmark, in the configuration of the zkML Poseidon
 # baseline (halo2 P128Pow5T3: width 3, rate 2, x^5, 8 full rounds; payload + field blinder), see
-# tlsn-bench/circuits/poseidon1. Same instance type (r6i.8xlarge, host type tlsn_poseidon1 = tlsn_small on the
-# tlsn-poseidon1 branch), sizes and repetitions as designs/tlsn.yml; each job also measures nocom so the
+# tlsn-bench/circuits/poseidon1. Same instance type (r6i.8xlarge, host type tlsn_poseidon1 = tlsn_small), sizes and repetitions as designs/tlsn.yml; each job also measures nocom so the
 # overhead is a same-machine, same-session difference.
 $SUITE_VARS$:
   runs: 5

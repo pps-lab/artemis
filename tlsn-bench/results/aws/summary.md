@@ -4,7 +4,7 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 
 ## Barretenberg (UltraHonk, KZG): Prover time [s]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate) | LegoSNARK CP_link (cost estimate) |
 |---|---|---|---|---|---|---|---|
 | 520 B | 0.019 | 0.340 | 0.717 | 0.195 | 0.033 | 0.022 | 0.021 |
 | 2.3 KiB | 0.044 | 1.079 | 2.642 | 1.147 | 0.081 | 0.054 | 0.046 |
@@ -15,7 +15,7 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 
 ## Barretenberg (UltraHonk, KZG): Constraints (ProveKit R1CS) / gates (bb circuit size)
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate) | LegoSNARK CP_link (cost estimate) |
 |---|---|---|---|---|---|---|---|
 | 520 B | 731 | 39659 | 74067 | 20701 | 1357 | 919 | 731 |
 | 2.3 KiB | 3081 | 158149 | 323967 | 193699 | 5834 | 3936 | 3081 |
@@ -26,7 +26,7 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 
 ## Barretenberg (UltraHonk, KZG): Verifier time [ms]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate) | LegoSNARK CP_link (cost estimate) |
 |---|---|---|---|---|---|---|---|
 | 520 B | 0.0 | 0.2 | 0.2 | 0.3 | 0.0 | 1.8 | 1.1 |
 | 2.3 KiB | 0.2 | 0.2 | 0.5 | 0.3 | 0.1 | 1.9 | 1.2 |
@@ -37,7 +37,7 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 
 ## Barretenberg (UltraHonk, KZG): Proof size [kB]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate) | LegoSNARK CP_link (cost estimate) |
 |---|---|---|---|---|---|---|---|
 | 520 B | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
 | 2.3 KiB | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 | 14.7 |
@@ -48,7 +48,7 @@ Medians over the runs in the CSV. Prover time excludes ACVM witness generation, 
 
 ## Barretenberg (UltraHonk, KZG): Prover peak memory [GiB]
 
-| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate, not sound) | LegoSNARK CP_link (cost estimate) |
+| Payload | No commitment | SHA-256 (as shipped) | Keccak-256 | BLAKE3 | Poseidon2 (faster of t16 / native) | Artemis (cost estimate) | LegoSNARK CP_link (cost estimate) |
 |---|---|---|---|---|---|---|---|
 | 520 B | 0.04 | 0.12 | 0.17 | 0.08 | 0.04 | 0.04 | 0.04 |
 | 2.3 KiB | 0.05 | 0.29 | 0.53 | 0.34 | 0.05 | 0.05 | 0.05 |

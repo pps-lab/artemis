@@ -1,5 +1,5 @@
 ---
-# Nov 2026 rerun of the small + medium models (all 7 models; large tier poly/poly-ipa/lego/cplink_fast/poseidon-diffusion + no_com rerun 17 Nov) on branch benchmark-audit-fixes, incl. LegoSNARK.
+# Nov 2026 rerun of the small + medium models (all 7 models; large tier poly/poly-ipa/lego/cplink_fast/poseidon-diffusion + no_com rerun 17 Nov), incl. LegoSNARK.
 $SUITE_ID$:
   nocom-small: "1794647780"
   nocom-small-ipa: "1794647819"

@@ -1,64 +1,126 @@
 # Artemis: Efficient Commit-and-Prove SNARKs for zkML
 
-This repository contains the implementation of Apollo and Artemis, our CP-SNARK constructions. The security proof is in [artemis_security_proof.pdf](artemis_security_proof.pdf).
-The underlying zkML implementation is based on the [zkML](https://github.com/uiuc-kang-lab/zkml) paper/repo.
+This repository contains the implementation of Artemis and Apollo, our CP-SNARK constructions, together with the
+baselines and the benchmarks of the evaluation. The security proof is in
+[artemis_security_proof.pdf](artemis_security_proof.pdf).
+
+The zkML circuits (`src/layers`, `src/gadgets`, `python/` and most of `src/model.rs`) come from the
+[zkML](https://github.com/uiuc-kang-lab/zkml) implementation. `halo2/` is a fork of halo2 with the extensions
+the CP-SNARKs need: extra openings in the multi-open argument, and faster MSM, FFT and lookup code.
+
+## Repository layout
+
+| Path | Content |
+|---|---|
+| `src/` | zkML circuits, the CP-SNARK gadgets and commitments (`src/gadgets`, `src/commitments`), the prover/verifier driver `src/bin/time_circuit.rs` |
+| `src/bin/test.zsh` | entry point of every benchmark run (build, setup, prove, verify; writes `results/output.csv`) |
+| `halo2/` | halo2 fork (`halo2_proofs`, `halo2curves`) |
+| `doe-suite-config/` | DoE-Suite experiment designs (`designs/`), machine types (`group_vars/`), setup roles and the ETL configs (`super_etl/`) |
+| `doe-suite-results.zip` | raw results of all suites used in the paper |
+| `doe-suite-results-super/` | tables and plots of the paper, generated from the raw results |
+| `tlsn-bench/` | TLSNotary application benchmark (Noir circuits on ProveKit and Barretenberg); see [tlsn-bench/README.md](tlsn-bench/README.md) |
 
 ## Requirements
-Rust
 
-### Artifacts
-This repository requires several artifacts related to the model definitions used in the evaluation.
-The model definitions (msgpack files) are stored in `examples/models` (360MB) in a public S3 bucket and are expected in `examples/cifar`,
-and can be downloaded using the following command:
+- Rust: the nightly toolchain is pinned in `rust-toolchain.toml` and picked up automatically by `cargo`
+  (do not use `cargo +nightly`).
+- `zsh`, and the AWS CLI to download the model files.
+- For remote runs: Python 3 and the [DoE-Suite](https://github.com/nicolas-kuechler/doe-suite) requirements
+  (git submodule `doe-suite/`).
+
+### Model files
+
+The model definitions (msgpack files, 360 MB) are in a public S3 bucket and are expected in `examples/cifar`:
 ```sh
 aws s3 sync s3://anonymized-artemis-artifacts/examples/models examples/cifar --no-sign-request
 ```
 
-The setup parameters for the polynomial commitments, `params_ipa` (15GB), `params_kzg` (64GB), take up a significant amount of time
-for the larger models to generate (although less than the time of generating the proof).
-To optimize this, it might be useful to generate the setup parameters once and store them for later use.
-The script looks for the setup parameters in the `params_ipa` and `params_kzg` directories in the root code directory.
-In case the setup parameters do not exist in the expected locations, they will be automatically generated when running the benchmarking script.
+### Setup parameters
 
-## Quickstart (local)
+The KZG and IPA parameters are generated on first use and stored in `params_kzg_Bn256/`, `params_kzg_Bls12/`
+and `params_ipa/` in the code directory, then reused. For the largest models they take up to 64 GB (KZG) and
+15 GB (IPA), and generating them takes a while (less than proving). Setup time is not included in the measured
+prover time.
 
-To run with `model` for polynomial commitment type (`pc_type`) and CP-SNARK type `cp_snark` do the following:
-
-model takes values in `['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']`
-
-polynomial commitment takes values in `['kzg', 'ipa']`
-
-CP-SNARK takes values in `['nocom', 'poly', 'cp_link', 'pos', 'cp_link_plus']`
+## Running a single benchmark (local)
 
 ```sh
-rustup override set nightly
 cargo build --release
-
-./src/bin/test.zsh ‘model_name’  ‘pc_type’  ‘cp_snark’  ‘num_runs’ 1 .
-
+./src/bin/test.zsh <model> <pc_type> <cp_snark> <num_verifier_runs> <code_dir>
+# example: Artemis on MNIST with KZG
+./src/bin/test.zsh mnist kzg poly 5 .
 ```
 
-## Running with Doe Suite (remote)
-The evaluation is built using [DoE-Suite](https://github.com/nicolas-kuechler/doe-suite), which allows straightforward reproducibility of results by defining experiments in a configuration file (suite) and executing them on a set of machines. We provide the necessary DoE-Suite commands to reproduce all results. However, it is also possible to obtain the individual commands used to invoke the framework and run them manually.
-For details on running the suites, please refer to the [DoE-Suite documentation](https://nicolas-kuechler.github.io/doe-suite/installation.html#base-installation).
+- `model`: `mnist`, `resnet18`, `dlrm`, `mobilenet`, `vgg`, `diffusion`, `gpt2`
+- `pc_type`: `kzg`, `ipa`
+- `cp_snark`:
 
-Our artifact contains the following suites:
-<details>
-    <summary>Available Suites</summary>
+| `cp_snark` | Scheme in the paper | PC |
+|---|---|---|
+| `no_com` | no commitment (baseline) | KZG, IPA |
+| `poly` | Artemis (Horner) | KZG, IPA |
+| `poly_merged` | Artemis (Horner over the weights in the general advice columns) | KZG, IPA |
+| `pedersen` | Artemis (inner product) | KZG, IPA |
+| `cp_link` | Lunar | KZG |
+| `cp_link_fast` | Lunar (multi-column) | KZG |
+| `cp_link+` | Apollo | KZG |
+| `cp_link_lego` | LegoSNARK CP_link | KZG |
+| `poseidon` | Poseidon commitment in the circuit | KZG, IPA |
+| `sha256` | SHA-256 commitment in the circuit | KZG, IPA |
 
-| Suite                                                                               | Models                                                           | Est. Duration |
-|-------------------------------------------------------------------------------------|------------------------------------------------------------------|---------------|
-| [model-small](doe-suite-config/designs/model-small.yml)                             | mnist, resnet18, dlrm                                            | TODO          |
-| [model-mobilenet](doe-suite-config/designs/mobilenet.yml)                           | MobileNet                                                        | TODO          |
-| [model-vgg](doe-suite-config/designs/vgg.yml)                                       | VGG                                                              | TODO            |
-| [model-diffusion](doe-suite-config/designs/diffusion.yml)                           | Diffusion                                                        | TODO           |
-| [model-gpt2](doe-suite-config/designs/model-gpt2.yml)                               | GPT-2                                                            | TODO           |
+The run writes `results/output.csv` with the prover time, the verifier time (`num_verifier_runs` repetitions)
+and the proof size. The prover time is halo2 `create_proof` plus the scheme's own proving work; committing to
+the weights and the setup are not counted. `MOCK_VERIFY=1` additionally checks the circuit with halo2's
+`MockProver`.
 
-__TODO__: Add CPLink models and poly_ipa?
+The larger models need a lot of memory: mnist, resnet18 and dlrm were run with 256 GB, mobilenet and vgg with
+512 GB, diffusion and gpt2 with 1 TB (Poseidon on diffusion and gpt2 with 2 TB).
 
-</details>
+## Running the evaluation with DoE-Suite (remote, AWS)
+
+Each experiment of the paper is a DoE-Suite suite in `doe-suite-config/designs/`. A suite starts EC2 instances
+(eu-west-1, stock Ubuntu 24.04; `roles/setup-base` installs the dependencies), clones this repository on them,
+runs `test.zsh` for every combination of factors and fetches the results. For setup see the
+[DoE-Suite documentation](https://nicolas-kuechler.github.io/doe-suite/installation.html#base-installation).
+
+1. Put this repository in a git repository that the instances can clone, and set its URL and branch in
+   `doe-suite-config/group_vars/all/main.yml` (`git_remote_repository`).
+2. Check out the submodule (`git submodule update --init doe-suite`) and set the DoE-Suite environment
+   variables, e.g. in `doe-suite-config/.envrc`:
+   ```sh
+   export DOES_PROJECT_DIR=<path to this repository>
+   export DOES_PROJECT_ID_SUFFIX=<short id, used to tag the AWS resources>
+   export DOES_SSH_KEY_NAME=<EC2 key pair name>
+   export DOES_AWS_USER=ubuntu
+   ```
+3. Run a suite and fetch its results into `doe-suite-results/`:
+   ```sh
+   cd doe-suite
+   make run suite=poly-small id=new
+   make status suite=poly-small id=last
+   ```
+
+Suites used in the paper (machine types in `doe-suite-config/group_vars/`):
+
+| Suites | Models | Machine |
+|---|---|---|
+| `nocom-small`, `poly-small`, `poly-ip-small`, `apollo-small`, `cplink-small`, `cplink_fast-small`, `lego-small`, `poseidon-small`, `sha256-small` (and IPA variants) | mnist, resnet18, dlrm | r6i.8xlarge |
+| `nocom-med`, `poly-med`, `poly-ip-med`, `apollo-med`, `cplink-med`, `cplink_fast-med`, `lego-med`, `poseidon-med`, `sha256-med` (and IPA variants) | mobilenet, vgg | r6i.16xlarge |
+| `nocom-large`, `poly-large`, `lego-large`, `cplink_fast-large`, `sha256-large` (and IPA variants) | diffusion, gpt2 | r6i.32xlarge |
+| `xlarge-poseidon_kzg`, `xlarge-poseidon_ipa` | diffusion, gpt2 | x2idn.metal |
+| `tlsn`, `tlsn-lego`, `tlsn-poseidon1` | TLSNotary benchmark ([tlsn-bench](tlsn-bench/README.md)) | r6i.8xlarge |
+
 ## Results
-`doe-suite-results.zip` contains the raw results of the 41 suites behind the paper's tables and plots: the zkML suites, the SHA-256 and LegoSNARK baselines, and the TLSNotary suites `tlsn`, `tlsn-lego` and `tlsn-poseidon1`. To regenerate the outputs in `doe-suite-results-super/`, unzip it at the repository root and run the super-ETL from `doe-suite/`:
+
+`doe-suite-results.zip` contains the raw results of the 41 suites behind the paper's tables and plots: the zkML
+suites, the SHA-256 and LegoSNARK baselines, and the TLSNotary suites `tlsn`, `tlsn-lego` and `tlsn-poseidon1`.
+The generated outputs are in `doe-suite-results-super/`:
+
+- `combined_plots/prover_table/`: prover time of all schemes on the zkML models and on TLSNotary
+- `combined_plots/results_table/`: prover time, verifier time and proof size
+- `rerun_plots/grid/`: per-model plots of prover time, verifier time and proof size
+
+To regenerate them, unzip the raw results at the repository root and run the super-ETL from `doe-suite/`:
 ```sh
 unzip doe-suite-results.zip
 cd doe-suite

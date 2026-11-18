@@ -38,7 +38,7 @@ STYLE = {
     "blake3": ("BLAKE3", "#E69F00", "v", "-"),
     "poseidon2": ("Poseidon2 (faster of t16 / native)", "#D55E00", "s", "-"),
     "artemis": ("Artemis", "#009E73", "D", "-"),
-    "artemis_estimate": ("Artemis (cost estimate, not sound)", "#009E73", "D", ":"),
+    "artemis_estimate": ("Artemis (cost estimate)", "#009E73", "D", ":"),
     "lego_estimate": ("LegoSNARK CP_link (cost estimate)", "#56B4E9", "P", (0, (1, 1.5))),
     "nocom": ("No commitment", "#666666", "x", "--"),
 }

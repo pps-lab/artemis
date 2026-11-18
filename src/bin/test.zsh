@@ -3,12 +3,12 @@ set -xe
 trap "exit" INT TERM
 #trap "kill 0" EXIT
 
-# arg1: name = ['mnist', 'resnet', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
+# arg1: name = ['mnist', 'resnet18', 'dlrm', 'mobilenet', 'vgg', 'gpt2', 'diffusion']
 # arg2: pc_type = ['kzg', 'ipa']
 # arg3: cp_snark = ['no_com', 'poly', 'poly_merged', 'pedersen', 'cp_link', 'cp_link+', 'cp_link_fast', 'poseidon', 'sha256', 'zkfft', 'bary', 'cp_link_lego']
 # arg4: num_runs - int
 # arg5: code directory
-# example: ./test.zsh mnist kzg nocom 5 .
+# example: ./test.zsh mnist kzg no_com 5 .
 # example (zkfft): ./test.zsh mnist ipa zkfft 1 .
 
 name="$1"

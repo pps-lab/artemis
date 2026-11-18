@@ -1,6 +1,6 @@
 # LegoSNARK CP_link cost estimate on Barretenberg for the TLSNotary benchmark (tlsn-bench/README.md,
 # "LegoSNARK CP_link on Barretenberg"). Separate from designs/tlsn.yml: it needs Barretenberg built from
-# source with tlsn-bench/barretenberg-dump.patch (roles/setup-tlsn-lego) and lives on the tlsn-lego branch.
+# source with tlsn-bench/barretenberg-dump.patch (roles/setup-tlsn-lego).
 #
 # One job = one bench.py invocation for one payload size. Each job measures the no-commitment circuit and the
 # Artemis estimate (+ its external KZG opening) next to the two LegoSNARK rows, so the overheads are

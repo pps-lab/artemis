@@ -18,7 +18,7 @@ $SUITE_ID$:
   poseidon-small: "1794648139"
   poseidon-small_ipa: "1794648178"
   lego-small: "1794648218"
-  # SHA-256 weight commitment (17 Nov 2026, branch sha256-commit, same machine sizes as the other schemes)
+  # SHA-256 weight commitment (17 Nov 2026, same machine sizes as the other schemes)
   sha256-small: "1794942409"
   sha256-small_ipa: "1794942449"
   sha256-med: "1794942489"
