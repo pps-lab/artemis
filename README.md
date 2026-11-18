@@ -1,8 +1,15 @@
-# Artemis: Efficient Commit-and-Prove SNARKs for zkML
+# Artemis: Efficient Commit-and-Prove SNARKs
 
-This repository contains the implementation of Artemis and Apollo, our CP-SNARK constructions, together with the
-baselines and the benchmarks of the evaluation. The security proof is in
-[artemis_security_proof.pdf](artemis_security_proof.pdf).
+This repository contains the implementation of Artemis, our commit-and-prove SNARK construction, and the
+benchmarks of the evaluation:
+
+- **zkML**: Artemis on halo2 (KZG and IPA) for seven neural networks from MNIST to GPT-2, against the
+  baselines Lunar, LegoSNARK, and Poseidon and SHA-256 commitments recomputed in the circuit.
+- **TLSNotary**: a predicate proof over a committed TLS response of 520 B to 64 KiB (Noir circuits on
+  ProveKit and Barretenberg), comparing Artemis with the SHA-256 commitment TLSNotary uses today, Keccak-256,
+  BLAKE3, Poseidon and LegoSNARK ([tlsn-bench/](tlsn-bench/README.md)).
+
+The security proof is in [artemis_security_proof.pdf](artemis_security_proof.pdf).
 
 The zkML circuits (`src/layers`, `src/gadgets`, `python/` and most of `src/model.rs`) come from the
 [zkML](https://github.com/uiuc-kang-lab/zkml) implementation. `halo2/` is a fork of halo2 with the extensions
@@ -63,7 +70,6 @@ cargo build --release
 | `pedersen` | Artemis (inner product) | KZG, IPA |
 | `cp_link` | Lunar | KZG |
 | `cp_link_fast` | Lunar (multi-column) | KZG |
-| `cp_link+` | Apollo | KZG |
 | `cp_link_lego` | LegoSNARK CP_link | KZG |
 | `poseidon` | Poseidon commitment in the circuit | KZG, IPA |
 | `sha256` | SHA-256 commitment in the circuit | KZG, IPA |
@@ -104,11 +110,24 @@ Suites used in the paper (machine types in `doe-suite-config/group_vars/`):
 
 | Suites | Models | Machine |
 |---|---|---|
-| `nocom-small`, `poly-small`, `poly-ip-small`, `apollo-small`, `cplink-small`, `cplink_fast-small`, `lego-small`, `poseidon-small`, `sha256-small` (and IPA variants) | mnist, resnet18, dlrm | r6i.8xlarge |
-| `nocom-med`, `poly-med`, `poly-ip-med`, `apollo-med`, `cplink-med`, `cplink_fast-med`, `lego-med`, `poseidon-med`, `sha256-med` (and IPA variants) | mobilenet, vgg | r6i.16xlarge |
+| `nocom-small`, `poly-small`, `poly-ip-small`, `cplink-small`, `cplink_fast-small`, `lego-small`, `poseidon-small`, `sha256-small` (and IPA variants) | mnist, resnet18, dlrm | r6i.8xlarge |
+| `nocom-med`, `poly-med`, `poly-ip-med`, `cplink-med`, `cplink_fast-med`, `lego-med`, `poseidon-med`, `sha256-med` (and IPA variants) | mobilenet, vgg | r6i.16xlarge |
 | `nocom-large`, `poly-large`, `lego-large`, `cplink_fast-large`, `sha256-large` (and IPA variants) | diffusion, gpt2 | r6i.32xlarge |
 | `xlarge-poseidon_kzg`, `xlarge-poseidon_ipa` | diffusion, gpt2 | x2idn.metal |
 | `tlsn`, `tlsn-lego`, `tlsn-poseidon1` | TLSNotary benchmark ([tlsn-bench](tlsn-bench/README.md)) | r6i.8xlarge |
+
+## TLSNotary benchmark
+
+`tlsn-bench/` is self-contained: it builds a patched ProveKit (with the Artemis hook) and, for the LegoSNARK
+rows, a patched Barretenberg, and runs every commitment scheme on the same Noir predicate circuit for the
+payload sizes of the tlsn-extension plugins (520 B to 64 KiB). Locally:
+```sh
+cd tlsn-bench
+./run.sh setup && ./run.sh test && ./run.sh small && ./run.sh plot
+```
+On AWS the suites `tlsn`, `tlsn-lego` and `tlsn-poseidon1` run the same commands. Rows, measurement method,
+results and caveats are in [tlsn-bench/README.md](tlsn-bench/README.md); the tables are in
+`tlsn-bench/results/summary.md` (local) and `tlsn-bench/results/aws/summary.md` (AWS).
 
 ## Results
 
