@@ -1,0 +1,90 @@
+---
+
+
+# The experiment state consists only of the different job_ids list in different states:
+#
+# - exp_job_ids: all job ids of the experiment
+# - exp_job_ids_unfinished: all jobs that are not finished (i.e., pending + queued + running )
+# - exp_job_ids_pending: all jobs waiting and IN CONTROL OF THE SUITE PLAYBOOK. The playbook is required to dispatch these jobs.
+#         (for multi-instance experiments, the playbook needs to synchronize and control when the next job is executed)
+# - exp_job_ids_queued: all jobs waiting in control of the `CONTROLLER`. The playbook does not need to run to start them when a previous job finished.
+# - exp_job_ids_running: the job currently running
+# - exp_job_ids_finished: all jobs that were previously running and we already downloaded the results
+#
+#
+# The role can either load the experiment state from a file or it can save it in a file.
+
+- assert:
+    that:
+      - suite is defined
+      - suite_id is defined
+      - exp_name is defined
+      - expstate == 'load' or expstate == 'save'
+      # ensure that inventory_hostname is a controller
+      - inventory_hostname in groups['is_controller_yes']
+
+
+- name: set the experiment state dir
+  set_fact:
+    exp_state_dir: "{{ local.results_dir }}/{{ suite }}_{{ suite_id }}/{{ exp_name }}"
+
+- name: create state directory (if not present)
+  ansible.builtin.file:
+    path: "{{ exp_state_dir }}"
+    state: directory
+    mode: 0755
+  delegate_to: localhost
+
+
+##########################################
+# Save Experiment State
+##########################################
+
+- name: Save the Experiment State (using state template file)
+  delegate_to: localhost
+  template:
+    src: state.yml.j2
+    dest: "{{ exp_state_dir }}/state.yml"
+    mode:  0755
+  when: expstate == 'save'
+
+
+##########################################################################
+#   Load Experiment State (-> always load)                                               #
+##########################################################################
+
+- name: Load Experiment State
+  delegate_to: localhost
+  # Be careful: any variables you set with set_fact will not be overwritten with
+  # include_vars due to the variable precedence of different sources in Ansible.
+  include_vars:
+    file: "{{ exp_state_dir }}/state.yml"
+    name: state
+
+- name: Logical check that semantics of job id lists are ok
+  assert:
+    that:
+    # check that exp_job_ids is equal to unfinished + finished
+    - state.exp_job_ids | difference(test_exp_job_ids) | length == 0
+    - test_exp_job_ids | difference(state.exp_job_ids) | length == 0
+
+    # check that exp_jobs_unfinished is correct
+    - state.exp_job_ids_unfinished | difference(test_exp_job_ids_unfinished) | length == 0
+    - test_exp_job_ids_unfinished | difference(state.exp_job_ids_unfinished) | length == 0
+
+    # check that no job_id is in pending, queued, running at the same time
+    - test_exp_job_ids_unfinished | unique | length == test_exp_job_ids_unfinished | length
+
+  vars:
+    test_exp_job_ids: "{{ state.exp_job_ids_unfinished|list + state.exp_job_ids_finished|list }}"
+    test_exp_job_ids_unfinished: "{{ state.exp_job_ids_pending | list + state.exp_job_ids_queued | list + state.exp_job_ids_running | list }}"
+
+
+- name: Set facts from state
+  set_fact:
+    exp_job_ids: "{{ state.exp_job_ids }}"
+    exp_job_ids_unfinished: "{{ state.exp_job_ids_unfinished }}"
+    exp_job_ids_pending: "{{ state.exp_job_ids_pending }}"
+    exp_job_ids_queued: "{{ state.exp_job_ids_queued }}"
+    exp_job_ids_running: "{{ state.exp_job_ids_running }}"
+    exp_job_ids_finished: "{{ state.exp_job_ids_finished }}"

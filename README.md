@@ -32,8 +32,7 @@ the CP-SNARKs need: extra openings in the multi-open argument, and faster MSM, F
 - Rust: the nightly toolchain is pinned in `rust-toolchain.toml` and picked up automatically by `cargo`
   (do not use `cargo +nightly`).
 - `zsh`, and the AWS CLI to download the model files.
-- For remote runs: Python 3 and the requirements of the experiment framework. The framework is open source;
-  we omit its link to keep the submission anonymous. Place it in `doe-suite/` at the repository root.
+- For remote runs: Python 3 and the requirements of the experiment framework (included in `doe-suite/`).
 
 ### Model files
 
@@ -91,7 +90,7 @@ documentation of the experiment framework.
 
 1. Put this repository in a git repository that the instances can clone, and set its URL and branch in
    `doe-suite-config/group_vars/all/main.yml` (`git_remote_repository`).
-2. Place the experiment framework in `doe-suite/` and set the framework's environment
+2. Set the framework's environment
    variables, e.g. in `doe-suite-config/.envrc`:
    ```sh
    export DOES_PROJECT_DIR=<path to this repository>
