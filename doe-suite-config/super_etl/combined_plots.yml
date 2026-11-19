@@ -217,7 +217,7 @@ $ETL$:
       RuntimeInfoExtractor: {file_regex: ["^runtime_info.yaml$"]}   # peak memory (/usr/bin/time max_rss)
       TlsnCsvExtractor: {file_regex: ["^results.csv$"]}
       IgnoreExtractor: {file_regex: ["stdout.log", "stderr.log", "calibration.csv", "lego_layout.json"]}
-    transformers:   # (not a YAML alias: doe-suite pops `name` from the shared dict)
+    transformers:   # (not a YAML alias: the framework pops `name` from the shared dict)
       - name: CombinedProverTimeTransformer
         zkml_pc_map: {kzg_bls: kzg}
         tlsn_workload: sweep

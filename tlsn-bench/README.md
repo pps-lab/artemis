@@ -225,7 +225,7 @@ Prover time in seconds:
   a key of 82 bytes per payload byte (5.4 MB at 64 KiB), and the scheme needs KZG wire commitments, so it
   does not exist on ProveKit.
 
-  The same on AWS (r6i.8xlarge, doe-suite suite `tlsn-lego_1794953544`, design `tlsn-lego`), with the other
+  The same on AWS (r6i.8xlarge, suite `tlsn-lego_1794953544`, design `tlsn-lego`), with the other
   Barretenberg rows from suite `tlsn_1794941917`; figure and tables in `results/aws/`:
 
   | Payload | No commitment | LegoSNARK CP_link overhead | Artemis (estimate) overhead |

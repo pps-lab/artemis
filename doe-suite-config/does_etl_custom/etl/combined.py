@@ -4,7 +4,7 @@ The pipeline reads two kinds of result files:
 
 - zkML suites (`output.csv`, one row per run, columns `model`, `cpsnark`, `pc_type`, `Prover time`),
 - TLSNotary suites (`results.csv` in the format of `tlsn-bench/bench.py`, one row per repetition, columns
-  `workload`, `backend`, `row`, `bytes`, `prover_s`, ...). Until a doe-suite design exists, the local results are
+  `workload`, `backend`, `row`, `bytes`, `prover_s`, ...). Until a suite design exists, the local results are
   imported with `tlsn-bench/to_doe_suite.py`.
 
 `CombinedProverTimeTransformer` brings both into one long table (app, pc_type, cpsnark, x, prover_time_sec) and
@@ -30,7 +30,7 @@ from .custom import parse_rust_duration
 
 class TlsnCsvExtractor(Extractor):
     """`results.csv` of the TLSNotary benchmark. Its own `run` column (repetition index) is renamed to
-    `tlsn_rep` so that it does not overwrite doe-suite's `run`."""
+    `tlsn_rep` so that it does not overwrite the framework's `run`."""
 
     file_regex: List[str] = [r"^results\.csv$"]
 
@@ -658,7 +658,7 @@ class ResultsMatrixLoader(Loader):
 
 class CombinedProverRelTableLoader(CombinedProverTableLoader):
     """`CombinedProverTableLoader` with every scheme but `relative_to` shown as a multiple of it (a second table
-    from the same pipeline: doe-suite keys loaders by class name)."""
+    from the same pipeline: the framework keys loaders by class name)."""
 
     file_name: str = "prover_time_table_rel"
     relative_to: str = "no_com"

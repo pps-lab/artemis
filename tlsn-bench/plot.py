@@ -8,7 +8,7 @@ backend, log-log, median over runs) and summary.md (tables for the sweep and
 the age check).
 
 Several sources can be given; a directory stands for every results.csv below it
-(a doe-suite result folder) together with its lego_layout.json files. A point
+(a suite result folder) together with its lego_layout.json files. A point
 (workload, backend, row, bytes) is taken from the first source that has it, so
 runs of different sessions or machines are never mixed in one median. AWS:
 

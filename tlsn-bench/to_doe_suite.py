@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Import local TLSNotary benchmark results as a doe-suite result folder.
+"""Import local TLSNotary benchmark results as a suite result folder.
 
   to_doe_suite.py [results/results.csv] [--suite tlsn-local] [--id ID]
 
 Writes `$DOES_PROJECT_DIR/doe-suite-results/<suite>_<id>/` in the layout that
-doe-suite produces for a remote run, so that a super-ETL config can combine the
+the experiment framework produces for a remote run, so that a super-ETL config can combine the
 TLSNotary results with the zkML suites (see
 `doe-suite-config/super_etl/combined_plots.yml`):
 
@@ -14,7 +14,7 @@ TLSNotary results with the zkML suites (see
 
 One experiment per backend (provekit, bb, external), one run per (workload,
 row, bytes) point; results.csv holds the repetitions of that point in the
-format of `bench.py`. A future doe-suite design for the TLSNotary benchmark
+format of `bench.py`. A future suite design for the TLSNotary benchmark
 should write the same results.csv per run (one row per repetition) so the
 super-ETL does not change: only the suite name and id in `$SUITE_ID$` do.
 
@@ -38,7 +38,7 @@ def main():
     ap.add_argument("--suite", default="tlsn-local")
     ap.add_argument("--id", default=None, help="suite id (default: CSV mtime)")
     ap.add_argument("--results-dir", default=None,
-                    help="doe-suite results dir (default: $DOES_PROJECT_DIR/doe-suite-results)")
+                    help="results dir (default: $DOES_PROJECT_DIR/doe-suite-results)")
     args = ap.parse_args()
 
     project = os.environ.get("DOES_PROJECT_DIR", str(here.parent))

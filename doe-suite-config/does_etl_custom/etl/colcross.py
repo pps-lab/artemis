@@ -6,7 +6,7 @@ from doespy.etl.steps.colcross.colcross import BaseColumnCrossPlotLoader, Subplo
 from doespy.etl.steps.colcross.hooks import (CcpHooks, default_hooks)
 from doespy.etl.steps.colcross.components import (SubplotGrid, Metric)
 try:
-    # Broken-axis grid (IPA plots): only in a patched doe-suite, not in the
+    # Broken-axis grid (IPA plots): only in a patched experiment framework, not in the
     # pinned submodule. Fall back to the plain grid so that this module still imports (the ETL loader
     # imports every custom step, so a missing symbol would break `make run` for every suite).
     from doespy.etl.steps.colcross.components import BrokenSubplotGrid

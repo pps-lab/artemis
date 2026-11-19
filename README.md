@@ -22,7 +22,7 @@ the CP-SNARKs need: extra openings in the multi-open argument, and faster MSM, F
 | `src/` | zkML circuits, the CP-SNARK gadgets and commitments (`src/gadgets`, `src/commitments`), the prover/verifier driver `src/bin/time_circuit.rs` |
 | `src/bin/test.zsh` | entry point of every benchmark run (build, setup, prove, verify; writes `results/output.csv`) |
 | `halo2/` | halo2 fork (`halo2_proofs`, `halo2curves`) |
-| `doe-suite-config/` | DoE-Suite experiment designs (`designs/`), machine types (`group_vars/`), setup roles and the ETL configs (`super_etl/`) |
+| `doe-suite-config/` | Experiment designs (`designs/`), machine types (`group_vars/`), setup roles and the ETL configs (`super_etl/`) |
 | `doe-suite-results.zip` | raw results of all suites used in the paper |
 | `doe-suite-results-super/` | tables and plots of the paper, generated from the raw results |
 | `tlsn-bench/` | TLSNotary application benchmark (Noir circuits on ProveKit and Barretenberg); see [tlsn-bench/README.md](tlsn-bench/README.md) |
@@ -32,7 +32,7 @@ the CP-SNARKs need: extra openings in the multi-open argument, and faster MSM, F
 - Rust: the nightly toolchain is pinned in `rust-toolchain.toml` and picked up automatically by `cargo`
   (do not use `cargo +nightly`).
 - `zsh`, and the AWS CLI to download the model files.
-- For remote runs: Python 3 and the [DoE-Suite](https://github.com/nicolas-kuechler/doe-suite) requirements
+- For remote runs: Python 3 and the requirements of the experiment framework
   (git submodule `doe-suite/`).
 
 ### Model files
@@ -82,16 +82,16 @@ the weights and the setup are not counted. `MOCK_VERIFY=1` additionally checks t
 The larger models need a lot of memory: mnist, resnet18 and dlrm were run with 256 GB, mobilenet and vgg with
 512 GB, diffusion and gpt2 with 1 TB (Poseidon on diffusion and gpt2 with 2 TB).
 
-## Running the evaluation with DoE-Suite (remote, AWS)
+## Running the evaluation (remote, AWS)
 
-Each experiment of the paper is a DoE-Suite suite in `doe-suite-config/designs/`. A suite starts EC2 instances
+Each experiment of the paper is a suite in `doe-suite-config/designs/`. A suite starts EC2 instances
 (eu-west-1, stock Ubuntu 24.04; `roles/setup-base` installs the dependencies), clones this repository on them,
 runs `test.zsh` for every combination of factors and fetches the results. For setup see the
-[DoE-Suite documentation](https://nicolas-kuechler.github.io/doe-suite/installation.html#base-installation).
+documentation of the experiment framework (submodule `doe-suite/`).
 
 1. Put this repository in a git repository that the instances can clone, and set its URL and branch in
    `doe-suite-config/group_vars/all/main.yml` (`git_remote_repository`).
-2. Check out the submodule (`git submodule update --init doe-suite`) and set the DoE-Suite environment
+2. Check out the submodule (`git submodule update --init doe-suite`) and set the framework's environment
    variables, e.g. in `doe-suite-config/.envrc`:
    ```sh
    export DOES_PROJECT_DIR=<path to this repository>
