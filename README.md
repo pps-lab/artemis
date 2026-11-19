@@ -32,8 +32,8 @@ the CP-SNARKs need: extra openings in the multi-open argument, and faster MSM, F
 - Rust: the nightly toolchain is pinned in `rust-toolchain.toml` and picked up automatically by `cargo`
   (do not use `cargo +nightly`).
 - `zsh`, and the AWS CLI to download the model files.
-- For remote runs: Python 3 and the requirements of the experiment framework
-  (git submodule `doe-suite/`).
+- For remote runs: Python 3 and the requirements of the experiment framework. The framework is open source;
+  we omit its link to keep the submission anonymous. Place it in `doe-suite/` at the repository root.
 
 ### Model files
 
@@ -87,11 +87,11 @@ The larger models need a lot of memory: mnist, resnet18 and dlrm were run with 2
 Each experiment of the paper is a suite in `doe-suite-config/designs/`. A suite starts EC2 instances
 (eu-west-1, stock Ubuntu 24.04; `roles/setup-base` installs the dependencies), clones this repository on them,
 runs `test.zsh` for every combination of factors and fetches the results. For setup see the
-documentation of the experiment framework (submodule `doe-suite/`).
+documentation of the experiment framework.
 
 1. Put this repository in a git repository that the instances can clone, and set its URL and branch in
    `doe-suite-config/group_vars/all/main.yml` (`git_remote_repository`).
-2. Check out the submodule (`git submodule update --init doe-suite`) and set the framework's environment
+2. Place the experiment framework in `doe-suite/` and set the framework's environment
    variables, e.g. in `doe-suite-config/.envrc`:
    ```sh
    export DOES_PROJECT_DIR=<path to this repository>
